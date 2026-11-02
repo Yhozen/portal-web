@@ -176,13 +176,15 @@ export class Game {
     const t = da / (da - db); const x = add(a, scale(sub(b, a), t)); const d = sub(x, p.pos);
     const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
   }
-  teleportPlayer(a: Portal, b: Portal) {
-    const M = throughPortal(a, b); const pl = this.player; const mid = pl.viewOffset;
-    const c: V3 = pl.eye(); const nc = xformPoint(M, c);
+  teleportPlayer(a: Portal, b: Portal, centre = false) {
+    const M = throughPortal(a, b); const pl = this.player; const mid = centre ? pl.maxs()[2] / 2 : pl.viewOffset;
+    const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
     pl.vel = xformDir(M, pl.vel);
     const { f, u } = angleVectors(pl.ang); const nf = xformDir(M, f), nu = xformDir(M, u);
     const na = vectorAngles(nf, nu); pl.ang = [Math.max(-89, Math.min(89, na[0])), na[1], 0];
     pl.pos = [nc[0], nc[1], nc[2] - mid];
+    // floor/ceiling exits: put the whole hull in front of the exit plane (a ceiling exit drops the player out below it)
+    if (b.f[2] < -0.7) pl.pos[2] = Math.min(pl.pos[2], b.pos[2] - pl.maxs()[2] - 1); else if (b.f[2] > 0.7) pl.pos[2] = Math.max(pl.pos[2], b.pos[2] + 1);
     // exiting a floor portal: make sure we leave with at least a little speed so we clear the hole
     const out = dot(pl.vel, b.f); if (out < 60) pl.vel = ma(pl.vel, 60 - out, b.f);
     pl.onGround = false; this.stats.teleports++;
@@ -338,10 +340,14 @@ export class Game {
     const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
       else if (i === 'toggle') { e.state = 1 - e.state; e.moving = true; } else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') e.speed = +param || e.speed; else return false; return true; };
     H.set('func_door_rotating', rotDoor); H.set('prop_door_rotating', rotDoor);
-    H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') e.speedNow = -e.startspeed; else if (i === 'setspeed') { } return true; });
+    H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath && e.curPath.kv.target) e.pathName = e.curPath.kv.target.toLowerCase(); if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') { e.speedNow = -e.startspeed;
+        // backward travel heads for the path_track that targets the one the train is at (Valve Developer Wiki: func_tracktrain / path_track)
+        const cur = e.curPath && len(sub(e.curPath.origin, e.pos)) < 4 ? e.curPath : io.find(e.pathName, null, e)[0]; if (cur && len(sub(cur.origin, e.pos)) < 4) { const prev = this.prevPath(cur); if (prev) e.pathName = prev.name; else e.speedNow = 0; } } else if (i === 'setspeed') { } return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
     H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
-    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) this.respawnTemplate(t, e.origin); } return true; });
+    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) { this.respawnTemplate(t, e.origin); this.placeTemplateGroup(t, e); } } return true; });
+    H.set('point_energy_ball_launcher', (e, i) => { if (i === 'enable') { e.enabled = true; e.nextBall = Math.min(e.nextBall ?? 0, io.time + 0.1); } else if (i === 'disable') e.enabled = false; else if (i === 'launchball') this.launchBall(e); else return false; return true; });
+    H.set('filter_combineball_type', () => false);
     H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
     H.set('env_fade', (e, i) => { if (i !== 'fade') return true; const from = +e.kv.spawnflags & 1; const dur = +(e.kv.duration || 1), hold = +(e.kv.holdtime || 0);
       if (from) { this.hud.fade = 1; this.hud.fadeTarget = 0; this.hud.fadeRate = 1 / Math.max(0.01, dur); this.hud.fadeHoldUntil = io.time + hold; } else { this.hud.fadeTarget = 1; this.hud.fadeRate = 1 / Math.max(0.01, dur); } return true; });
@@ -355,6 +361,68 @@ export class Game {
     H.set('func_noportal_volume', () => false);
     H.set('logic_auto', () => true);
   }
+  /** env_entity_maker for non-cube templates (energy-ball catchers): the template's own copies were removed at load, so the first ForceSpawn
+   *  brings them back placed relative to the maker (maker origin + maker rotation applied to each member's offset from the template origin).
+   *  Name fixup is skipped: each catcher template is spawned once per map, so the original names stay unique. */
+  placeTemplateGroup(t: Ent, maker: Ent) {
+    if (t.groupPlaced) return; t.groupPlaced = true;
+    const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
+    const R = entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]);
+    const place = (o: V3): V3 => add(maker.origin, xformDir(R, sub(o, t.origin)));
+    for (const n of names) for (const e of this.io.byName.get(n) || []) {
+      if (e.cube || e.cls === 'func_tracktrain' || e.cls === 'path_track' || e.kv.parentname) continue;
+      const np = place(e.origin); const M = mul(R, entityMatrix([0, 0, 0], e.angles || [0, 0, 0])); M[12] = np[0]; M[13] = np[1]; M[14] = np[2];
+      e.killed = false; e.origin = np; e.pos = [...np] as V3; e.ang = vectorAngles([M[0], M[1], M[2]], [M[8], M[9], M[10]]);
+      if (e.model != null && typeof e.model === 'number') { const B = this.bsp.models[e.model]; const lo: V3 = [1e9, 1e9, 1e9], hi: V3 = [-1e9, -1e9, -1e9];
+        for (let k = 0; k < 8; k++) { const c: V3 = [k & 1 ? B.maxs[0] : B.mins[0], k & 2 ? B.maxs[1] : B.mins[1], k & 4 ? B.maxs[2] : B.mins[2]]; const w = xformPoint(M, c); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], w[a]); hi[a] = Math.max(hi[a], w[a]); } }
+        e.bmins = lo; e.bmaxs = hi; if (e.inst) e.inst.matrix = M; }
+      if (e.prop) { e.prop.matrix = M; e.prop.visible = e.kv.startdisabled !== '1'; e.prop.ambient = this.ambientAt(np); }
+      if (e.touching) e.touching.clear();
+      this.io.fire(e, 'onspawn', e);
+      this.io.log.push(`${this.io.time.toFixed(2)} placed template member ${n} at ${np.map(v => v | 0)}`);
+    }
+  }
+  // ---------- energy balls (point_energy_ball_launcher / prop_energy_ball) ----------
+  // Behaviour from the Valve Developer Wiki entity pages: the launcher keeps up to `ballcount` balls alive, respawning after `ballrespawntime`;
+  // a ball flies at constant speed, bounces off world geometry, passes through portals (its remaining life is topped up to `minlifeafterportal`),
+  // and dies when its `balllifetime` runs out. Catchers are physics-flagged triggers filtered by filter_combineball_type.
+  balls: { ent: Ent; pos: V3; vel: V3; r: number; die: number; launcher: Ent; prop: PropInst }[] = [];
+  launchBall(L: Ent) {
+    const io = this.io; const f = angleVectors(L.angles || [0, 0, 0]).f; const spd = +(L.kv.minspeed || 200) || 200; const r = +(L.kv.ballradius || 12) || 12;
+    const e = new Ent({ classname: 'prop_energy_ball', origin: L.origin.join(' ') }); e.game = this; this.io.add(e);
+    const prop = this.addProp('models/effects/combineball.mdl', [...L.origin] as V3, [0, 0, 0]);
+    const b = { ent: e, pos: ma(L.origin, r + 2, f), vel: scale(f, spd), r, die: io.time + (+(L.kv.balllifetime || 12) || 12), launcher: L, prop };
+    e.ball = b; e.onKill = () => { prop.visible = false; io.log.push(`${io.time.toFixed(2)} energy ball gone at ${b.pos.map(v => v | 0)}${io.time >= b.die ? ' (expired)' : ''}`); this.balls = this.balls.filter(x => x !== b); };
+    this.balls.push(b); io.fire(L, 'onpostspawnball', e); io.log.push(`${io.time.toFixed(2)} energy ball from ${L.name}`);
+  }
+  updateBalls(dt: number) {
+    const io = this.io;
+    for (const L of io.ents) if (L.cls === 'point_energy_ball_launcher' && !L.killed) {
+      if (!L.ballInit) { L.ballInit = true; if (+(L.kv.spawnflags || 0) & 4096) L.enabled = false; }
+      const alive = this.balls.filter(b => b.launcher === L).length;
+      if (L.enabled && alive < (+(L.kv.ballcount || 1) || 1)) { if (L.nextBall === undefined) L.nextBall = io.time + 0.5; if (io.time >= L.nextBall) { this.launchBall(L); L.nextBall = io.time + (+(L.kv.ballrespawntime || 2)); } }
+      else if (alive) L.nextBall = io.time + (+(L.kv.ballrespawntime || 2));
+    }
+    const mask = 0x1 | 0x2 | 0x8 | 0x4000;
+    for (const b of [...this.balls]) {
+      if (io.time >= b.die) { b.ent.killed = true; b.ent.onKill?.(); continue; }
+      const mins: V3 = [-b.r, -b.r, -b.r], maxs: V3 = [b.r, b.r, b.r]; let left = dt; const prev: V3 = [...b.pos] as V3;
+      for (let it = 0; it < 4 && left > 1e-4; it++) {
+        this.tr.ignore = this.tunnelFor(b.pos, mins, maxs);
+        const want = ma(b.pos, left, b.vel); const t = this.tr.trace(b.pos, want, mins, maxs, mask, this.playerEnt);
+        if (t.startsolid) { b.pos = want; break; }
+        b.pos = t.end; left *= 1 - t.fraction; if (t.fraction >= 1) break;
+        const n = t.normal; const vn = dot(b.vel, n); b.vel = ma(b.vel, -2 * vn, n); b.pos = ma(b.pos, 0.5, n);
+      }
+      this.tr.ignore = null;
+      for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, b.pos)) {
+        const M = throughPortal(p, p.linked); b.pos = xformPoint(M, b.pos); b.vel = xformDir(M, b.vel);
+        b.die = Math.max(b.die, io.time + (+(b.launcher.kv.minlifeafterportal || 6))); break; }
+      b.ent.pos = b.pos; b.ent.origin = b.pos;
+      const m = entityMatrix(b.pos, [0, io.time * 400 % 360, 0]); b.prop.matrix = m;
+    }
+  }
+  prevPath(p: Ent) { return this.io.ents.find(q => q.cls === 'path_track' && !q.killed && (q.kv.target || '').toLowerCase() === p.name) || null; }
   respawnTemplate(t: Ent, at: V3 | null) {
     // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps)
     const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
@@ -408,7 +476,7 @@ export class Game {
           const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
           if (this.player.groundEnt === e || this.onTrain(e)) this.player.pos = add(this.player.pos, mv);
-          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', null); const nxt = (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
+          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', null); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
       if (e.cls === 'func_rotating') { const target = e.spinning ? e.maxspeed : 0; const acc = Math.max(1, e.maxspeed) * dt / Math.max(0.1, +(e.kv.fanfriction || 20) / 20);
@@ -421,6 +489,12 @@ export class Game {
       if (e.prop && e.ang && !e.kv.parentname) e.prop.matrix = entityMatrix(e.pos, e.ang);
       if (e.platform) { e.platform.mins = add(e.pos, e.platMins); e.platform.maxs = add(e.pos, e.platMaxs); }
     }
+    // parented triggers (e.g. a lift's ride trigger) follow their parent's translation
+    for (const e of io.ents) if (e.kv.parentname && e.touching && e.bmins && !e.killed) {
+      const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || par === e) continue; const pp: V3 = par.pos || par.origin;
+      if (!e.trigBase) e.trigBase = { lo: [...e.bmins], hi: [...e.bmaxs], p: [...pp] };
+      const d = sub(pp, e.trigBase.p); e.bmins = add(e.trigBase.lo, d); e.bmaxs = add(e.trigBase.hi, d);
+    }
     // hierarchy: child = parent(now) * inverse(parent at attach time) * child at attach time (full rotation + translation)
     for (let pass = 0; pass < 2; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
       const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos || par === e) continue;
@@ -432,15 +506,28 @@ export class Game {
       if (e.prop) e.prop.matrix = W;
       if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
     }
+    // ride along on moving brush entities that aren't trains (parented lift platforms, func_door lifts); a platform rising into the
+    // player's feet lifts the player instead of shoving them sideways
+    for (const e of io.ents) if (e.col && e.pos && e.cls !== 'func_tracktrain' && !e.killed) {
+      const lp = e.ridePos; e.ridePos = [...e.pos];
+      if (!lp) continue; const d = sub(e.pos, lp); if (!d[0] && !d[1] && !d[2]) continue;
+      if (this.player.groundEnt === e) { this.player.pos = add(this.player.pos, d); continue; }
+      if (d[2] > 0) { this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt);
+        if (pt.startsolid && pt.ent === e) { const up: V3 = add(this.player.pos, [0, 0, d[2] + 0.1]); const q = this.tr.trace(up, up, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt); if (!q.startsolid) this.player.pos = up; } }
+    }
     // player
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
-    const prevC: V3 = this.player.eye();
+    const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3;
     this.player.move(input, dt);
     const nowC: V3 = this.player.eye();
-    for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); break; }
+    let tp = false; for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); tp = true; break; }
+    // floor portals: a shallow hole under the portal can stop the player before the eye crosses, so the hull centre counts there too
+    if (!tp) { const hc = this.player.maxs()[2] / 2, pa: V3 = [prevPos[0], prevPos[1], prevPos[2] + hc], pb: V3 = [this.player.pos[0], this.player.pos[1], this.player.pos[2] + hc];
+      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb)) { this.teleportPlayer(p, p.linked, true); break; } }
     this.tr.ignore = null;
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
+    this.updateBalls(dt);
     // triggers
     this.updateGunPickup(); this.updateMMC();
     this.updateTriggers();
@@ -524,6 +611,7 @@ export class Game {
       if (e.enabled) {
         if ((sf & 1 || sf & 64 || e.cls === 'trigger_changelevel') && overlap(pmin, pmax, e.bmins, e.bmaxs)) now.add(this.playerEnt);
         if (sf & 8 || sf & 64 || e.cls === 'trigger_portal_cleanser') for (const c of this.cubes) if (c.alive && overlap(sub(c.pos, [c.ext, c.ext, c.ext]), add(c.pos, [c.ext, c.ext, c.ext]), e.bmins, e.bmaxs)) now.add(c.ent);
+        if (sf & 8 || sf & 64) for (const b of this.balls) if (overlap(sub(b.pos, [b.r, b.r, b.r]), add(b.pos, [b.r, b.r, b.r]), e.bmins, e.bmaxs)) now.add(b.ent);
         if (e.kv.filtername) { const f = io.find(e.kv.filtername, null, e)[0]; if (f) for (const a of [...now]) if (!this.passFilter(f, a)) now.delete(a); }
       }
       for (const a of now) if (!e.touching.has(a)) {
@@ -541,6 +629,7 @@ export class Game {
   passFilter(f: Ent, a: Ent) {
     let ok = true;
     if (f.cls === 'filter_activator_name') ok = a.name === (f.kv.filtername || '').toLowerCase();
+    else if (f.cls === 'filter_combineball_type') ok = !!a.ball;
     else if (f.cls === 'filter_activator_class') ok = (a.cube ? 'prop_physics' : a.cls) === (f.kv.filterclass || '').toLowerCase();
     if (f.kv.negated === '1') ok = !ok; return ok;
   }

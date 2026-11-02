@@ -13,7 +13,7 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
 
-interface Cube extends Body { ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; }
+interface Cube extends Body { ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
 
 export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
@@ -191,6 +191,10 @@ export class Game {
     const free = (q: V3) => !this.tr.trace(q, q, HULL.mins, pl.maxs(), 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000 | 0x2000000, pl).startsolid;
     if (!free(pl.pos)) { let done = false;
       for (let k = 1; k <= 40 && !done; k++) for (const d of [[0, 0, 1], b.f, [0, 0, -1]] as V3[]) { const q = ma(pl.pos, k, d); if (free(q)) { pl.pos = q; done = true; break; } } }
+    // a held cube comes along (Source keeps held objects attached through portals): re-place it in front of the new view
+    const hc = this.held; if (hc && hc.viaPortal === a) hc.viaPortal = null; else if (hc) { hc.viaPortal = null; const e2 = pl.eye(); const f2 = angleVectors(pl.ang).f; const ext: V3 = [hc.ext, hc.ext, hc.ext];
+      const t = this.tr.trace(e2, ma(e2, 56, f2), scale(ext, -1), ext, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt); hc.pos = t.startsolid ? [...e2] as V3 : t.end; hc.vel = [...pl.vel] as V3;
+      if (hc.R) hc.R = mul(M, hc.R); }
     this.tr.ignore = null;
     this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
   }
@@ -452,11 +456,12 @@ export class Game {
     c.ent.box.mins = [1e9, 1e9, 1e9]; c.ent.box.maxs = [1e9, 1e9, 1e9]; // don't collide with itself
     if (c.held) {
       const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
-      const want = ma(eye, 56, f); this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
+      let want = ma(eye, 56, f); if (c.viaPortal) { const vp = c.viaPortal; if (vp.open && vp.linked?.open) want = xformPoint(throughPortal(vp, vp.linked), want); else c.viaPortal = null; }
+      this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
       const t = this.tr.trace(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
       c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
-      if (c.Rrel) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
-      if (len(sub(c.pos, want)) > 80) { c.held = false; this.held = null; }
+      if (c.Rrel && !c.viaPortal) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
+      if (len(sub(c.pos, want)) > 80) { c.held = false; this.held = null; c.viaPortal = null; }
     } else {
       const Z: V3 = [0, 0, 0]; const mask = 0x1 | 0x2 | 0x8 | 0x4000;
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
@@ -469,7 +474,8 @@ export class Game {
     for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, c.pos)) {
       const M = throughPortal(p, p.linked); c.pos = xformPoint(M, c.pos); c.vel = xformDir(M, c.vel); c.w = xformDir(M, c.w); c.R = mul(M, c.R); c.R[12] = c.R[13] = c.R[14] = 0; c.asleep = false;
       const out = dot(c.vel, p.linked.f); if (out < 60) c.vel = ma(c.vel, 60 - out, p.linked.f);
-      if (c.held) { c.held = false; this.held = null; } break;
+      // held cubes stay held: the grab point is then seen through the portal (like Source's grab-through-portal)
+      if (c.held) c.viaPortal = c.viaPortal === p.linked ? null : p; break;
     }
     this.updateCubeBox(c);
   }

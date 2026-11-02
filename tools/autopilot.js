@@ -2,6 +2,7 @@
 // drops, open portal pairs) and then drives the player ONLY through the normal movement input (fwd + yaw, jump).
 // No position edits while walking. Usage (inside tools/shot.mjs scripts): AP.goto([x,y,z]) -> {ok, steps, log}
 window.AP = (() => {
+  const LOG = [];
   const W = window.game, G = W.game, pl = W.pl, TICK = 1 / 66, S = 24;
   const tr = (a, b) => pl.trace(a, b);
   const hurt = () => G.io.ents.filter(e => e.cls === 'trigger_hurt' && e.bmins && e.enabled !== false && !e.killed);
@@ -27,22 +28,24 @@ window.AP = (() => {
   function plan(target, R = 28, maxN = 60000) {
     const hs = hurt(); const start = [...pl.pos]; const open = [{ p: start, g: 0, f: 0, k: key(start) }]; const best = new Map([[open[0].k, 0]]); const prev = new Map();
     const h = p => Math.hypot(p[0] - target[0], p[1] - target[1], (p[2] - target[2]) * 0.5);
-    let n = 0;
+    let n = 0, near = open[0], nearH = h(start);
     while (open.length && n++ < maxN) {
       let bi = 0; for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i; const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
-      if (cur.g > best.get(cur.k)) continue;
+      if (cur.g > best.get(cur.k)) continue; { const hc = h(cur.p); if (hc < nearH) { nearH = hc; near = cur; } }
       if (Math.hypot(cur.p[0] - target[0], cur.p[1] - target[1]) < R && Math.abs(cur.p[2] - target[2]) < 64) {
         const path = []; let k = cur.k, node = cur; while (node) { path.push(node); node = prev.get(node.k); } return { ok: true, path: path.reverse(), expanded: n }; }
       for (const nb of neighbors(cur.p, hs)) { const k = key(nb.q), g = cur.g + nb.c; if (g < (best.get(k) ?? 1e9)) { best.set(k, g); const node = { p: nb.q, g, f: g + h(nb.q) * 1.2, k, portal: nb.portal }; prev.set(k, cur); open.push(node); } }
     }
     const ks = [...best.keys()].map(k => k.split(',').map(Number)); const bb = [0, 1, 2].map(i => [Math.min(...ks.map(k => k[i])) * [12, 12, 16][i], Math.max(...ks.map(k => k[i])) * [12, 12, 16][i]]);
     let cl = null, cd = 1e9; for (const k of ks) { const q = [k[0] * 12, k[1] * 12, k[2] * 16]; const d = h(q); if (d < cd) { cd = d; cl = q; } }
-    return { ok: false, expanded: n, bb, closest: cl, portalEdges: [...prev.keys()].length };
+    const partial = []; for (let node = near; node; node = prev.get(node.k)) partial.push(node); partial.reverse();
+    return { ok: false, expanded: n, bb, closest: cl, partial, partialGain: h(start) - nearH, portalEdges: [...prev.keys()].length };
   }
   function walk(path, budget = 120) {
     let t = 0, stuck = 0, last = [...pl.pos], i = 1;
     while (i < path.length && t < budget) {
-      const pa = path[i].portal; // next node is on the far side of portal pa: walk into its centre until we get teleported
+      const pa = path[i].portal; if (pa && !(pa.open && pa.linked && pa.linked.open)) return { ok: false, why: 'portal closed', at: pl.pos.map(v => v | 0), t };
+      // next node is on the far side of portal pa: walk into its centre until we get teleported
       const w = pa ? [pa.pos[0] - pa.f[0] * 20, pa.pos[1] - pa.f[1] * 20, pl.pos[2]] : path[i].p; const d = [w[0] - pl.pos[0], w[1] - pl.pos[1]]; const dist = Math.hypot(d[0], d[1]);
       if (!pa && dist < 14 && Math.abs(w[2] - pl.pos[2]) < 40) { i++; continue; }
       pl.ang = [0, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0];
@@ -54,12 +57,26 @@ window.AP = (() => {
     }
     return { ok: i >= path.length, t, at: pl.pos.map(v => v | 0) };
   }
-  function goto(target, R) { const p = plan(target, R); if (!p.ok) return { ok: false, why: 'no path (' + p.expanded + ' nodes)', bb: p.bb, closest: p.closest, from: pl.pos.map(v => v | 0) }; const w = walk(p.path); w.nodes = p.path.length; w.expanded = p.expanded; w.portals = p.path.filter(n => n.portal).length; return w; }
+  function goto(target, R) { const p = plan(target, R); if (!p.ok) return { ok: false, why: 'no path (' + p.expanded + ' nodes)', bb: p.bb, closest: p.closest, from: pl.pos.map(v => v | 0), partial: p.partial, partialGain: p.partialGain }; const w = walk(p.path); w.nodes = p.path.length; w.expanded = p.expanded; w.portals = p.path.filter(n => n.portal).length; return w; }
   function wait(sec, until) { for (let t = 0; t < sec; t += TICK) { W.step(TICK); if (until && until()) return true; } return !until; }
   function lookAt(p) { const e = pl.eye(); const d = [p[0] - e[0], p[1] - e[1], p[2] - e[2]]; pl.ang = [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0]; }
   // fine positioning without turning (keeps aim): strafe/forward toward an xy point, slowing down near it
   function approach(target, tol = 4, maxT = 4) { for (let t = 0; t < maxT; t += TICK) { const d = [target[0] - pl.pos[0], target[1] - pl.pos[1]]; const dist = Math.hypot(d[0], d[1]); if (dist < tol) { pl.vel[0] = pl.vel[1] = 0; return true; }
       const y = pl.ang[1] * Math.PI / 180, f = [Math.cos(y), Math.sin(y)], r = [Math.sin(y), -Math.cos(y)]; const k = Math.min(1, dist / 40);
       W.step(TICK, { fwd: (d[0] * f[0] + d[1] * f[1]) / dist * k, side: (d[0] * r[0] + d[1] * r[1]) / dist * k, jump: false, duck: false }); } return false; }
-  return { plan, walk, goto, wait, lookAt, approach };
+  // replan until we get there: cycling portals, doors still opening, etc.
+  function gotoRetry(target, R, tries = 30, pause = 0.5) { let r; for (let k = 0; k < tries; k++) { r = goto(target, R); LOG.push(G.io.time.toFixed(1) + ' try' + k + ' ' + (r.ok ? 'ok' : r.why) + ' at ' + pl.pos.map(v => v | 0) + ' held ' + !!G.held); if (r.ok) { r.tries = k + 1; return r; }
+      // can't get there yet: get as close as currently possible (e.g. into the room where the next cycling portal will open), then wait
+      if (r.partial && r.partialGain > 48 && r.partial.length > 1) walk(r.partial); wait(pause); }
+    if (r) delete r.partial; r.tries = tries; return r; }
+  // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
+  function pickUp(cube) { let r = gotoRetry([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
+    lookAt(cube.pos); wait(0.1); if (!G.held) G.use(); wait(0.3); return { ok: !!G.held, why: G.held ? '' : 'use() did not grab' }; }
+  function placeCube(cube, b) { if (!G.held) { const p = pickUp(cube); if (!p.ok) return p; }
+    let r = gotoRetry([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
+    for (let k = 0; k < 5; k++) { lookAt([b[0], b[1], b[2]]); wait(0.4); if (Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 8) break; approach([b[0] - (cube.pos[0] - pl.pos[0]), b[1] - (cube.pos[1] - pl.pos[1])], 3); }
+    G.use(); wait(1.5); return { ok: Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 24, cube: cube.pos.map(v => v | 0) }; }
+  const centre = e => [0, 1, 2].map(i => (e.bmins[i] + e.bmaxs[i]) / 2);
+  const ent = n => G.io.ents.find(e => e.name === n);
+  return { LOG, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
 })();

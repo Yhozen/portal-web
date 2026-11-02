@@ -26,6 +26,7 @@ async function main() {
   const mesh = buildWorld(bsp, n => n.startsWith('tools/'));
   await r.setWorld(bsp, mesh);
   const game = new Game(bsp, r, models);
+  r.usePVS = q.get('pvs') !== '0';
   if (q.get('fast') !== '0') game.io.timeScale = +(q.get('fast') || 0.15); // shorten long scripted waits (intro VO) by default
   // gun: ?gun=1 forces a dual portal gun, ?gun=0 none; otherwise the map decides (weapon_portalgun entities are picked up)
   game.guns = game.io.ents.filter(e => e.cls === 'weapon_portalgun');
@@ -99,7 +100,7 @@ async function main() {
   const frame = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000); last = now; acc += dt; cnt++;
     if (acc > 1) { stats.fps = cnt / acc; stats.frameMs = fms / cnt; acc = 0; cnt = 0; fms = 0;
-      hud.textContent = `${stats.fps.toFixed(0)} fps  ${stats.frameMs.toFixed(1)}ms  views ${r.stats.views}  draws ${r.stats.draws}  pos ${pl.pos.map(v => v.toFixed(0))}${noclip ? '  NOCLIP' : ''}${game.held ? '  [holding cube]' : ''}`; }
+      hud.textContent = `${stats.fps.toFixed(0)} fps  ${stats.frameMs.toFixed(1)}ms  views ${r.stats.views}  draws ${r.stats.draws}  culled ${r.stats.culled}  pos ${pl.pos.map(v => v.toFixed(0))}${noclip ? '  NOCLIP' : ''}${game.held ? '  [holding cube]' : ''}`; }
     const t1 = performance.now();
     if (!(window as any).paused) {
       const inp = { fwd: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), side: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), jump: keys.has('Space'), duck: keys.has('ControlLeft') || keys.has('KeyC') };

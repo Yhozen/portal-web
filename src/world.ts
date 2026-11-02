@@ -5,7 +5,7 @@ import { dot } from './math.ts';
 export const STRIDE = 11; // pos3 uv2 lmuv2 normal3 alpha1
 export interface Batch { texdata: number; start: number; count: number; }
 export interface ModelMesh { batches: Batch[]; }
-export interface WorldMesh { verts: Float32Array; indices: Uint32Array; models: ModelMesh[]; lmW: number; lmH: number; lm: Uint8Array; faceTris: number; overlays: { id: number; texdata: number; start: number; count: number }[]; }
+export interface WorldMesh { verts: Float32Array; indices: Uint32Array; models: ModelMesh[]; lmW: number; lmH: number; lm: Uint8Array; faceTris: number; faceStart: Int32Array; faceCount: Int32Array; faceTex: Int32Array; faceDisp: Uint8Array; overlays: { id: number; texdata: number; start: number; count: number }[]; }
 
 const SKIP_FLAGS = SURF.SKY | SURF.SKY2D | SURF.NODRAW | SURF.HINT | SURF.SKIP | SURF.TRIGGER;
 
@@ -34,7 +34,7 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
   }
   // --- geometry ---
   const verts: number[] = [], idx: number[] = []; const models: ModelMesh[] = [];
-  let faceTris = 0;
+  let faceTris = 0; const NF = bsp.faces.length; const faceStart = new Int32Array(NF).fill(-1), faceCount = new Int32Array(NF), faceTex = new Int32Array(NF).fill(-1), faceDisp = new Uint8Array(NF);
   const dispOfFace = new Map<number, number>(); bsp.dispinfo.forEach((d, i) => dispOfFace.set(d.mapFace, i));
   for (const m of bsp.models) {
     const byTex = new Map<number, number[]>();
@@ -52,7 +52,7 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
         verts.push(p[0], p[1], p[2], u, v, lu, lv, n[0], n[1], n[2], alpha); return verts.length / STRIDE - 1;
       };
       let list = byTex.get(ti.texdata); if (!list) byTex.set(ti.texdata, list = []);
-      const fv = bsp.faceVerts(fi);
+      const fv = bsp.faceVerts(fi); const rel = list.length;
       if (f.dispinfo >= 0 && bsp.dispinfo[f.dispinfo]) {
         const di = bsp.dispinfo[f.dispinfo];
         // rotate corners so corner 0 is the one nearest the disp start position
@@ -75,9 +75,12 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
         const ids = fv.map(p => emit(p, 1));
         for (let i = 1; i + 1 < ids.length; i++) { list.push(ids[0], ids[i], ids[i + 1]); faceTris++; }
       }
+      if (models.length === 0) { faceStart[fi] = rel; faceCount[fi] = list.length - rel; faceTex[fi] = ti.texdata; if (f.dispinfo >= 0) faceDisp[fi] = 1; }
     }
     const batches: Batch[] = [];
-    for (const [t, l] of byTex) { batches.push({ texdata: t, start: idx.length, count: l.length }); for (const i of l) idx.push(i); }
+    const bStart = new Map<number, number>();
+    for (const [t, l] of byTex) { bStart.set(t, idx.length); batches.push({ texdata: t, start: idx.length, count: l.length }); for (const i of l) idx.push(i); }
+    if (models.length === 0) for (let fi = 0; fi < NF; fi++) if (faceStart[fi] >= 0) faceStart[fi] += bStart.get(faceTex[fi])!;
     models.push({ batches });
   }
   // --- overlays: one quad each (not clipped to faces), lightmap sampled from their first face.
@@ -96,5 +99,5 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
     overlays.push({ id: ov.id, texdata: ti0.texdata, start: idx.length, count: 6 }); idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base, base + 2, base + 1, base, base + 3, base + 2);
     overlays[overlays.length - 1].count = 12; // both windings: basis handedness varies
   }
-  return { verts: new Float32Array(verts), indices: new Uint32Array(idx), models, lmW, lmH, lm, faceTris, overlays };
+  return { verts: new Float32Array(verts), indices: new Uint32Array(idx), models, lmW, lmH, lm, faceTris, faceStart, faceCount, faceTex, faceDisp, overlays };
 }

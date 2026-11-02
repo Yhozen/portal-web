@@ -41,7 +41,35 @@ export function throughPortal(a: Portal, b: Portal) { return mul(portalMatrix(b)
 export class Renderer {
   gl: WebGL2RenderingContext; mats: MaterialCache; world!: { vao: WebGLVertexArrayObject; mesh: WorldMesh; lm: WebGLTexture; mats: GLMat[] };
   prog = { world: null as any, oval: null as any }; ovalVao: WebGLVertexArrayObject; instances: Instance[] = []; time = 0; overlayState = new Map<number, { texFrame?: number; hidden?: boolean }>(); showOverlays = true; portals: Portal[] = []; extra: MeshDraw[] = []; props: PropInst[] = [];
-  maxDepth = 2; stats = { draws: 0, views: 0 }; useLightmap = true; noPortalRender = false;
+  maxDepth = 2; stats = { draws: 0, views: 0, pvsHits: 0, pvsBuilds: 0, culled: 0 }; usePVS = true; bsp: BSP | null = null;
+  private pvsCache = new Map<number, { vao: WebGLVertexArrayObject; ib: WebGLBuffer; batches: { texdata: number; start: number; count: number }[] }>();
+  private vb: WebGLBuffer | null = null; private visBits: Uint8Array | null = null; private visCluster = -2;
+  /** cluster of a point (-1 = solid / outside: no culling) */
+  clusterAt(p: ArrayLike<number>) { const b = this.bsp; if (!b || !b.vis) return -1; return b.leafs[b.pointLeaf(p as any)]?.cluster ?? -1; }
+  /** Per-cluster world index buffer: only faces in leaves the cluster's PVS row marks, grouped one draw per texture.
+   *  (The PVS itself is the compiler's vvis output stored in the BSP; method per the Valve Developer Wiki BSP page.) */
+  private pvsWorld(cluster: number) {
+    let e = this.pvsCache.get(cluster); if (e) { this.pvsCache.delete(cluster); this.pvsCache.set(cluster, e); this.stats.pvsHits++; return e; }
+    const b = this.bsp!, m = this.world.mesh, row = b.clusterVis(cluster)!; const NF = m.faceStart.length; const on = new Uint8Array(NF);
+    for (let fi = 0; fi < NF; fi++) if (m.faceDisp[fi]) on[fi] = 1;
+    for (const lf of b.leafs) { const c = lf.cluster; if (c < 0 || !(row[c >> 3] & (1 << (c & 7)))) continue; for (let k = 0; k < lf.numLeafFaces; k++) on[b.leafFaces[lf.firstLeafFace + k]] = 1; }
+    const byTex = new Map<number, number[]>(); for (let fi = 0; fi < NF; fi++) { if (!on[fi] || m.faceStart[fi] < 0) continue; let l = byTex.get(m.faceTex[fi]); if (!l) byTex.set(m.faceTex[fi], l = []); l.push(fi); }
+    let n = 0; for (const l of byTex.values()) for (const fi of l) n += m.faceCount[fi];
+    const ix = new Uint32Array(n); const batches: { texdata: number; start: number; count: number }[] = []; let o = 0;
+    for (const [t, l] of byTex) { const st = o; for (const fi of l) { ix.set(m.indices.subarray(m.faceStart[fi], m.faceStart[fi] + m.faceCount[fi]), o); o += m.faceCount[fi]; } batches.push({ texdata: t, start: st, count: o - st }); }
+    const gl = this.gl, vao = gl.createVertexArray()!; gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, this.vb);
+    for (const [l, k, of] of [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 3, 7], [4, 1, 10]]) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, k, gl.FLOAT, false, STRIDE * 4, of * 4); }
+    const ib = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, ix, gl.STATIC_DRAW); gl.bindVertexArray(null);
+    e = { vao, ib, batches }; this.pvsCache.set(cluster, e); this.stats.pvsBuilds++;
+    if (this.pvsCache.size > 24) { const [k, old] = this.pvsCache.entries().next().value!; this.pvsCache.delete(k); gl.deleteBuffer(old.ib); gl.deleteVertexArray(old.vao); }
+    return e;
+  }
+  private setVis(cluster: number) { if (cluster === this.visCluster) return; this.visCluster = cluster; this.visBits = cluster >= 0 && this.usePVS ? this.bsp!.clusterVis(cluster) : null; }
+  /** box test: visible if the centre or any corner (transformed by m) lands in a PVS-visible or solid cluster */
+  private seenBox(m: M4, lo: ArrayLike<number>, hi: ArrayLike<number>) { if (!this.visBits) return true;
+    for (let k = 0; k < 9; k++) { const x = k === 8 ? (lo[0] + hi[0]) / 2 : k & 1 ? hi[0] : lo[0], y = k === 8 ? (lo[1] + hi[1]) / 2 : k & 2 ? hi[1] : lo[1], z = k === 8 ? (lo[2] + hi[2]) / 2 : k & 4 ? hi[2] : lo[2];
+      if (this.seen([m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]])) return true; } return false; }
+  private seen(p: ArrayLike<number>) { const v = this.visBits; if (!v) return true; const c = this.clusterAt(p); if (c < 0) return true; return !!(v[c >> 3] & (1 << (c & 7))); } useLightmap = true; noPortalRender = false;
   constructor(gl: WebGL2RenderingContext, mats: MaterialCache) {
     this.gl = gl; this.mats = mats;
     this.prog.world = program(gl, WORLD_VS, WORLD_FS); this.prog.oval = program(gl, OVAL_VS, OVAL_FS);
@@ -51,7 +79,7 @@ export class Renderer {
   }
   async setWorld(bsp: BSP, mesh: WorldMesh) {
     const gl = this.gl, vao = gl.createVertexArray()!; gl.bindVertexArray(vao);
-    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.verts, gl.STATIC_DRAW);
+    const vb = this.vb = gl.createBuffer(); this.bsp = bsp; this.pvsCache.clear(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.verts, gl.STATIC_DRAW);
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
     const at = [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 3, 7], [4, 1, 10]];
     for (const [l, n, o] of at) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, n, gl.FLOAT, false, STRIDE * 4, o * 4); }
@@ -72,9 +100,13 @@ export class Renderer {
     gl.uniform1i(P.u.uTex, 0); gl.uniform1i(P.u.uLM, 1); gl.uniform1f(P.u.uLMScale, this.useLightmap ? 1 : 0); gl.uniform3f(P.u.uAmbient, 1, 1, 1);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, w.lm); gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(w.vao);
+    const pvs = this.visBits && this.visCluster >= 0 ? this.pvsWorld(this.visCluster) : null;
     for (const inst of this.instances) {
-      if (!inst.visible) continue; gl.uniformMatrix4fv(P.u.uModel, false, inst.matrix);
-      for (const b of w.mesh.models[inst.model].batches) {
+      if (!inst.visible) continue;
+      if (inst.model !== 0 && this.bsp && !this.seenBox(inst.matrix, this.bsp.models[inst.model].mins, this.bsp.models[inst.model].maxs)) { this.stats.culled++; continue; }
+      gl.uniformMatrix4fv(P.u.uModel, false, inst.matrix);
+      const useP = inst.model === 0 && pvs; gl.bindVertexArray(useP ? pvs.vao : w.vao);
+      for (const b of useP ? pvs.batches : w.mesh.models[inst.model].batches) {
         const m = w.mats[b.texdata]; if (m.nodraw || m.translucent !== translucent) continue;
         gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, inst.texFrame)); gl.uniform4f(P.u.uTint, m.tint[0], m.tint[1], m.tint[2], m.tint[3] * (inst.alpha ?? 1)); gl.uniform1f(P.u.uAlphaTest, m.alphatest);
         gl.uniform1f(P.u.uUnlit, m.unlit || m.selfillum ? 1 : 0);
@@ -84,7 +116,7 @@ export class Renderer {
     }
     gl.uniform1f(P.u.uLMScale, 0);
     for (const pr of this.props) {
-      if (!pr.visible || !pr.model) continue; const md = pr.model; gl.bindVertexArray(pr.skinned ? pr.skinned.vao : md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
+      if (!pr.visible || !pr.model) continue; const md = pr.model; if (!this.seenBox(pr.matrix, md.data.mins, md.data.maxs)) { this.stats.culled++; continue; } gl.bindVertexArray(pr.skinned ? pr.skinned.vao : md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
       gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
       for (const d of md.draws) {
         const m = skin[d.mat] || skin[0]; if (!m || m.translucent !== translucent) continue;
@@ -110,8 +142,8 @@ export class Renderer {
       gl.drawElements(gl.TRIANGLES, o.count, gl.UNSIGNED_INT, o.start * 4); this.stats.draws++; }
     gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true); gl.disable(gl.BLEND); gl.bindVertexArray(null);
   }
-  drawScene(vp: M4, clip: Float32Array) {
-    const gl = this.gl; this.stats.views++;
+  drawScene(vp: M4, clip: Float32Array, visAt?: ArrayLike<number>) {
+    const gl = this.gl; this.stats.views++; this.setVis(visAt ? this.clusterAt(visAt) : -1);
     this.drawModels(vp, clip, false);
     if (this.showOverlays) this.drawOverlays(vp, clip);
     for (const e of this.extra) e.draw(vp, clip);
@@ -125,10 +157,10 @@ export class Renderer {
     gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.ovalVao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.bindVertexArray(null); gl.enable(gl.CULL_FACE);
   }
   /** Recursive stencil portal rendering. view = world->camera, proj = projection. */
-  renderView(proj: M4, view: M4, eye: V3, clip: Float32Array, level: number, exclude: Portal | null) {
+  renderView(proj: M4, view: M4, eye: V3, clip: Float32Array, level: number, exclude: Portal | null, visAt: ArrayLike<number> = eye) {
     const gl = this.gl, vp = mul(proj, view);
     gl.stencilFunc(gl.EQUAL, level, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
-    this.drawScene(vp, clip);
+    this.drawScene(vp, clip, visAt);
     const vis = this.portals.filter(p => p.open && p !== exclude && dot(p.f, eye) - dot(p.f, p.pos) > -1 && dot(p.f, clip as any) * 0 === 0 && (dot(p.pos, clip) >= clip[3] - 1));
     for (const a of vis) {
       const b = a.linked && a.linked.open ? a.linked : null;
@@ -148,7 +180,7 @@ export class Renderer {
       const vview = mul(view, M);
       const Minv = throughPortal(a, b); const veye = [Minv[0] * eye[0] + Minv[4] * eye[1] + Minv[8] * eye[2] + Minv[12], Minv[1] * eye[0] + Minv[5] * eye[1] + Minv[9] * eye[2] + Minv[13], Minv[2] * eye[0] + Minv[6] * eye[1] + Minv[10] * eye[2] + Minv[14]] as V3;
       const vclip = new Float32Array([b.f[0], b.f[1], b.f[2], dot(b.f, b.pos) - 0.5]);
-      this.renderView(proj, vview, veye, vclip, level + 1, b);
+      this.renderView(proj, vview, veye, vclip, level + 1, b, [b.pos[0] + b.f[0] * 8, b.pos[1] + b.f[1] * 8, b.pos[2] + b.f[2] * 8]);
       // 4) restore depth to the portal surface and stencil back to level
       gl.colorMask(false, false, false, false); gl.depthFunc(gl.ALWAYS); gl.stencilFunc(gl.EQUAL, level + 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR);
       this.oval(vp, a, 0, [0, 0, 0, 1], 1, full);
@@ -161,7 +193,7 @@ export class Renderer {
     void cross;
   }
   frame(proj: M4, view: M4, eye: V3) {
-    const gl = this.gl; this.stats.draws = 0; this.stats.views = 0;
+    const gl = this.gl; this.stats.draws = 0; this.stats.views = 0; this.stats.culled = 0;
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.STENCIL_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CW);
     gl.clearColor(0.05, 0.05, 0.06, 1); gl.clearStencil(0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     this.renderView(proj, view, eye, new Float32Array([0, 0, 0, -1e9]), 0, null);

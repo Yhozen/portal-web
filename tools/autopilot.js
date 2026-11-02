@@ -5,7 +5,7 @@ window.AP = (() => {
   const LOG = [];
   const W = window.game, G = W.game, pl = W.pl, TICK = 1 / 66, S = 24;
   const tr = (a, b) => pl.trace(a, b);
-  const hurt = () => G.io.ents.filter(e => e.cls === 'trigger_hurt' && e.bmins && e.enabled !== false && !e.killed);
+  const hurt = () => G.io.ents.filter(e => (e.cls === 'trigger_hurt' || (G.held && e.cls === 'trigger_portal_cleanser')) && e.bmins && e.enabled !== false && !e.killed); // carrying a cube: a cleanser would fizzle it
   const inHurt = (p, hs) => hs.some(e => p[0] > e.bmins[0] - 16 && p[0] < e.bmaxs[0] + 16 && p[1] > e.bmins[1] - 16 && p[1] < e.bmaxs[1] + 16 && p[2] > e.bmins[2] - 72 && p[2] < e.bmaxs[2]);
   const key = p => `${Math.round(p[0] / 12)},${Math.round(p[1] / 12)},${Math.round(p[2] / 16)}`;
   const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.707, 0.707], [0.707, -0.707], [-0.707, 0.707], [-0.707, -0.707]];

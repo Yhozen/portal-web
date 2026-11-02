@@ -550,7 +550,7 @@ export class Game {
       const t = this.tr.trace(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
       c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
       if (c.Rrel && !c.viaPortal) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
-      if (len(sub(c.pos, want)) > 80) { c.held = false; this.held = null; c.viaPortal = null; }
+      if (len(sub(c.pos, want)) > 80) { this.io.log.push(`${this.io.time.toFixed(2)} held cube snagged at ${c.pos.map(v => v | 0)} (want ${want.map(v => v | 0)}) dropped`); c.held = false; this.held = null; c.viaPortal = null; }
     } else {
       const Z: V3 = [0, 0, 0]; const mask = 0x1 | 0x2 | 0x8 | 0x4000;
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);

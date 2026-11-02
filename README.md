@@ -53,19 +53,28 @@ To use a different install, set `PORTAL_DIR=/path/to/steamapps/common/Portal`.
   carry and physics (AABB), env_fade, env_hudhint (localized), ambient_generic (.wav), and
   trigger_changelevel with landmarks.
 
-## Known gaps
-No skeletal animation, so doors and pedestals pop instead of animating. There is no rotation for
-parented or rotating entities, and the cube is an unrotated AABB. Props don't collide (except elevator
-floors). env_texturetoggle is missing (indicator lights and clocks). There is no MP3 or ADPCM sound, no
-choreo or VCD dialogue, no PVS culling, and no HDR or tone mapping. There are no turrets or energy balls.
+## Added since the first version
+- MDL skeletal animation with CPU skinning: doors, the a01 pedestal and button tops animate. Parented
+  and rotating entities rotate (func_rotating, func_door_rotating, SetParent).
+- The cube is a rigid body: it tumbles on corner contacts, sleeps, keeps its orientation through
+  portals and stays held when carried through a portal. Small props have AABB colliders.
+- Overlays, multi-frame VTFs, texture-toggle proxies (indicator signs) and material_modify_control
+  (the countdown clocks).
+- Audio: soundscripts, wav (PCM and MS-ADPCM), mp3, GLaDOS lines with captions, music.
+- PVS culling per view (including portal views), one world draw per texture per cluster.
+- Start-open doors, CheckStuck-style unstick after teleports, Wake/Sleep inputs on cubes.
+- `tools/autopilot.js` plays the maps through the normal controls only (A* over hull traces,
+  aiming and firing the gun the same way the mouse does). `tools/play/run.sh <map> [png]` runs a
+  per-chamber script from `tools/play/`.
 
-## Licensing and provenance
-- All code here is original. Behaviour was matched from public sources only: the Valve Developer Wiki
-  (file formats, entity and I/O docs) and Valve's public **Source SDK 2013** repository (movement constants
-  and behaviour of `gamemovement.cpp`, and flag and contents values). Ideas on portal rendering are from
-  public talks and articles, and noclip.website (MIT) was used as a format reference. **No leaked Source
-  engine code (2003 or 2020) was read or used.**
-- Valve's assets stay in your Steam install. The local server streams them to your own browser on
-  127.0.0.1. Nothing is copied into the repository (`.gitignore` excludes asset types and `shots/`), and
-  nothing is hosted publicly or pushed. Portal and its assets are © Valve Corporation. You need your
-  own legal copy.
+## Known gaps
+No energy balls, turrets or rockets. Dissolving (the cleanser) only removes objects, without the effect.
+No HDR or tone mapping. Choreo scenes run on their summary timing only, without lip sync or gestures.
+Props other than small ones don't collide. Lighting on models is a single ambient sample.
+
+## Credits and references
+Clean-room implementation. File formats and behaviour come from the Valve Developer Wiki, Valve's
+public Source SDK 2013 headers (struct layouts and movement constants) and the MIT-licensed
+noclip.website (the order of the lightmap and displacement UVs). No leaked Source engine code was
+used, read or referenced. Portal and its assets are © Valve. They are read from your own install
+at runtime and are never copied into this repository or served beyond 127.0.0.1.

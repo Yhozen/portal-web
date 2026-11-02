@@ -4,7 +4,7 @@ import { parseVTF, decodeToRGBA, FMT, TEXF } from './vtf.ts';
 
 export interface GLMat { name: string; vmt: Material | null; tex: WebGLTexture; w: number; h: number; translucent: boolean; additive: boolean; alphatest: number;
   unlit: boolean; tint: [number, number, number, number]; nodraw: boolean; noportal: boolean; selfillum: boolean;
-  frames?: WebGLTexture[]; animRate?: number; toggle?: boolean; }
+  frames?: WebGLTexture[]; animRate?: number; toggle?: boolean; frame0?: number; }
 
 export class MaterialCache {
   gl: WebGL2RenderingContext; assets: Assets; s3tc: any; mats = new Map<string, Promise<GLMat>>(); texs = new Map<string, Promise<{ tex: WebGLTexture; w: number; h: number; frames?: WebGLTexture[] } | null>>();
@@ -41,7 +41,7 @@ export class MaterialCache {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, v.flags & TEXF.CLAMPT ? gl.CLAMP_TO_EDGE : gl.REPEAT);
     return t; };
     const t = up(0); let frames: WebGLTexture[] | undefined;
-    if (v.frames > 1) { frames = [t]; for (let f = 1; f < Math.min(v.frames, 32); f++) frames.push(v.data[0][f] ? up(f) : t); }
+    if (v.frames > 1) { frames = [t]; for (let f = 1; f < Math.min(v.frames, 64); f++) frames.push(v.data[0][f] ? up(f) : t); }
     return { tex: t, w: v.width, h: v.height, frames };
   }
   get(name: string) {
@@ -63,7 +63,8 @@ export class MaterialCache {
     if (base) { const t = await this.texture(base); if (t) { m.tex = t.tex; m.w = t.w; m.h = t.h; m.frames = t.frames; } }
     const px = vmt?.proxies; if (px && m.frames) for (const [k, v] of Object.entries(px)) { const kk = k.toLowerCase().replace(/#\d+$/, '');
       if (kk === 'animatedtexture' && typeof v === 'object') m.animRate = +((v as any).animatedtextureframerate || 15);
-      if (kk === 'toggletexture') m.toggle = true; }
+      if (kk === 'toggletexture' || kk === 'materialmodify') m.toggle = true; }
+    if (m.frames && P['$frame']) m.frame0 = +P['$frame'] || 0;
     else if (/refract|water/.test(sh)) m.tex = this.white;
     else if (!vmt) console.warn('missing material', name);
     return m;

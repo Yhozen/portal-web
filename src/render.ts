@@ -93,7 +93,7 @@ export class Renderer {
   /** pick the VTF frame: env_texturetoggle index (ToggleTexture proxy), AnimatedTexture rate, else frame 0 */
   texOf(m: GLMat, f?: number) { const F = m.frames; if (!F) return m.tex;
     if (f !== undefined && (m.toggle || !m.animRate)) return F[((f % F.length) + F.length) % F.length];
-    if (m.animRate) return F[Math.floor(this.time * m.animRate) % F.length]; return m.tex; }
+    if (m.animRate) return F[Math.floor(this.time * m.animRate) % F.length]; return m.frame0 ? F[m.frame0 % F.length] : m.tex; }
   private drawModels(vp: M4, clip: Float32Array, translucent: boolean) {
     const gl = this.gl, P = this.prog.world, w = this.world;
     gl.useProgram(P.p); gl.uniformMatrix4fv(P.u.uVP, false, vp); gl.uniform4fv(P.u.uClip, clip);

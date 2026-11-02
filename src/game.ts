@@ -315,6 +315,12 @@ export class Game {
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
       else return false; return true; };
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
+    // material_modify_control: drives $frame of its parent brush's material (Valve Developer Wiki); used by the a00 countdown clock
+    H.set('material_modify_control', (e, i, param) => { const par = e.kv.parentname ? this.io.find(e.kv.parentname, null, e)[0] : null; const ins: any = par && (par.inst || par.prop); if (!ins) return true;
+      if (i === 'setmaterialvar') { e.lerp = null; ins.texFrame = Math.floor(+param || 0); }
+      else if (i === 'startfloatlerp') { const [a, b, d, lp] = (param || '').trim().split(/\s+/).map(Number); e.lerp = { a, b, d: Math.max(0.01, d || 1), loop: !!lp, t0: this.io.time, ins }; this.mmcs.add(e); }
+      else if (i === 'startanimsequence') { const [a, b, rate, lp] = (param || '').trim().split(/\s+/).map(Number); e.lerp = { a, b, d: Math.max(0.01, Math.abs(b - a) / Math.max(1, rate || 10)), loop: !!lp, t0: this.io.time, ins }; this.mmcs.add(e); }
+      else return false; return true; });
     H.set('env_texturetoggle', (e, i, param) => {
       const ts = this.io.find(e.kv.target || '', null, e); if (!ts.length) return i === 'settextureindex' || i === 'incrementtextureindex';
       for (const t of ts) { const ins: any = t.inst || t.prop || t.ovl; if (!ins) continue;
@@ -432,7 +438,7 @@ export class Game {
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
     // triggers
-    this.updateGunPickup();
+    this.updateGunPickup(); this.updateMMC();
     this.updateTriggers();
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
@@ -491,6 +497,9 @@ export class Game {
     const had = this.hasGunBefore; this.hasGun = true; this.canFire = [g.kv.canfireportal1 !== '0' || (had && this.canFire[0]), g.kv.canfireportal2 !== '0' || (had && this.canFire[1])];
     this.hasGunBefore = true; g.killed = true; g.onKill?.(); this.io.fire(g, 'onplayerpickup', this.playerEnt); this.io.log.push(`${this.io.time.toFixed(2)} picked up ${g.name} (blue ${this.canFire[0]}, orange ${this.canFire[1]})`);
   }
+  mmcs = new Set<any>();
+  updateMMC() { for (const e of this.mmcs) { const L = e.lerp; if (!L) { this.mmcs.delete(e); continue; } let u = (this.io.time - L.t0) / L.d;
+      if (u >= 1) { if (L.loop) u = u % 1; else { u = 1; e.lerp = null; } } L.ins.texFrame = Math.floor(L.a + (L.b - L.a) * u); } }
   hasGunBefore = false;
   updateTriggers() {
     const io = this.io; const pl = this.player; const pmin = add(pl.pos, HULL.mins), pmax = add(pl.pos, pl.maxs());

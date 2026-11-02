@@ -1,3 +1,4 @@
+import { findSeq, skinModel } from './models.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -81,7 +82,7 @@ export class Game {
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
-      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; }
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
     if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }
@@ -277,11 +278,10 @@ export class Game {
       return true;
     });
     H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; if (e.inst) e.inst.visible = e.enabled; return true; });
-    const propVis = (e: Ent, i: string, param: string) => { if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') {
-        // no skeletal animation playback yet: approximate door/cover open/close animations by hiding/showing the model
-        const m = (e.kv.model || '').toLowerCase(); const p = param.toLowerCase();
-        if (/door|cover|dropper/.test(m)) { if (/^open/.test(p)) e.prop.visible = false; else if (/^close/.test(p) || /idle_closed/.test(p)) e.prop.visible = true; }
-      } else return i === 'setdefaultanimation' || i === 'setplaybackrate'; return true; };
+    const propVis = (e: Ent, i: string, param: string) => { if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') { this.playAnim(e, param, false); }
+      else if (i === 'setdefaultanimation') { e.defaultAnim = param; }
+      else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
+      else return false; return true; };
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
     H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') e.speedNow = -e.startspeed; else if (i === 'setspeed') { } return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
@@ -308,7 +308,26 @@ export class Game {
     }
   }
   // ---------- per-tick update ----------
+  /** start a sequence by name on a prop entity (applied once the model has loaded) */
+  playAnim(e: Ent, name: string, isDefault: boolean) {
+    const pr = e.prop; if (!pr || !name) return;
+    const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
+      pr.seq = si; pr.cycle = 0; pr.rate = pr.rate ?? 1; pr.loop = m.skel.seqs[si].looping;
+      pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim || e.kv.defaultanim; if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
+    if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
+  }
+  animateProps(dt: number) {
+    for (const pr of this.r.props) { const m = pr.model; if (!m || pr.seq === undefined || !pr.visible) continue;
+      const sq = m.skel.seqs[pr.seq]; if (!sq) continue;
+      const dur = Math.max(1, sq.frames - 1) / (sq.fps || 30);
+      if (sq.frames > 1 && pr.rate) { let c = (pr.cycle || 0) + dt * pr.rate / dur;
+        if (c >= 1) { if (pr.loop) c %= 1; else { c = 1; if (pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } } } pr.cycle = c; }
+      const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3);
+      if (pr.posed !== key && pr.seq !== undefined) { if (pr.seq === 0 && !pr.cycle && !pr.skinned) { pr.posed = key; continue; } pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, pr.seq, pr.cycle || 0); pr.posed = key; }
+    }
+  }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
+    this.animateProps(dt);
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;

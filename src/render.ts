@@ -3,7 +3,7 @@ import { STRIDE, type WorldMesh } from './world.ts';
 import { MaterialCache, type GLMat } from './materials.ts';
 import { mul, type M4, type V3, basisMatrix, invertRigid, dot, cross } from './math.ts';
 import type { BSP } from './bsp.ts';
-import type { GLModel } from './models.ts';
+import type { GLModel, Skinned } from './models.ts';
 
 const WORLD_VS = `
 layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUV; layout(location=2) in vec2 aLM; layout(location=3) in vec3 aN; layout(location=4) in float aA;
@@ -30,7 +30,8 @@ void main(){ float r = length(vP);
 export interface Portal { pos: V3; f: V3; r: V3; u: V3; color: V3; open: boolean; linked: Portal | null; name: string; }
 export interface Instance { model: number; matrix: M4; visible: boolean; alpha?: number; }
 export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
-export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; ambient: [number, number, number]; tint?: [number, number, number]; }
+export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; ambient: [number, number, number]; tint?: [number, number, number];
+  seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; onDone?: () => void; }
 
 export function portalMatrix(p: Portal) { return basisMatrix(p.pos, p.f, [-p.r[0], -p.r[1], -p.r[2]], p.u); }
 const ROT180 = (() => { const m = new Float32Array(16); m[0] = -1; m[5] = -1; m[10] = 1; m[15] = 1; return m; })();
@@ -79,7 +80,7 @@ export class Renderer {
     }
     gl.uniform1f(P.u.uLMScale, 0);
     for (const pr of this.props) {
-      if (!pr.visible || !pr.model) continue; const md = pr.model; gl.bindVertexArray(md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
+      if (!pr.visible || !pr.model) continue; const md = pr.model; gl.bindVertexArray(pr.skinned ? pr.skinned.vao : md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
       gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
       for (const d of md.draws) {
         const m = skin[d.mat] || skin[0]; if (!m || m.translucent !== translucent) continue;

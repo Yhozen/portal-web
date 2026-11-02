@@ -1,7 +1,7 @@
 // Studio model (MDL v44–v49) + VVD + VTX reader for static bind-pose rendering. Clean-room from the
 // Valve Developer Wiki pages "MDL", "VVD" and "VTX" (studio.h / optimize.h layouts in the public SDK 2013).
 export interface MdlMesh { material: number; indices: number[]; }
-export interface MdlData { name: string; verts: Float32Array /* pos3 n3 uv2 */; meshes: MdlMesh[]; materials: string[][] /* per skin */; mins: number[]; maxs: number[]; hullMins: number[]; hullMaxs: number[]; attachments: { name: string; bone: number; m: number[] }[]; bones: { name: string; parent: number; pos: number[]; rot: number[] }[]; }
+export interface MdlData { name: string; verts: Float32Array /* pos3 n3 uv2 */; weights: Float32Array; boneIds: Uint8Array; meshes: MdlMesh[]; materials: string[][] /* per skin */; mins: number[]; maxs: number[]; hullMins: number[]; hullMaxs: number[]; attachments: { name: string; bone: number; m: number[] }[]; bones: { name: string; parent: number; pos: number[]; rot: number[] }[]; }
 
 const cstr = (dv: DataView, o: number) => { let s = ''; for (let p = o; p < dv.byteLength; p++) { const c = dv.getUint8(p); if (!c) break; s += String.fromCharCode(c); } return s; };
 
@@ -34,8 +34,9 @@ export function parseMDL(mdl: ArrayBuffer, vvd: ArrayBuffer, vtx: ArrayBuffer): 
   let order: number[] = [];
   if (numFix) { for (let i = 0; i < numFix; i++) { const o = fixStart + i * 12; const lod = v.getInt32(o, true), src = v.getInt32(o + 4, true), n = v.getInt32(o + 8, true); if (lod >= 0) for (let k = 0; k < n; k++) order.push(src + k); } }
   else order = Array.from({ length: lod0 }, (_, i) => i);
-  const verts = new Float32Array(order.length * 8);
-  order.forEach((src, i) => { const o = vStart + src * 48 + 16; for (let k = 0; k < 8; k++) verts[i * 8 + k] = v.getFloat32(o + k * 4, true); });
+  const verts = new Float32Array(order.length * 8), weights = new Float32Array(order.length * 3), boneIds = new Uint8Array(order.length * 3);
+  order.forEach((src, i) => { const b = vStart + src * 48, o = b + 16; for (let k = 0; k < 8; k++) verts[i * 8 + k] = v.getFloat32(o + k * 4, true);
+    const nb = v.getUint8(b + 15); for (let k = 0; k < 3; k++) { weights[i * 3 + k] = k < nb ? v.getFloat32(b + k * 4, true) : 0; boneIds[i * 3 + k] = v.getUint8(b + 12 + k); } });
   // VTX
   const x = new DataView(vtx), xi = (o: number) => x.getInt32(o, true);
   const sgSize = version >= 49 ? 33 : 25, stripSize = version >= 49 ? 35 : 27;
@@ -67,5 +68,5 @@ export function parseMDL(mdl: ArrayBuffer, vvd: ArrayBuffer, vtx: ArrayBuffer): 
       }
     }
   }
-  return { name, verts, meshes, materials, mins, maxs, hullMins, hullMaxs, attachments, bones };
+  return { name, verts, weights, boneIds, meshes, materials, mins, maxs, hullMins, hullMaxs, attachments, bones };
 }

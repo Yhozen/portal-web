@@ -24,6 +24,7 @@ lg('to left pedestal', AP.reach([704, 1080, 704], 40));
 lg('blue above right pedestal', shoot(0, [731, 512, 762]));
 const rb = AP.placeCube(boxB, C(E('floor_buttona_trigger_box_a02_2'))); lg('box B on button a', rb);
 AP.wait(2); lg('exit doors', E('exit_door_left_a02_2').state + ' counter ' + (E('counter_buttons_rm3a').value ?? E('counter_buttons_rm3a').counter));
+if (window.STOP_EXIT) { AP.reach([700, 750, 584], 40); AP.lookAt([150, 832, 640]); AP.wait(0.3); throw 'stopped for screenshot'; }
 lg('through exit doors', AP.reach([150, 832, 576], 40)); AP.wait(3);
 lg('portals', G.portals.filter(p => p.open).map(p => p.name + '@' + p.pos.map(v=>v|0)).join(' '));
 lg('to exit elevator', AP.reach(F('a02-a03_trigger_elevator_move') || [-732, 832, 700], 30)); AP.wait(20, () => !!window.changedTo); lg('changelevel', window.changedTo || null);

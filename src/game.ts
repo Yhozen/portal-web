@@ -386,6 +386,7 @@ export class Game {
   // Behaviour from the Valve Developer Wiki entity pages: the launcher keeps up to `ballcount` balls alive, respawning after `ballrespawntime`;
   // a ball flies at constant speed, bounces off world geometry, passes through portals (its remaining life is topped up to `minlifeafterportal`),
   // and dies when its `balllifetime` runs out. Catchers are physics-flagged triggers filtered by filter_combineball_type.
+  trainCarried = false;
   balls: { ent: Ent; pos: V3; vel: V3; r: number; die: number; launcher: Ent; prop: PropInst }[] = [];
   launchBall(L: Ent) {
     const io = this.io; const f = angleVectors(L.angles || [0, 0, 0]).f; const spd = +(L.kv.minspeed || 200) || 200; const r = +(L.kv.ballradius || 12) || 12;
@@ -475,7 +476,7 @@ export class Game {
         if (!path) e.speedNow = 0; else {
           const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
-          if (this.player.groundEnt === e || this.onTrain(e)) this.player.pos = add(this.player.pos, mv);
+          if (this.player.groundEnt === e || this.onTrain(e)) { this.player.pos = add(this.player.pos, mv); this.trainCarried = true; }
           if (d <= step) { e.curPath = path; io.fire(path, 'onpass', null); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
@@ -508,10 +509,11 @@ export class Game {
     }
     // ride along on moving brush entities that aren't trains (parented lift platforms, func_door lifts); a platform rising into the
     // player's feet lifts the player instead of shoving them sideways
+    const carried = this.trainCarried; this.trainCarried = false;
     for (const e of io.ents) if (e.col && e.pos && e.cls !== 'func_tracktrain' && !e.killed) {
       const lp = e.ridePos; e.ridePos = [...e.pos];
       if (!lp) continue; const d = sub(e.pos, lp); if (!d[0] && !d[1] && !d[2]) continue;
-      if (this.player.groundEnt === e) { this.player.pos = add(this.player.pos, d); continue; }
+      if (this.player.groundEnt === e) { if (!carried) this.player.pos = add(this.player.pos, d); continue; }
       if (d[2] > 0) { this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt);
         if (pt.startsolid && pt.ent === e) { const up: V3 = add(this.player.pos, [0, 0, d[2] + 0.1]); const q = this.tr.trace(up, up, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt); if (!q.startsolid) this.player.pos = up; } }
     }

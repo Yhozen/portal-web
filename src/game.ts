@@ -1,3 +1,4 @@
+import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel } from './models.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
@@ -11,13 +12,13 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
 
-interface Cube { ent: Ent; pos: V3; vel: V3; held: boolean; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; }
+interface Cube extends Body { ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; }
 
 export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
-  sounds: ((path: string, pos?: V3) => void) | null = null; stats = { teleports: 0, portalsPlaced: 0 }; noportalVolumes: Ent[] = [];
+  sounds: ((path: string, pos?: V3) => void) | null = null; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
     this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
     this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
@@ -29,7 +30,7 @@ export class Game {
     this.setupHandlers();
     r.instances.push({ model: 0, matrix: m4(), visible: true });
     for (const kv of bsp.entities) this.spawn(kv);
-    for (const p of bsp.staticProps) this.addProp(p.model, p.origin as V3, p.angles as V3, p.skin);
+    for (const p of bsp.staticProps) { const pi = this.addProp(p.model, p.origin as V3, p.angles as V3, p.skin); if (p.solid) this.solidProp(pi, null); }
     // func_tracktrain snaps to its first path_track at spawn
     for (const e of this.io.ents) if (e.cls === 'func_tracktrain') { const p0 = this.io.find(e.pathName, null, e)[0];
       if (p0) { const np = add(p0.origin, [0, 0, +(e.kv.height || 0)]); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2]; e.curPath = p0; e.pathName = (p0.kv.target || '').toLowerCase(); if (e.inst) e.inst.matrix = entityMatrix(e.pos, e.angles); }
@@ -42,6 +43,16 @@ export class Game {
   addProp(model: string, origin: V3, angles: V3, skin = 0): PropInst {
     const pi: PropInst = { model: null, matrix: entityMatrix(origin, angles), visible: true, skin, ambient: this.ambientAt(origin) };
     this.models.get(model).then(m => pi.model = m); this.r.props.push(pi); return pi;
+  }
+  /** give a non-animated prop an AABB collider from its MDL hull (small props only: big ones are hollow vphysics shapes) */
+  solidProp(pi: PropInst, ent: any) {
+    const check = () => { const m = pi.model; if (!m) return false; const d = m.data; let lo = d.hullMins, hi = d.hullMaxs;
+      if (!(hi[0] > lo[0])) { lo = d.mins; hi = d.maxs; }
+      if (Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) > 100 || Math.min(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) < 2) return true;
+      const M = pi.matrix, mn: V3 = [1e9, 1e9, 1e9], mx: V3 = [-1e9, -1e9, -1e9];
+      for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) for (let k = 0; k < 3; k++) { const v = M[k] * x + M[4 + k] * y + M[8 + k] * z + M[12 + k]; mn[k] = Math.min(mn[k], v); mx[k] = Math.max(mx[k], v); }
+      this.tr.extraBoxes.push({ mins: mn, maxs: mx, ent }); this.stats.solidProps = (this.stats.solidProps || 0) + 1; return true; };
+    const poll = () => { if (!check()) setTimeout(poll, 100); }; poll();
   }
   ambientAt(p: V3): [number, number, number] {
     // cheap stand-in for the ambient cube: sample the lightmap brightness of the floor below
@@ -88,7 +99,7 @@ export class Game {
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
-      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); }
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
     if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }
@@ -97,13 +108,13 @@ export class Game {
   }
   spawnCube(e: Ent) {
     const prop = this.addProp(e.kv.model || 'models/props/metal_box.mdl', e.origin, e.angles, +(e.kv.skin || 0));
-    const cube: Cube = { ent: e, pos: [...e.origin] as V3, vel: [0, 0, 0], held: false, prop, ext: 12, onGround: false, spawn: [...e.origin] as V3, alive: true, tunnel: null };
+    const cube: Cube = { ent: e, pos: [...e.origin] as V3, vel: [0, 0, 0], held: false, prop, ext: 12, onGround: false, spawn: [...e.origin] as V3, alive: true, tunnel: null, R: entityMatrix([0, 0, 0], e.angles), w: [0, 0, 0], h: 12, sleep: 0, asleep: false };
     e.cube = cube; this.cubes.push(cube);
     this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
     e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
     this.updateCubeBox(cube);
   }
-  updateCubeBox(c: Cube) { const b = c.ent.box; b.mins = [c.pos[0] - c.ext, c.pos[1] - c.ext, c.pos[2] - c.ext]; b.maxs = [c.pos[0] + c.ext, c.pos[1] + c.ext, c.pos[2] + c.ext]; }
+  updateCubeBox(c: Cube) { const b = c.ent.box, x = halfExtent(c).map(v => Math.min(v, c.ext * 1.3)); b.mins = [c.pos[0] - x[0], c.pos[1] - x[1], c.pos[2] - x[2]]; b.maxs = [c.pos[0] + x[0], c.pos[1] + x[1], c.pos[2] + x[2]]; }
   // ---------- portals ----------
   activatePortal(e: Ent, on: boolean) {
     const p: Portal = e.portal; if (!p) return;
@@ -398,7 +409,7 @@ export class Game {
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
     // held-cube prop matrix
-    for (const c of this.cubes) c.prop.matrix = entityMatrix(c.pos, c.held ? [0, this.player.ang[1], 0] : c.ent.angles);
+    for (const c of this.cubes) { const m = new Float32Array(c.R); m[12] = c.pos[0]; m[13] = c.pos[1]; m[14] = c.pos[2]; m[15] = 1; c.prop.matrix = m; }
   }
   onTrain(e: Ent) { const p = this.player.pos; const lo = e.platform ? e.platMins : this.bsp.models[e.model].mins, hi = e.platform ? e.platMaxs : this.bsp.models[e.model].maxs; return p[0] > e.pos[0] + lo[0] - 16 && p[0] < e.pos[0] + hi[0] + 16 && p[1] > e.pos[1] + lo[1] - 16 && p[1] < e.pos[1] + hi[1] + 16 && Math.abs(p[2] - (e.pos[2] + hi[2])) < 4; }
   updateCube(c: Cube, dt: number) {
@@ -409,41 +420,31 @@ export class Game {
       const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
       const want = ma(eye, 56, f); this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
       const t = this.tr.trace(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
-      c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end;
+      c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
+      if (c.Rrel) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
       if (len(sub(c.pos, want)) > 80) { c.held = false; this.held = null; }
     } else {
-      c.vel[2] -= 600 * dt;
-      let left = dt;
-      for (let k = 0; k < 4 && left > 0; k++) {
-        this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
-        const end = ma(c.pos, left, c.vel); let t = this.tr.trace(c.pos, end, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
-        if (t.startsolid) { const eb = this.tr.extraBoxes; this.tr.extraBoxes = []; const t2 = this.tr.trace(c.pos, end, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt); this.tr.extraBoxes = eb; if (t2.allsolid) break; Object.assign(t, t2); }
-        c.pos = t.end; if (t.fraction >= 1) break; left *= 1 - t.fraction;
-        const vn = dot(c.vel, t.normal); c.vel = sub(c.vel, scale(t.normal, vn * 1.15));
-        if (t.normal[2] > 0.7) { c.onGround = true; }
-      }
-      // ground friction
-      const g = this.tr.trace(c.pos, [c.pos[0], c.pos[1], c.pos[2] - 1], mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
-      c.onGround = g.fraction < 1 && g.normal[2] > 0.7;
-      if (c.onGround) { const sp = Math.hypot(c.vel[0], c.vel[1]); const ns = Math.max(0, sp - 400 * dt); if (sp > 0) { c.vel[0] *= ns / sp; c.vel[1] *= ns / sp; } if (c.vel[2] < 0) c.vel[2] = 0;
-        // ride moving platforms
-        if (g.ent && g.ent.moving) { const d = sub(add(g.ent.closedPos, scale(sub(g.ent.openPos, g.ent.closedPos), g.ent.t)), g.ent.pos); void d; } }
+      const Z: V3 = [0, 0, 0]; const mask = 0x1 | 0x2 | 0x8 | 0x4000;
+      this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
+      const tf = (p: V3, q: V3) => this.tr.trace(p, q, Z, Z, mask, this.playerEnt);
+      const ns = stepBody(c, dt, tf);
+      c.onGround = ns.some(n => n[2] > 0.7);
       if (c.pos[2] < -16000) c.ent.game.io.fire(c.ent, 'onoutofworld', c.ent);
     }
     this.tr.ignore = null;
     for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, c.pos)) {
-      const M = throughPortal(p, p.linked); c.pos = xformPoint(M, c.pos); c.vel = xformDir(M, c.vel);
+      const M = throughPortal(p, p.linked); c.pos = xformPoint(M, c.pos); c.vel = xformDir(M, c.vel); c.w = xformDir(M, c.w); c.R = mul(M, c.R); c.R[12] = c.R[13] = c.R[14] = 0; c.asleep = false;
       const out = dot(c.vel, p.linked.f); if (out < 60) c.vel = ma(c.vel, 60 - out, p.linked.f);
       if (c.held) { c.held = false; this.held = null; } break;
     }
     this.updateCubeBox(c);
   }
   use() {
-    if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); this.held = null; return; }
+    if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); c.asleep = false; this.held = null; return; }
     const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
     let best: Cube | null = null, bd = 90;
     for (const c of this.cubes) { if (!c.alive) continue; const d = sub(c.pos, eye); const along = dot(d, f); if (along < 0 || along > 100) continue; const perp = len(sub(d, scale(f, along))); if (perp < c.ext + 10 && along < bd) { bd = along; best = c; } }
-    if (best) { best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
+    if (best) { best.Rrel = mul(invertRigid(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0])), best.R); best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
     else {
       // +use on func_button etc.
       this.tr.ignore = null; const t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);

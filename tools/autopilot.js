@@ -39,7 +39,6 @@ window.AP = (() => {
     const ks = [...best.keys()].map(k => k.split(',').map(Number)); const bb = [0, 1, 2].map(i => [Math.min(...ks.map(k => k[i])) * [12, 12, 16][i], Math.max(...ks.map(k => k[i])) * [12, 12, 16][i]]);
     let cl = null, cd = 1e9; for (const k of ks) { const q = [k[0] * 12, k[1] * 12, k[2] * 16]; const d = h(q); if (d < cd) { cd = d; cl = q; } }
     const partial = []; for (let node = near; node; node = prev.get(node.k)) partial.push(node); partial.reverse();
-    const visited = ks.map(k => [k[0] * 12, k[1] * 12, k[2] * 16]).filter((q, i, a) => true);
     return { ok: false, expanded: n, bb, closest: cl, visited: [...new Set([...best.keys()])].map(k => nodeAt.get(k)).filter(Boolean), partial, partialGain: h(start) - nearH, portalEdges: [...prev.keys()].length };
   }
   function walk(path, budget = 120) {
@@ -70,11 +69,15 @@ window.AP = (() => {
       // can't get there yet: get as close as currently possible (e.g. into the room where the next cycling portal will open), then wait
       if (partial && r.partial && r.partialGain > 48 && r.partial.length > 1) walk(r.partial); wait(pause); }
     if (r) delete r.partial; r.tries = tries; return r; }
+  // get there by walking; if no walkable route exists, shoot portals to make one (blue first, then orange if the gun has it)
+  function reach(target, R, opts = {}) { let r = gotoRetry(target, R, opts.tries || 6, 0.5, opts.partial !== false); if (r.ok) return r;
+    for (const which of [0, 1]) { if (!G.canFire[which]) continue; r = portalSolve(target, R, which, { vantage: true, spacing: 200, pitches: [-30, -15, 0, 15, 30, 60, 89], ...opts }); if (r.ok) return r; }
+    return r; }
   // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
-  function pickUp(cube) { let r = gotoRetry([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
+  function pickUp(cube) { let r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
     lookAt(cube.pos); wait(0.1); if (!G.held) G.use(); wait(0.3); return { ok: !!G.held, why: G.held ? '' : 'use() did not grab' }; }
   function placeCube(cube, b) { if (!G.held) { const p = pickUp(cube); if (!p.ok) return p; }
-    let r = gotoRetry([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
+    let r = reach([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
     for (let k = 0; k < 5; k++) { lookAt([b[0], b[1], b[2]]); wait(0.4); if (Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 8) break; approach([b[0] - (cube.pos[0] - pl.pos[0]), b[1] - (cube.pos[1] - pl.pos[1])], 3); }
     G.use(); wait(1.5); return { ok: Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 24, cube: cube.pos.map(v => v | 0) }; }
   // aim + fire the gun (the same shootPortal() the mouse buttons use) over a sweep of directions until the placed portal opens a path
@@ -89,7 +92,7 @@ window.AP = (() => {
   const restorePortals = s => { for (const [p, o] of s.m) p.open = o; for (const q of s.g) { Object.assign(q.p, { pos: q.pos, f: q.f, u: q.u, r: q.r, open: q.open }); G.portalBrushes.delete(q.p); } G.relinkMapPortals(); };
   function portalSolve(target, R, which = 0, opts = {}) { const seen = new Set(); const home = [...pl.pos], a0 = [...pl.ang]; let tried = 0; const snap = snapPortals(), snd = G.snd; G.snd = null;
     let s = sweep(target, R, which, opts, seen); tried += s.tried;
-    if (!s.path && opts.vantage) { restorePortals(snap); const fl = plan(home, -1, opts.floodN || 4000); // R<0: never 'arrives', so this is a flood fill outward from here const ks = [...(fl.visited || [])]; const picks = [];
+    if (!s.path && opts.vantage) { restorePortals(snap); const fl = plan(home, -1, opts.floodN || 4000); /* R<0: never arrives, i.e. a flood fill outward from here */ const ks = [...(fl.visited || [])]; const picks = [];
       for (const q of ks) if (picks.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) > (opts.spacing || 160))) picks.push(q);
       LOG.push('portalSolve: ' + picks.length + ' vantage spots');
       for (const v of picks) { restorePortals(snap); pl.pos = [...v]; s = sweep(target, R, which, opts, seen); tried += s.tried; pl.pos = [...home];
@@ -103,5 +106,5 @@ window.AP = (() => {
   const floorUnder = e => { const c = centre(e); const t = pl.trace([c[0], c[1], e.bmaxs[2] - 4], [c[0], c[1], e.bmins[2] - 200]); return t.fraction < 1 ? t.end : [c[0], c[1], e.bmins[2]]; };
   const centre = e => [0, 1, 2].map(i => (e.bmins[i] + e.bmaxs[i]) / 2);
   const ent = n => G.io.ents.find(e => e.name === n);
-  return { LOG, floorUnder, portalSolve, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
+  return { LOG, reach, floorUnder, portalSolve, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
 })();

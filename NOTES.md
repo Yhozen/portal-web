@@ -9,3 +9,17 @@
 - 10:18 func_tracktrain elevator rides; end-of-path OnPass; trigger_changelevel -> testchmb_a_01 via landmark (shots/09-elevator.png, 10-a01.png).
 - 10:22 Passable (spawnflag 8) trains: no brush collision, floor platform instead -> can walk out of the a01 elevator.
 - 10:26 weapon_portalgun pickup (pedestal in a01, spawn guns in later maps; canfireportal1/2), gun portals link with map prop_portals (blue gun <-> fixed orange in a01, teleport verified; shots/12-a01-gun.png, 13-a01-blue.png). No-pointer-lock fallback (middle-drag look, Q/F fire). README.
+- 10:31 MDL skeletal animation (sequences, compressed anim tracks, CPU skinning), prop_dynamic SetAnimation: doors, pedestal and button tops animate.
+- 10:33 func_rotating / func_door_rotating, rotated brush colliders, full-matrix parenting, SetParent.
+- 10:38 Cube rigid body (corner contacts, tumbling, sleep, orientation kept through portals); solid AABB colliders for small props.
+- 10:42 info_overlay rendering, multi-frame VTFs, ToggleTexture/AnimatedTexture proxies, env_texturetoggle (indicator signs/lights). shots/18-overlays.png, 19-indicator-on.png
+- 10:48 Audio: soundscripts, MS-ADPCM decoder, mp3/wav via decodeAudioData, ambient_generic, GLaDOS dialogue + captions from scenes.image summaries. shots/20-glados-caption.png
+- 10:59 Logic-chain harness tools/solve.js (teleport-based) reaches escape_02 through every map.
+- 11:02 PVS culling: per-cluster world index buffers, PVS box tests for brush ents/props, per-portal-view cluster. escape_02 draws 1446 -> 216, ~11 -> 32 fps (SwiftShader). shots/21, 22
+- 11:05 Parented rotators keep their own spin (a01 pedestal); FirePortal1/2 inputs. shots/23-a01-pedestal-fires.png
+- 11:10 material_modify_control (SetMaterialVar, StartFloatLerp, StartAnimSequence): a00 countdown clock runs. shots/24-a00-countdown-clock.png
+- 11:16 start-open func_doors; CheckStuck-style unstick after teleport; tools/autopilot.js: A* over player-hull traces + input-only walker (aims, moves, use(), shootPortal() like the real controls).
+- 11:24 Held cubes stay held through portals; testchmb_a_00 completed by real traversal (tools/play/testchmb_a_00.js) -> changelevel a01 at ~118 s game time. shots/25, 26
+- 11:37 portalSolve (sweeps real gun shots, vantage spots); testchmb_a_01 completed by real traversal (~82 s). shots/27, 28
+- 11:41 prop_physics Wake/Sleep/EnableMotion; brush toggles wake cubes. a02 part 1 solved by autopilot: box drops into pit, drop in, grab it, shoot blue on pit wall, exit via fixed orange with the box, box on button, middle elevator up. shots/29-a02-pit.png
+- 12:07 Killed point_template originals were still drawn (a02 showed two cubes on the pedestal) -> hidden at spawn. Autopilot can grab cubes resting on pedestals (arrival z window).

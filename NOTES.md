@@ -34,3 +34,23 @@
   2. In 2fc8bf3/c39a010, pickUp/placeCube started using reach and a wider z window. They now try plain gotoRetry first and fall back to the wider window only if that fails.
   After the fix, a00 → a01 at 117.8 s, a01 → a02 at 81.8 s, and a02 part 1 reaches the middle elevator top at 70.6 s.
 - a02 part 2 is still open. The second box sits in a pit and the pedestal box is out of reach from the floor. The intended route probably goes through the fixed orange portal_a1_rm3a at (704,1148,759), which trigger (448,464,611) activates. The exit needs counter_buttons_rm3a = 2.
+
+## 2026-11-02 14:25–15:25 EST — a02 part 2, a03, a04 verified end to end
+- 14:30 a02 part 2 solved (8124410): fixed orange portal_a1_rm3a + blue placed by portalSolve; both boxes on buttons, exit -> a03 at 149.3 s.
+- Energy balls (point_energy_ball_launcher / prop_energy_ball, from the Valve Developer Wiki entity pages): constant speed, bounces,
+  portal transit tops lifetime up to minlifeafterportal, respawn after ballrespawntime; triggers with sf 8/64 see balls; filter_combineball_type.
+- env_entity_maker now places whole template groups (catchers: trigger, housing, relays) at maker origin/angles.
+- Parented triggers follow their parent; moving brush entities (parented lift slabs, func_door lifts) carry the player and lift them
+  when rising into their feet (fixes being shoved off the a03 lift); no double carry for tracktrain child brushes.
+- func_tracktrain StartBackward (heads for the path_track that targets the current one); StartForward from a dead-end resumes properly.
+- Floor portals: hull-centre crossing as well as eye crossing (shallow hole under portal_b_rm4 stopped the eye from crossing);
+  floor/ceiling exits put the whole hull in front of the exit plane.
+- a03 (tools/play/testchmb_a_03.js): ball via ceiling portal into floor catcher -> lift -> middle elevator -> wall ball via blue into
+  orange floor portal up into ceiling catcher -> cart; blue on ceiling over cart home, drop through orange floor portal, ride, jump the
+  60u gap, exit -> a04 at 119.3 s.
+- a04 (tools/play/testchmb_a_04.js): blue on east wall, then moved to the north wall at x 300 while the ball bounces back into orange ->
+  catcher at 17.5 s; portal to the orange ledge, blue on south wall over the cart home, walk into orange onto the cart, ride, exit -> a05 at 71.5 s.
+- Regression (final code): a00 -> a01 117.8 s, a01 -> a02 81.8 s, a02 -> a03 149.3 s, a03 -> a04 119.3 s.
+- a05 (WIP script): the naive route carries the box through trigger_fryer_rm5-a and it fizzles (re-drop works). Needs a portal route
+  around the fryer using portal_a_lvl5-a (-128,-191,178, facing +x).
+- Shots: shots/38-a02-part2-both-buttons.png, shots/37-a03-cart-ride.png, shots/39-a04-cart-ride.png (local only, gitignored).

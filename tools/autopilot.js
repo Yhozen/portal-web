@@ -57,5 +57,9 @@ window.AP = (() => {
   function goto(target, R) { const p = plan(target, R); if (!p.ok) return { ok: false, why: 'no path (' + p.expanded + ' nodes)', bb: p.bb, closest: p.closest, from: pl.pos.map(v => v | 0) }; const w = walk(p.path); w.nodes = p.path.length; w.expanded = p.expanded; w.portals = p.path.filter(n => n.portal).length; return w; }
   function wait(sec, until) { for (let t = 0; t < sec; t += TICK) { W.step(TICK); if (until && until()) return true; } return !until; }
   function lookAt(p) { const e = pl.eye(); const d = [p[0] - e[0], p[1] - e[1], p[2] - e[2]]; pl.ang = [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0]; }
-  return { plan, walk, goto, wait, lookAt };
+  // fine positioning without turning (keeps aim): strafe/forward toward an xy point, slowing down near it
+  function approach(target, tol = 4, maxT = 4) { for (let t = 0; t < maxT; t += TICK) { const d = [target[0] - pl.pos[0], target[1] - pl.pos[1]]; const dist = Math.hypot(d[0], d[1]); if (dist < tol) { pl.vel[0] = pl.vel[1] = 0; return true; }
+      const y = pl.ang[1] * Math.PI / 180, f = [Math.cos(y), Math.sin(y)], r = [Math.sin(y), -Math.cos(y)]; const k = Math.min(1, dist / 40);
+      W.step(TICK, { fwd: (d[0] * f[0] + d[1] * f[1]) / dist * k, side: (d[0] * r[0] + d[1] * r[1]) / dist * k, jump: false, duck: false }); } return false; }
+  return { plan, walk, goto, wait, lookAt, approach };
 })();

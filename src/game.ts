@@ -73,7 +73,7 @@ export class Game {
         e.inst = inst; this.r.instances.push(inst);
         const passableTrain = c === 'func_tracktrain' && (+kv.spawnflags & 8);
         if (passableTrain) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
-          e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-56, -56, M.mins[2]]; e.platMaxs = [56, 56, M.mins[2] + 4]; }
+          e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-80, -80, M.mins[2]]; e.platMaxs = [80, 80, M.mins[2] + 4]; }
         const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
         if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => !e.killed && (c !== 'func_brush' || e.enabled) }; e.col = col; this.tr.colliders.push(col); }
         if (c === 'func_brush' && kv.startdisabled === '1') { e.enabled = false; inst.visible = false; }

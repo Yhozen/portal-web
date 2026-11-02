@@ -13,7 +13,7 @@ interface Cube { ent: Ent; pos: V3; vel: V3; held: boolean; prop: PropInst; ext:
 
 export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
-  portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; held: Cube | null = null;
+  portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
   sounds: ((path: string, pos?: V3) => void) | null = null; stats = { teleports: 0, portalsPlaced: 0 }; noportalVolumes: Ent[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
@@ -28,6 +28,10 @@ export class Game {
     r.instances.push({ model: 0, matrix: m4(), visible: true });
     for (const kv of bsp.entities) this.spawn(kv);
     for (const p of bsp.staticProps) this.addProp(p.model, p.origin as V3, p.angles as V3, p.skin);
+    // func_tracktrain snaps to its first path_track at spawn
+    for (const e of this.io.ents) if (e.cls === 'func_tracktrain') { const p0 = this.io.find(e.pathName, null, e)[0];
+      if (p0) { const np = add(p0.origin, [0, 0, +(e.kv.height || 0)]); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2]; e.curPath = p0; e.pathName = (p0.kv.target || '').toLowerCase(); if (e.inst) e.inst.matrix = entityMatrix(e.pos, e.angles); }
+      if (e.platform) { e.platform.mins = add(e.pos, e.platMins); e.platform.maxs = add(e.pos, e.platMaxs); } }
     for (const t of this.io.ents) if (t.cls === 'point_template' && !(+t.kv.spawnflags & 1))
       for (const [k, v] of Object.entries(t.kv)) if (/^template\d\d$/.test(k)) for (const e of this.io.byName.get(v.toLowerCase()) || []) { e.killed = true; e.onKill?.(); }
     this.relinkMapPortals();
@@ -53,7 +57,10 @@ export class Game {
         const inst: Instance = { model: bm, matrix: entityMatrix(e.origin, e.angles), visible: c !== 'func_brush' || e.enabled || kv.startdisabled !== '1', alpha: kv.rendermode && kv.rendermode !== '0' ? +(kv.renderamt ?? 255) / 255 : 1 };
         if (kv.rendermode === '10') inst.visible = false;
         e.inst = inst; this.r.instances.push(inst);
-        const solid = !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
+        const passableTrain = c === 'func_tracktrain' && (+kv.spawnflags & 8);
+        if (passableTrain) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
+          e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-56, -56, M.mins[2]]; e.platMaxs = [56, 56, M.mins[2] + 4]; }
+        const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
         if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => !e.killed && (c !== 'func_brush' || e.enabled) }; e.col = col; this.tr.colliders.push(col); }
         if (c === 'func_brush' && kv.startdisabled === '1') { e.enabled = false; inst.visible = false; }
       }
@@ -70,6 +77,7 @@ export class Game {
       const p: Portal = { pos: e.origin, f, r, u, color: kv.portaltwo === '1' ? ORANGE : BLUE, open: false, linked: null, name: e.name }; e.portal = p; this.portals.push(p);
       if (kv.activated === '1') this.activatePortal(e, true);
     }
+    if (c === 'weapon_portalgun' && !/spawn/.test(e.name)) { e.prop = this.addProp('models/weapons/w_portalgun.mdl', e.origin, e.angles); e.onKill = () => { if (e.prop) e.prop.visible = false; }; }
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
@@ -92,13 +100,17 @@ export class Game {
   // ---------- portals ----------
   activatePortal(e: Ent, on: boolean) {
     const p: Portal = e.portal; if (!p) return;
-    if (on) for (const o of this.io.ents) if (o !== e && o.portal && o.kv.portaltwo === e.kv.portaltwo && o.portal.open) o.portal.open = false;
+    if (on) { for (const o of this.io.ents) if (o !== e && o.portal && o.kv.portaltwo === e.kv.portaltwo && o.portal.open) o.portal.open = false; const gp = this.gunPortals?.[e.kv.portaltwo === '1' ? 1 : 0]; if (gp) gp.open = false; }
     p.open = on; this.portalBrushes.delete(p); this.relinkMapPortals();
   }
   relinkMapPortals() {
+    // one open portal per colour (linkage group 0): the player's gun portal and a map prop_portal of the same colour
+    // replace each other, and whichever blue + orange are open are linked (e.g. gun blue <-> fixed orange in chamber 02)
     const map = this.io.ents.filter(e => e.portal);
-    const blue = map.find(e => e.kv.portaltwo !== '1' && e.portal.open)?.portal, orange = map.find(e => e.kv.portaltwo === '1' && e.portal.open)?.portal;
-    for (const e of map) e.portal.linked = null;
+    const g = this.gunPortals || [];
+    const blue = (g[0]?.open ? g[0] : null) || map.find(e => e.kv.portaltwo !== '1' && e.portal.open)?.portal;
+    const orange = (g[1]?.open ? g[1] : null) || map.find(e => e.kv.portaltwo === '1' && e.portal.open)?.portal;
+    for (const e of map) e.portal.linked = null; for (const p of g) p.linked = null;
     if (blue && orange) { blue.linked = orange; orange.linked = blue; }
   }
   /** world brushes that make up the surface behind a portal (ignored while something passes through it) */
@@ -163,7 +175,7 @@ export class Game {
     this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
   }
   shootPortal(which: 0 | 1) {
-    if (!this.hasGun) return;
+    if (!this.hasGun || !this.canFire[which]) return;
     const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
     this.tr.ignore = null;
     const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
@@ -212,12 +224,12 @@ export class Game {
     const p = this.gunPortals[which];
     p.pos = pos; p.f = [...n] as V3; p.u = up; p.r = rr; p.open = true; this.portalBrushes.delete(p); this.stats.portalsPlaced++;
     // gun portals replace map portals of the same colour
-    for (const e of this.io.ents) if (e.portal && e.portal.open && (e.kv.portaltwo === '1') === (which === 1)) { e.portal.open = false; this.relinkMapPortals(); }
-    this.gunPortals[0].linked = this.gunPortals[1]; this.gunPortals[1].linked = this.gunPortals[0];
+    for (const e of this.io.ents) if (e.portal && e.portal.open && (e.kv.portaltwo === '1') === (which === 1)) e.portal.open = false;
+    this.relinkMapPortals();
     this.sounds?.(which ? 'weapons/portalgun/portalgun_shoot_red1.wav' : 'weapons/portalgun/portalgun_shoot_blue1.wav');
   }
   fizzleShot(which: number, why: string) { this.io.log.push(`portal ${which} failed: ${why}`); this.sounds?.('weapons/portalgun/portal_invalid_surface3.wav'); }
-  fizzleGunPortals() { for (const p of this.gunPortals) p.open = false; }
+  fizzleGunPortals() { for (const p of this.gunPortals) p.open = false; this.relinkMapPortals(); }
   // ---------- handlers ----------
   setupHandlers() {
     const io = this.io, H = io.handlers;
@@ -265,9 +277,13 @@ export class Game {
       return true;
     });
     H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; if (e.inst) e.inst.visible = e.enabled; return true; });
-    const propVis = (e: Ent, i: string) => { if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else return i === 'setanimation' || i === 'setdefaultanimation' || i === 'setplaybackrate'; return true; };
+    const propVis = (e: Ent, i: string, param: string) => { if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') {
+        // no skeletal animation playback yet: approximate door/cover open/close animations by hiding/showing the model
+        const m = (e.kv.model || '').toLowerCase(); const p = param.toLowerCase();
+        if (/door|cover|dropper/.test(m)) { if (/^open/.test(p)) e.prop.visible = false; else if (/^close/.test(p) || /idle_closed/.test(p)) e.prop.visible = true; }
+      } else return i === 'setdefaultanimation' || i === 'setplaybackrate'; return true; };
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
-    H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') e.speedNow = e.startspeed; else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') e.speedNow = -e.startspeed; else if (i === 'setspeed') { } return true; });
+    H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') e.speedNow = -e.startspeed; else if (i === 'setspeed') { } return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
     H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
     H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) this.respawnTemplate(t, e.origin); } return true; });
@@ -313,10 +329,11 @@ export class Game {
           const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
           if (this.player.groundEnt === e || this.onTrain(e)) this.player.pos = add(this.player.pos, mv);
-          if (d <= step) { io.fire(path, 'onpass', null); const nxt = (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
+          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', null); const nxt = (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
       if (e.inst && e.pos) e.inst.matrix = entityMatrix(e.pos, e.angles);
+      if (e.platform) { e.platform.mins = add(e.pos, e.platMins); e.platform.maxs = add(e.pos, e.platMaxs); }
     }
     // parented props follow their parent's translation
     for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
@@ -334,13 +351,14 @@ export class Game {
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
     // triggers
+    this.updateGunPickup();
     this.updateTriggers();
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
     // held-cube prop matrix
     for (const c of this.cubes) c.prop.matrix = entityMatrix(c.pos, c.held ? [0, this.player.ang[1], 0] : c.ent.angles);
   }
-  onTrain(e: Ent) { const p = this.player.pos; const m = this.bsp.models[e.model]; return p[0] > e.pos[0] + m.mins[0] && p[0] < e.pos[0] + m.maxs[0] && p[1] > e.pos[1] + m.mins[1] && p[1] < e.pos[1] + m.maxs[1] && Math.abs(p[2] - (e.pos[2] + m.maxs[2])) < 4; }
+  onTrain(e: Ent) { const p = this.player.pos; const lo = e.platform ? e.platMins : this.bsp.models[e.model].mins, hi = e.platform ? e.platMaxs : this.bsp.models[e.model].maxs; return p[0] > e.pos[0] + lo[0] - 16 && p[0] < e.pos[0] + hi[0] + 16 && p[1] > e.pos[1] + lo[1] - 16 && p[1] < e.pos[1] + hi[1] + 16 && Math.abs(p[2] - (e.pos[2] + hi[2])) < 4; }
   updateCube(c: Cube, dt: number) {
     const mins: V3 = [-c.ext, -c.ext, -c.ext], maxs: V3 = [c.ext, c.ext, c.ext];
     const prev: V3 = [...c.pos] as V3;
@@ -390,6 +408,19 @@ export class Game {
       if (t.ent && t.ent.cls === 'func_button') this.io.fire(t.ent, 'onpressed', this.playerEnt);
     }
   }
+  // weapon_portalgun: picked up by walking near it; its canfireportal1/2 keyvalues decide which colours work
+  updateGunPickup() {
+    for (const g of this.guns) { if (g.killed) continue;
+      const par = g.kv.parentname ? this.io.find(g.kv.parentname.split(',')[0], null, g)[0] : null;
+      const at = par && par.pos ? add(g.origin, sub(par.pos, par.spawnPos)) : g.origin;
+      const c = add(this.player.pos, [0, 0, 36]); if (Math.hypot(at[0] - c[0], at[1] - c[1], at[2] - c[2]) > 72) continue;
+      this.pickGun(g); }
+  }
+  pickGun(g: Ent) {
+    const had = this.hasGunBefore; this.hasGun = true; this.canFire = [g.kv.canfireportal1 !== '0' || (had && this.canFire[0]), g.kv.canfireportal2 !== '0' || (had && this.canFire[1])];
+    this.hasGunBefore = true; g.killed = true; g.onKill?.(); this.io.fire(g, 'onplayerpickup', this.playerEnt); this.io.log.push(`${this.io.time.toFixed(2)} picked up ${g.name} (blue ${this.canFire[0]}, orange ${this.canFire[1]})`);
+  }
+  hasGunBefore = false;
   updateTriggers() {
     const io = this.io; const pl = this.player; const pmin = add(pl.pos, HULL.mins), pmax = add(pl.pos, pl.maxs());
     const overlap = (a0: V3, a1: V3, b0: V3, b1: V3) => a0[0] < b1[0] && a1[0] > b0[0] && a0[1] < b1[1] && a1[1] > b0[1] && a0[2] < b1[2] && a1[2] > b0[2];

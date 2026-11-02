@@ -25,6 +25,7 @@ http.createServer((req, res) => {
   if (u.pathname.startsWith('/fs/')) {
     const p = decodeURIComponent(u.pathname.slice(4));
     const b = g.read(p);
+    if (!b) console.log('404', p);
     return b ? send(200, b) : send(404, 'not found: ' + p, 'text/plain');
   }
   if (u.pathname === '/ls') return send(200, JSON.stringify(g.list(u.searchParams.get('p') || '')), 'application/json');

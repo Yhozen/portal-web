@@ -1,0 +1,11 @@
+import { chromium } from 'playwright-core';
+const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const p = await (await b.newContext({ viewport: { width: 960, height: 600 } })).newPage();
+await p.goto('http://127.0.0.1:8420/?map=testchmb_a_00');
+await p.waitForFunction(() => window.ready);
+await p.waitForTimeout(1000);
+const st = () => p.evaluate(() => { const g = window.game.pl; return g.pos.map(v => v.toFixed(0)) + ' v' + g.vel.map(v => v.toFixed(0)) + ' g' + g.onGround + ' ang' + g.ang.map(v=>v.toFixed(0)); });
+console.log(await st());
+await p.keyboard.down('Space'); for (let i = 0; i < 5; i++) { await p.waitForTimeout(60); console.log(await st()); } await p.keyboard.up('Space');
+await p.keyboard.down('KeyW'); for (let i = 0; i < 5; i++) { await p.waitForTimeout(200); console.log(await st()); } await p.keyboard.up('KeyW');
+await b.close();

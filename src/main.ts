@@ -26,7 +26,15 @@ async function main() {
   await r.setWorld(bsp, mesh);
   const game = new Game(bsp, r, models);
   if (q.get('fast') !== '0') game.io.timeScale = +(q.get('fast') || 0.15); // shorten long scripted waits (intro VO) by default
-  game.hasGun = q.get('gun') !== '0';
+  // gun: ?gun=1 forces a dual portal gun, ?gun=0 none; otherwise the map decides (weapon_portalgun entities are picked up)
+  game.guns = game.io.ents.filter(e => e.cls === 'weapon_portalgun');
+  const gq = q.get('gun');
+  if (gq === '1' || gq === '2') { game.hasGun = game.hasGunBefore = true; game.canFire = [true, true]; }
+  else if (gq === '0') game.hasGun = false;
+  else { game.hasGun = false; game.canFire = [false, false];
+    // every chamber after 00 has a weapon_portalgun at the spawn point standing in for the gun carried over from the
+    // previous map; give those immediately (in Source the player touches them on spawn). Pedestal guns must be walked to.
+    for (const g of game.guns) if (/spawn/.test(g.name)) { game.pickGun(g); } }
   await models.idle();
   const tLoad = performance.now();
   log(`bsp v${bsp.version} ${bsp.faces.length} faces, ${mesh.faceTris} tris, ${bsp.texdata.length} materials, ${r.props.length} props; fetch ${(tFetch - t0) | 0}ms, total ${(tLoad - t0) | 0}ms, ${(assets.bytes / 1e6).toFixed(1)}MB/${assets.requests} req`);
@@ -60,10 +68,12 @@ async function main() {
     if (e.code === 'KeyE' && !e.repeat) game.use(); if (e.code === 'KeyV' && !e.repeat) noclip = !noclip; if (e.code === 'KeyR' && !e.repeat) location.reload(); });
   addEventListener('keyup', e => keys.delete(e.code));
   canvas.addEventListener('click', () => { canvas.requestPointerLock(); if (!actx) { actx = new AudioContext(); } });
+  addEventListener('keydown', e => { if (document.pointerLockElement === canvas) return; if (e.code === 'KeyQ') game.shootPortal(0); if (e.code === 'KeyF') game.shootPortal(1); });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('mousedown', e => { if (document.pointerLockElement !== canvas) return; if (e.button === 0) game.shootPortal(0); if (e.button === 2) game.shootPortal(1); });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   const sens = +(q.get('sens') || 2.5);
-  addEventListener('mousemove', e => { if (document.pointerLockElement !== canvas) return; pl.ang[1] -= e.movementX * 0.022 * sens; pl.ang[0] = Math.max(-89, Math.min(89, pl.ang[0] + e.movementY * 0.022 * sens)); });
+  addEventListener('mousemove', e => { if (document.pointerLockElement !== canvas && !(e.buttons & 4)) return; /* fallback: middle-drag looks without pointer lock */ pl.ang[1] -= e.movementX * 0.022 * sens; pl.ang[0] = Math.max(-89, Math.min(89, pl.ang[0] + e.movementY * 0.022 * sens)); });
   const stats = { fps: 0, frames: 0, loadMs: tLoad - t0, draws: 0, frameMs: 0 };
   const hud = document.getElementById('hud')!, hint = document.getElementById('hint'), fade = document.getElementById('fade');
   const TICK = 1 / 66; let simAcc = 0;

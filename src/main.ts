@@ -44,7 +44,7 @@ async function main() {
   const loc = new Map<string, string>();
   try { const b = await assets.read('resource/portal_english.txt'); if (b) { const t = new TextDecoder('utf-16le').decode(b); for (const m of t.matchAll(/"([^"]+)"\s+"([^"]*)"/g)) loc.set(m[1].toLowerCase(), m[2]); } } catch { }
   const keyName: Record<string, string> = { '+use': 'E', '+attack': 'LMB', '+attack2': 'RMB', '+jump': 'SPACE', '+duck': 'CTRL', '+forward': 'W', '+back': 'S', '+moveleft': 'A', '+moveright': 'D' };
-  const localize = (s: string) => (loc.get(s.replace(/^#/, '').toLowerCase()) ?? s.replace(/^#/, '')).replace(/%([^%]+)%/g, (_, k) => keyName[k] || k);
+  const localize = (s: string) => (loc.get(s.replace(/^#/, '').toLowerCase()) ?? s.replace(/^#/, '')).replace(/%([^%]+)%/g, (_, k) => ' [' + (keyName[k] || k) + ']   ').trim();
   // spawn
   const pl = game.player; const start = bsp.entities.find(e => e.classname === 'info_player_start');
   pl.pos = parseV3(start?.origin); pl.ang = [0, parseV3(start?.angles)[1], 0];

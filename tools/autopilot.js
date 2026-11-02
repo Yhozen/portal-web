@@ -76,10 +76,10 @@ window.AP = (() => {
     return r; }
   // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
   // a cube up to ~150 units above the floor (on a pedestal) can still be grabbed: the use() ray reaches 100 units from the eye
-  function pickUp(cube) { ZT.lo = -150; let r; try { r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 72); } finally { ZT.lo = -64; } if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
+  function pickUp(cube) { let r = gotoRetry([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) { ZT.lo = -150; try { r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 72); } finally { ZT.lo = -64; } } if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
     lookAt(cube.pos); wait(0.1); if (!G.held) G.use(); wait(0.3); return { ok: !!G.held, why: G.held ? '' : 'use() did not grab' }; }
   function placeCube(cube, b) { if (!G.held) { const p = pickUp(cube); if (!p.ok) return p; }
-    let r = reach([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
+    let r = gotoRetry([b[0], b[1], b[2]], 72); if (!r.ok) r = reach([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
     for (let k = 0; k < 5; k++) { lookAt([b[0], b[1], b[2]]); wait(0.4); if (Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 8) break; approach([b[0] - (cube.pos[0] - pl.pos[0]), b[1] - (cube.pos[1] - pl.pos[1])], 3); }
     G.use(); wait(1.5); return { ok: Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 24, cube: cube.pos.map(v => v | 0) }; }
   // aim + fire the gun (the same shootPortal() the mouse buttons use) over a sweep of directions until the placed portal opens a path

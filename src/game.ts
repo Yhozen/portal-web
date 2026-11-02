@@ -307,13 +307,13 @@ export class Game {
       if (i === 'open') { this.activatePortal(e, true); return true; }
       return true;
     });
-    const doorMove = (e: Ent, open: boolean) => { if (e.locked) return; this.wakeCubes(); const target = open ? 1 : 0; if (e.state === target && e.moving !== true) return; e.state = target; e.moving = true; io.fire(e, open ? 'onopen' : 'onclose', null); };
+    const doorMove = (e: Ent, open: boolean) => { if (e.locked) return; this.wakeCubes(e); const target = open ? 1 : 0; if (e.state === target && e.moving !== true) return; e.state = target; e.moving = true; io.fire(e, open ? 'onopen' : 'onclose', null); };
     H.set('func_door', (e, i) => {
       if (i === 'open') doorMove(e, true); else if (i === 'close') doorMove(e, false); else if (i === 'toggle') doorMove(e, e.state === 0);
       else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') { /* ignore */ }
       return true;
     });
-    H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; this.wakeCubes(); if (e.inst) e.inst.visible = e.enabled; return true; });
+    H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; this.wakeCubes(e); if (e.inst) e.inst.visible = e.enabled; return true; });
     const propVis = (e: Ent, i: string, param: string) => { if (e.cube && (i === 'wake' || i === 'enablemotion')) { e.cube.asleep = false; e.cube.sleep = 0; return true; } if (e.cube && (i === 'sleep' || i === 'disablemotion')) { e.cube.asleep = true; return true; } if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') { this.playAnim(e, param, false); }
       else if (i === 'setdefaultanimation') { e.defaultAnim = param; }
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
@@ -480,7 +480,13 @@ export class Game {
     this.updateCubeBox(c);
   }
   /** something the cubes might rest on changed (a brush toggled, a door moved): let sleeping cubes re-check their support */
-  wakeCubes() { for (const c of this.cubes) { c.asleep = false; c.sleep = 0; } }
+  wakeCubes(e?: Ent) {
+    const M = e && e.model != null ? this.bsp.models[e.model] : null; const o: V3 = e ? (e.pos || e.origin) : [0, 0, 0]; const m = 96;
+    for (const c of this.cubes) {
+      if (M && !(c.pos[0] > o[0] + M.mins[0] - m && c.pos[0] < o[0] + M.maxs[0] + m && c.pos[1] > o[1] + M.mins[1] - m && c.pos[1] < o[1] + M.maxs[1] + m && c.pos[2] > o[2] + M.mins[2] - m && c.pos[2] < o[2] + M.maxs[2] + m)) continue;
+      c.asleep = false; c.sleep = 0;
+    }
+  }
   use() {
     if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); c.asleep = false; this.held = null; return; }
     const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);

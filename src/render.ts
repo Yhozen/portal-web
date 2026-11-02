@@ -31,7 +31,7 @@ export interface Portal { pos: V3; f: V3; r: V3; u: V3; color: V3; open: boolean
 export interface Instance { model: number; matrix: M4; visible: boolean; alpha?: number; texFrame?: number; }
 export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
 export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; texFrame?: number; ambient: [number, number, number]; tint?: [number, number, number];
-  seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; onDone?: () => void; }
+  seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; onDone?: () => void; restPose?: boolean; }
 
 export function portalMatrix(p: Portal) { return basisMatrix(p.pos, p.f, [-p.r[0], -p.r[1], -p.r[2]], p.u); }
 const ROT180 = (() => { const m = new Float32Array(16); m[0] = -1; m[5] = -1; m[10] = 1; m[15] = 1; return m; })();

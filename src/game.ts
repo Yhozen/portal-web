@@ -101,7 +101,7 @@ export class Game {
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
-      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); }
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; e.prop.restPose = true; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
     if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }
@@ -372,7 +372,7 @@ export class Game {
   playAnim(e: Ent, name: string, isDefault: boolean) {
     const pr = e.prop; if (!pr || !name) return;
     const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
-      pr.seq = si; pr.cycle = 0; pr.rate = pr.rate ?? 1; pr.loop = m.skel.seqs[si].looping;
+      pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = m.skel.seqs[si].looping;
       pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim || e.kv.defaultanim; if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
     if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
   }

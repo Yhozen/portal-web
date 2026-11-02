@@ -26,7 +26,7 @@ window.AP = (() => {
     return out;
   }
   function plan(target, R = 28, maxN = 60000) {
-    const hs = hurt(); const start = [...pl.pos]; const open = [{ p: start, g: 0, f: 0, k: key(start) }]; const best = new Map([[open[0].k, 0]]); const prev = new Map();
+    const hs = hurt(); const start = [...pl.pos]; const open = [{ p: start, g: 0, f: 0, k: key(start) }]; const best = new Map([[open[0].k, 0]]); const prev = new Map(); const nodeAt = new Map([[open[0].k, start]]);
     const h = p => Math.hypot(p[0] - target[0], p[1] - target[1], (p[2] - target[2]) * 0.5);
     let n = 0, near = open[0], nearH = h(start);
     while (open.length && n++ < maxN) {
@@ -34,12 +34,13 @@ window.AP = (() => {
       if (cur.g > best.get(cur.k)) continue; { const hc = h(cur.p); if (hc < nearH) { nearH = hc; near = cur; } }
       if (Math.hypot(cur.p[0] - target[0], cur.p[1] - target[1]) < R && Math.abs(cur.p[2] - target[2]) < 64) {
         const path = []; let k = cur.k, node = cur; while (node) { path.push(node); node = prev.get(node.k); } return { ok: true, path: path.reverse(), expanded: n }; }
-      for (const nb of neighbors(cur.p, hs)) { const k = key(nb.q), g = cur.g + nb.c; if (g < (best.get(k) ?? 1e9)) { best.set(k, g); const node = { p: nb.q, g, f: g + h(nb.q) * 1.2, k, portal: nb.portal }; prev.set(k, cur); open.push(node); } }
+      for (const nb of neighbors(cur.p, hs)) { const k = key(nb.q), g = cur.g + nb.c; if (g < (best.get(k) ?? 1e9)) { best.set(k, g); const node = { p: nb.q, g, f: g + h(nb.q) * 1.2, k, portal: nb.portal }; prev.set(k, cur); nodeAt.set(k, nb.q); open.push(node); } }
     }
     const ks = [...best.keys()].map(k => k.split(',').map(Number)); const bb = [0, 1, 2].map(i => [Math.min(...ks.map(k => k[i])) * [12, 12, 16][i], Math.max(...ks.map(k => k[i])) * [12, 12, 16][i]]);
     let cl = null, cd = 1e9; for (const k of ks) { const q = [k[0] * 12, k[1] * 12, k[2] * 16]; const d = h(q); if (d < cd) { cd = d; cl = q; } }
     const partial = []; for (let node = near; node; node = prev.get(node.k)) partial.push(node); partial.reverse();
-    return { ok: false, expanded: n, bb, closest: cl, partial, partialGain: h(start) - nearH, portalEdges: [...prev.keys()].length };
+    const visited = ks.map(k => [k[0] * 12, k[1] * 12, k[2] * 16]).filter((q, i, a) => true);
+    return { ok: false, expanded: n, bb, closest: cl, visited: [...new Set([...best.keys()])].map(k => nodeAt.get(k)).filter(Boolean), partial, partialGain: h(start) - nearH, portalEdges: [...prev.keys()].length };
   }
   function walk(path, budget = 120) {
     let t = 0, stuck = 0, last = [...pl.pos], i = 1;
@@ -76,7 +77,31 @@ window.AP = (() => {
     let r = gotoRetry([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
     for (let k = 0; k < 5; k++) { lookAt([b[0], b[1], b[2]]); wait(0.4); if (Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 8) break; approach([b[0] - (cube.pos[0] - pl.pos[0]), b[1] - (cube.pos[1] - pl.pos[1])], 3); }
     G.use(); wait(1.5); return { ok: Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 24, cube: cube.pos.map(v => v | 0) }; }
+  // aim + fire the gun (the same shootPortal() the mouse buttons use) over a sweep of directions until the placed portal opens a path
+  // aim + fire the gun (the same shootPortal() the mouse buttons use) over a sweep of directions until the placed portal opens a path.
+  // With opts.vantage, also tries from other reachable spots (sampled from the planner's flood fill): walks there first, then shoots.
+  function sweep(target, R, which, opts, seen) { const pitches = opts.pitches || [-30, -15, 0, 15, 30, 45, 60]; let tried = 0;
+    for (let yaw = 0; yaw < 360; yaw += opts.yawStep || 10) for (const pitch of pitches) { pl.ang = [pitch, yaw, 0]; G.shootPortal(which); const P = G.gunPortals[which];
+      if (!P.open) continue; const k = P.pos.map(v => Math.round(v / 16)).join(',') + P.f.map(v => Math.round(v * 4)).join(','); if (seen.has(k)) continue; seen.add(k); tried++;
+      if (!P.linked || !P.linked.open) continue; const p = plan(target, R, opts.maxN || 20000); if (p.ok && p.path.some(n => n.portal)) return { yaw, pitch, path: p.path, tried, shot: P.pos.map(v => v | 0) }; }
+    return { tried }; }
+  const snapPortals = () => ({ g: G.gunPortals.map(p => ({ p, pos: [...p.pos], f: [...p.f], u: [...p.u], r: [...p.r], open: p.open })), m: G.portals.map(p => [p, p.open]) });
+  const restorePortals = s => { for (const [p, o] of s.m) p.open = o; for (const q of s.g) { Object.assign(q.p, { pos: q.pos, f: q.f, u: q.u, r: q.r, open: q.open }); G.portalBrushes.delete(q.p); } G.relinkMapPortals(); };
+  function portalSolve(target, R, which = 0, opts = {}) { const seen = new Set(); const home = [...pl.pos], a0 = [...pl.ang]; let tried = 0; const snap = snapPortals(), snd = G.snd; G.snd = null;
+    let s = sweep(target, R, which, opts, seen); tried += s.tried;
+    if (!s.path && opts.vantage) { restorePortals(snap); const fl = plan(home, -1, opts.floodN || 4000); // R<0: never 'arrives', so this is a flood fill outward from here const ks = [...(fl.visited || [])]; const picks = [];
+      for (const q of ks) if (picks.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) > (opts.spacing || 160))) picks.push(q);
+      LOG.push('portalSolve: ' + picks.length + ' vantage spots');
+      for (const v of picks) { restorePortals(snap); pl.pos = [...v]; s = sweep(target, R, which, opts, seen); tried += s.tried; pl.pos = [...home];
+        if (s.path) { s.vantage = v; break; } } }
+    pl.pos = [...home]; pl.ang = a0; restorePortals(snap); G.snd = snd;
+    if (!s.path) return { ok: false, why: 'no portal spot works (' + tried + ' tried)' };
+    if (s.vantage) { const g = goto(s.vantage, 12); if (!g.ok) return { ok: false, why: 'vantage unreachable ' + g.why }; }
+    pl.ang = [s.pitch, s.yaw, 0]; G.shootPortal(which); LOG.push('portalSolve: ' + (which ? 'orange' : 'blue') + ' at ' + G.gunPortals[which].pos.map(v => v | 0) + ' from ' + pl.pos.map(v => v | 0) + ' (yaw ' + s.yaw + ' pitch ' + s.pitch + ', ' + tried + ' spots tried)');
+    const p = plan(target, R); if (!p.ok) return { ok: false, why: 'replan after shot failed' }; const w = walk(p.path); w.shot = s.shot; w.tried = tried; return w; }
+  // a standing spot under a trigger volume (its centre dropped to the floor)
+  const floorUnder = e => { const c = centre(e); const t = pl.trace([c[0], c[1], e.bmaxs[2] - 4], [c[0], c[1], e.bmins[2] - 200]); return t.fraction < 1 ? t.end : [c[0], c[1], e.bmins[2]]; };
   const centre = e => [0, 1, 2].map(i => (e.bmins[i] + e.bmaxs[i]) / 2);
   const ent = n => G.io.ents.find(e => e.name === n);
-  return { LOG, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
+  return { LOG, floorUnder, portalSolve, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
 })();

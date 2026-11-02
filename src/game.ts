@@ -493,7 +493,7 @@ export class Game {
       if (!e.touching || e.killed || !e.bmins) continue;
       const sf = +(e.kv.spawnflags || 0); const now = new Set<Ent>();
       if (e.enabled) {
-        if ((sf & 1 || sf & 64) && overlap(pmin, pmax, e.bmins, e.bmaxs)) now.add(this.playerEnt);
+        if ((sf & 1 || sf & 64 || e.cls === 'trigger_changelevel') && overlap(pmin, pmax, e.bmins, e.bmaxs)) now.add(this.playerEnt);
         if (sf & 8 || sf & 64 || e.cls === 'trigger_portal_cleanser') for (const c of this.cubes) if (c.alive && overlap(sub(c.pos, [c.ext, c.ext, c.ext]), add(c.pos, [c.ext, c.ext, c.ext]), e.bmins, e.bmaxs)) now.add(c.ent);
         if (e.kv.filtername) { const f = io.find(e.kv.filtername, null, e)[0]; if (f) for (const a of [...now]) if (!this.passFilter(f, a)) now.delete(a); }
       }

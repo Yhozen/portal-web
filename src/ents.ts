@@ -48,6 +48,8 @@ export class IO {
   }
   deliver(e: Ent, input: string, param: string, act: Ent | null, caller: Ent) {
     if (this.log.length > 400) this.log.shift(); this.log.push(`${this.time.toFixed(2)} ${e.name || e.cls}.${input}(${param})`);
+    if (input === 'setparent') { e.kv.parentname = param; e.attachRel = null; e.reparentNow = true; return; }
+    if (input === 'clearparent') { if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
     if (input === 'kill') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     if (input === 'killhierarchy') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     if (input.startsWith('fireuser')) { this.fire(e, 'onuser' + input.slice(8), act); return; }

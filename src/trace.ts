@@ -9,7 +9,7 @@ export const MASK_PLAYERSOLID = CONTENTS.SOLID | CONTENTS.PLAYERCLIP | CONTENTS.
 export const MASK_SHOT_PORTAL = CONTENTS.SOLID | CONTENTS.MOVEABLE | CONTENTS.WINDOW; // portal gun passes grates (CONTENTS_GRATE)
 const EPS = 0.03125;
 
-export interface Collider { bsp: BSP; headnode: number; offset: V3; ent?: any; enabled: () => boolean; }
+export interface Collider { bsp: BSP; headnode: number; offset: V3; ent?: any; enabled: () => boolean; rot?: Float32Array /* column-major 4x4, local->world rotation */; }
 
 export class Tracer {
   bsp: BSP; stamp: Uint32Array; cur = 1; colliders: Collider[] = [];
@@ -25,10 +25,12 @@ export class Tracer {
     this.walk(this.bsp.models[0].headnode, 0, 1, s, e, w);
     for (const c of this.colliders) {
       if (c.ent === skipEnt || !c.enabled()) continue;
-      const ss: V3 = [s[0] - c.offset[0], s[1] - c.offset[1], s[2] - c.offset[2]], ee: V3 = [e[0] - c.offset[0], e[1] - c.offset[1], e[2] - c.offset[2]];
+      let ss: V3 = [s[0] - c.offset[0], s[1] - c.offset[1], s[2] - c.offset[2]], ee: V3 = [e[0] - c.offset[0], e[1] - c.offset[1], e[2] - c.offset[2]];
+      const R = c.rot; // rotated brush entity: sweep in its local frame (the box stays axis-aligned there; approximate)
+      if (R) { const inv = (v: V3): V3 => [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[4] * v[0] + R[5] * v[1] + R[6] * v[2], R[8] * v[0] + R[9] * v[1] + R[10] * v[2]]; ss = inv(ss); ee = inv(ee); }
       const before = tr.fraction, bs = tr.startsolid; const w2 = { ...w, s: ss, e: ee, ignore: null };
       this.walk(c.headnode, 0, 1, ss, ee, w2);
-      if (tr.fraction < before || (tr.startsolid && !bs)) tr.ent = c.ent;
+      if (tr.fraction < before || (tr.startsolid && !bs)) { tr.ent = c.ent; if (R && tr.fraction < before) { const n = tr.normal; tr.normal = [R[0] * n[0] + R[4] * n[1] + R[8] * n[2], R[1] * n[0] + R[5] * n[1] + R[9] * n[2], R[2] * n[0] + R[6] * n[1] + R[10] * n[2]]; } }
     }
     for (const b of this.extraBoxes) {
       if (b.ent === skipEnt) continue; const before = tr.fraction, bs = tr.startsolid;

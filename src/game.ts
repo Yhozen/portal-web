@@ -5,6 +5,7 @@ import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
 import { Player, HULL } from './player.ts';
 import { Renderer, throughPortal, type Portal, type Instance, type PropInst } from './render.ts';
 import type { ModelCache } from './models.ts';
+import { mul, invertRigid } from './math.ts';
 import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMatrix, xformPoint, xformDir, vectorAngles, parseV3, m4, len } from './math.ts';
 
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
@@ -49,7 +50,7 @@ export class Game {
   brushModel(e: Ent) { const m = /^\*(\d+)$/.exec(e.kv.model || ''); return m ? +m[1] : -1; }
   spawn(kv: Record<string, string>) {
     const e = new Ent(kv); this.io.add(e); e.game = this; const c = e.cls, bm = this.brushModel(e);
-    e.pos = [...e.origin] as V3; e.spawnPos = [...e.origin] as V3;
+    e.pos = [...e.origin] as V3; e.spawnPos = [...e.origin] as V3; e.spawnM = entityMatrix(e.origin, e.angles);
     if (c === 'worldspawn') return;
     if (bm > 0) {
       const M = this.bsp.models[bm]; e.bmins = add(M.mins as V3, e.origin); e.bmaxs = add(M.maxs as V3, e.origin); e.model = bm;
@@ -72,6 +73,11 @@ export class Game {
       e.closedPos = [...e.origin]; e.openPos = ma(e.origin, size - +(kv.lip || 0), dir); e.speed = +(kv.speed || 100); e.state = 0; e.t = 0; // t: 0 closed .. 1 open
       if ((+kv.spawnflags & 1) || kv.spawnpos === '1') { e.t = 1; e.state = 1; }
     }
+    if (c === 'func_rotating') { e.ang = [...e.angles] as V3; e.maxspeed = +(kv.maxspeed || 100); e.spinning = !!(+kv.spawnflags & 1); e.spinDir = (+kv.spawnflags & 2) ? -1 : 1;
+      e.axis = (+kv.spawnflags & 4) ? 2 : (+kv.spawnflags & 8) ? 0 : 1; e.spinSpeed = e.spinning ? e.maxspeed : 0; }
+    if (c === 'func_door_rotating' || c === 'prop_door_rotating') { e.ang = [...e.angles] as V3; e.closedAng = [...e.angles] as V3; const dist = +(kv.distance || 90) * ((+kv.spawnflags & 2) ? -1 : 1);
+      const ax = (+kv.spawnflags & 64) ? 2 : (+kv.spawnflags & 128) ? 0 : 1; e.openAng = [...e.angles] as V3; e.openAng[ax] += dist; e.speed = +(kv.speed || 100); e.t = 0; e.state = 0;
+      if (+kv.spawnflags & 1) { e.t = 1; e.state = 1; } }
     if (c === 'func_tracktrain') { e.speedNow = 0; e.startspeed = +(kv.startspeed || 100); e.pathName = (kv.target || '').toLowerCase(); }
     if (c === 'prop_portal') {
       const { f, r, u } = angleVectors(e.angles);
@@ -283,6 +289,11 @@ export class Game {
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
       else return false; return true; };
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
+    H.set('func_rotating', (e, i, param) => { if (i === 'start') e.spinning = true; else if (i === 'stop') e.spinning = false; else if (i === 'toggle') e.spinning = !e.spinning;
+      else if (i === 'reverse') e.spinDir = -e.spinDir; else if (i === 'setspeed') { e.maxspeed = (+(e.kv.maxspeed || 100)) * (+param || 0); e.spinning = +param > 0; } else return false; return true; });
+    const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
+      else if (i === 'toggle') { e.state = 1 - e.state; e.moving = true; } else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') e.speed = +param || e.speed; else return false; return true; };
+    H.set('func_door_rotating', rotDoor); H.set('prop_door_rotating', rotDoor);
     H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') e.speedNow = -e.startspeed; else if (i === 'setspeed') { } return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
     H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
@@ -309,6 +320,8 @@ export class Game {
   }
   // ---------- per-tick update ----------
   /** start a sequence by name on a prop entity (applied once the model has loaded) */
+  /** current world matrix of an entity (brush, prop, mover or point) */
+  entWorld(e: Ent): Float32Array { if (e.worldM && e.kv.parentname) return e.worldM; return entityMatrix(e.pos || e.origin, e.ang || e.angles); }
   playAnim(e: Ent, name: string, isDefault: boolean) {
     const pr = e.prop; if (!pr || !name) return;
     const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
@@ -351,14 +364,24 @@ export class Game {
           if (d <= step) { e.curPath = path; io.fire(path, 'onpass', null); const nxt = (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
-      if (e.inst && e.pos) e.inst.matrix = entityMatrix(e.pos, e.angles);
+      if (e.cls === 'func_rotating') { const target = e.spinning ? e.maxspeed : 0; const acc = Math.max(1, e.maxspeed) * dt / Math.max(0.1, +(e.kv.fanfriction || 20) / 20);
+        e.spinSpeed += Math.sign(target - e.spinSpeed) * Math.min(Math.abs(target - e.spinSpeed), acc); e.ang[e.axis] = (e.ang[e.axis] + e.spinSpeed * e.spinDir * dt) % 360; }
+      if (e.closedAng && e.moving) { const span = Math.max(...e.openAng.map((v: number, k: number) => Math.abs(v - e.closedAng[k]))) || 1;
+        const st = e.speed * dt / span; e.t = e.state ? Math.min(1, e.t + st) : Math.max(0, e.t - st);
+        if (e.t === e.state) { e.moving = false; io.fire(e, e.state ? 'onfullyopen' : 'onfullyclosed', null); } }
+      if (e.closedAng) for (let k = 0; k < 3; k++) e.ang[k] = e.closedAng[k] + (e.openAng[k] - e.closedAng[k]) * e.t;
+      if (e.inst && e.pos) { e.inst.matrix = entityMatrix(e.pos, e.ang || e.angles); if (e.col && e.ang) e.col.rot = e.inst.matrix; }
+      if (e.prop && e.ang && !e.kv.parentname) e.prop.matrix = entityMatrix(e.pos, e.ang);
       if (e.platform) { e.platform.mins = add(e.pos, e.platMins); e.platform.maxs = add(e.pos, e.platMaxs); }
     }
-    // parented props follow their parent's translation
-    for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
-      const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos) continue;
-      const off = sub(par.pos, par.spawnPos); if (e.prop) e.prop.matrix = entityMatrix(add(e.origin, off), e.angles);
-      if (e.inst) { e.pos = add(e.origin, off); e.inst.matrix = entityMatrix(e.pos, e.angles); if (e.col) e.col.offset = e.pos; }
+    // hierarchy: child = parent(now) * inverse(parent at attach time) * child at attach time (full rotation + translation)
+    for (let pass = 0; pass < 2; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
+      const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos || par === e) continue;
+      const P = this.entWorld(par); if (!e.attachRel || e.attachTo !== par) { e.attachTo = par; const now = e.reparentNow; e.reparentNow = false;
+        e.attachRel = now ? mul(invertRigid(P), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)) : mul(invertRigid(par.spawnM || P), e.spawnM || entityMatrix(e.origin, e.angles)); }
+      const W = mul(P, e.attachRel); e.worldM = W;
+      if (e.prop) e.prop.matrix = W;
+      if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
     }
     // player
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
@@ -431,7 +454,7 @@ export class Game {
   updateGunPickup() {
     for (const g of this.guns) { if (g.killed) continue;
       const par = g.kv.parentname ? this.io.find(g.kv.parentname.split(',')[0], null, g)[0] : null;
-      const at = par && par.pos ? add(g.origin, sub(par.pos, par.spawnPos)) : g.origin;
+      const at: V3 = g.worldM ? [g.worldM[12], g.worldM[13], g.worldM[14]] : par && par.pos ? add(g.origin, sub(par.pos, par.spawnPos)) : g.origin;
       const c = add(this.player.pos, [0, 0, 36]); if (Math.hypot(at[0] - c[0], at[1] - c[1], at[2] - c[2]) > 72) continue;
       this.pickGun(g); }
   }

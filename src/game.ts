@@ -194,9 +194,10 @@ export class Game {
     this.tr.ignore = null;
     this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
   }
-  shootPortal(which: 0 | 1) {
-    if (!this.hasGun || !this.canFire[which]) return;
-    const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
+  /** src: fire from somewhere else (the a01 pedestal gun's FirePortal1 input) */
+  shootPortal(which: 0 | 1, src?: { eye: V3; f: V3 }) {
+    if (!src && (!this.hasGun || !this.canFire[which])) return;
+    const eye = src ? src.eye : this.player.eye(); const f = src ? src.f : angleVectors(this.player.ang).f;
     this.tr.ignore = null;
     const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
     if (t.fraction >= 1 || t.ent) return this.fizzleShot(which, 'nothing');
@@ -319,6 +320,9 @@ export class Game {
       for (const t of ts) { const ins: any = t.inst || t.prop || t.ovl; if (!ins) continue;
         if (i === 'settextureindex') ins.texFrame = +param || 0; else if (i === 'incrementtextureindex') ins.texFrame = (ins.texFrame || 0) + 1; else return false; }
       return true; });
+    H.set('weapon_portalgun', (e, i) => { const m = /^fireportal([12])$/.exec(i); if (!m || e.killed) return false; const M = e.prop?.matrix || this.entWorld(e);
+      const f = norm([M[0], M[1], M[2]] as V3); const o: V3 = [M[12], M[13], M[14]]; this.io.log.push(`${this.io.time.toFixed(2)} ${e.name} fires portal ${m[1]} toward ${f.map(v => v.toFixed(2))}`);
+      this.shootPortal((+m[1] - 1) as 0 | 1, { eye: ma(o, 20, f), f }); return true; });
     H.set('func_rotating', (e, i, param) => { if (i === 'start') e.spinning = true; else if (i === 'stop') e.spinning = false; else if (i === 'toggle') e.spinning = !e.spinning;
       else if (i === 'reverse') e.spinDir = -e.spinDir; else if (i === 'setspeed') { e.maxspeed = (+(e.kv.maxspeed || 100)) * (+param || 0); e.spinning = +param > 0; } else return false; return true; });
     const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
@@ -411,8 +415,10 @@ export class Game {
     for (let pass = 0; pass < 2; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
       const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos || par === e) continue;
       const P = this.entWorld(par); if (!e.attachRel || e.attachTo !== par) { e.attachTo = par; const now = e.reparentNow; e.reparentNow = false;
-        e.attachRel = now ? mul(invertRigid(P), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)) : mul(invertRigid(par.spawnM || P), e.spawnM || entityMatrix(e.origin, e.angles)); }
-      const W = mul(P, e.attachRel); e.worldM = W;
+        e.attachRel = now ? mul(invertRigid(P), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)) : mul(invertRigid(par.spawnM || P), e.spawnM || entityMatrix(e.origin, e.angles));
+        e.attachAngInv = e.closedAng || e.cls === 'func_rotating' ? invertRigid(entityMatrix(e.origin, e.ang)) : null; }
+      // a child that also rotates on its own (rotating door / func_rotating on a moving parent): apply its local spin about its own origin
+      const W = e.attachAngInv ? mul(P, mul(e.attachRel, mul(e.attachAngInv, entityMatrix(e.origin, e.ang)))) : mul(P, e.attachRel); e.worldM = W;
       if (e.prop) e.prop.matrix = W;
       if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
     }

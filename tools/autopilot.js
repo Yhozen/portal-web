@@ -65,9 +65,9 @@ window.AP = (() => {
       const y = pl.ang[1] * Math.PI / 180, f = [Math.cos(y), Math.sin(y)], r = [Math.sin(y), -Math.cos(y)]; const k = Math.min(1, dist / 40);
       W.step(TICK, { fwd: (d[0] * f[0] + d[1] * f[1]) / dist * k, side: (d[0] * r[0] + d[1] * r[1]) / dist * k, jump: false, duck: false }); } return false; }
   // replan until we get there: cycling portals, doors still opening, etc.
-  function gotoRetry(target, R, tries = 30, pause = 0.5) { let r; for (let k = 0; k < tries; k++) { r = goto(target, R); LOG.push(G.io.time.toFixed(1) + ' try' + k + ' ' + (r.ok ? 'ok' : r.why) + ' at ' + pl.pos.map(v => v | 0) + ' held ' + !!G.held); if (r.ok) { r.tries = k + 1; return r; }
+  function gotoRetry(target, R, tries = 30, pause = 0.5, partial = true) { let r; for (let k = 0; k < tries; k++) { r = goto(target, R); LOG.push(G.io.time.toFixed(1) + ' try' + k + ' ' + (r.ok ? 'ok' : r.why) + ' at ' + pl.pos.map(v => v | 0) + ' held ' + !!G.held); if (r.ok) { r.tries = k + 1; return r; }
       // can't get there yet: get as close as currently possible (e.g. into the room where the next cycling portal will open), then wait
-      if (r.partial && r.partialGain > 48 && r.partial.length > 1) walk(r.partial); wait(pause); }
+      if (partial && r.partial && r.partialGain > 48 && r.partial.length > 1) walk(r.partial); wait(pause); }
     if (r) delete r.partial; r.tries = tries; return r; }
   // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
   function pickUp(cube) { let r = gotoRetry([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };

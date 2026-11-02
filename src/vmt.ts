@@ -1,5 +1,5 @@
 import { parseKV, type KV } from './kv.ts';
-export interface Material { name: string; shader: string; params: Record<string, string>; }
+export interface Material { name: string; shader: string; params: Record<string, string>; proxies?: KV; }
 // Resolve a VMT (including the "patch" shader used by map-embedded cubemap materials).
 export async function loadVMT(name: string, read: (p: string) => Promise<string | null>, depth = 0): Promise<Material | null> {
   const path = 'materials/' + name.replace(/\.vmt$/, '') + '.vmt';
@@ -13,5 +13,5 @@ export async function loadVMT(name: string, read: (p: string) => Promise<string 
     for (const blk of ['insert', 'replace']) { const b = body[blk]; if (b && typeof b === 'object') for (const [k, v] of Object.entries(b)) if (typeof v === 'string') base.params[k] = v; }
     base.name = name; return base;
   }
-  return { name, shader, params };
+  return { name, shader, params, proxies: (body.proxies as KV) || undefined };
 }

@@ -28,9 +28,9 @@ void main(){ float r = length(vP);
   else { float k = smoothstep(1.12, 1.0, r) * smoothstep(0.80, 1.0, r); if (k <= 0.01) discard; o = vec4(uColor.rgb * (0.6 + 0.8*k), k); } }`;
 
 export interface Portal { pos: V3; f: V3; r: V3; u: V3; color: V3; open: boolean; linked: Portal | null; name: string; }
-export interface Instance { model: number; matrix: M4; visible: boolean; alpha?: number; }
+export interface Instance { model: number; matrix: M4; visible: boolean; alpha?: number; texFrame?: number; }
 export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
-export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; ambient: [number, number, number]; tint?: [number, number, number];
+export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; texFrame?: number; ambient: [number, number, number]; tint?: [number, number, number];
   seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; onDone?: () => void; }
 
 export function portalMatrix(p: Portal) { return basisMatrix(p.pos, p.f, [-p.r[0], -p.r[1], -p.r[2]], p.u); }
@@ -40,7 +40,7 @@ export function throughPortal(a: Portal, b: Portal) { return mul(portalMatrix(b)
 
 export class Renderer {
   gl: WebGL2RenderingContext; mats: MaterialCache; world!: { vao: WebGLVertexArrayObject; mesh: WorldMesh; lm: WebGLTexture; mats: GLMat[] };
-  prog = { world: null as any, oval: null as any }; ovalVao: WebGLVertexArrayObject; instances: Instance[] = []; portals: Portal[] = []; extra: MeshDraw[] = []; props: PropInst[] = [];
+  prog = { world: null as any, oval: null as any }; ovalVao: WebGLVertexArrayObject; instances: Instance[] = []; time = 0; overlayState = new Map<number, { texFrame?: number; hidden?: boolean }>(); showOverlays = true; portals: Portal[] = []; extra: MeshDraw[] = []; props: PropInst[] = [];
   maxDepth = 2; stats = { draws: 0, views: 0 }; useLightmap = true; noPortalRender = false;
   constructor(gl: WebGL2RenderingContext, mats: MaterialCache) {
     this.gl = gl; this.mats = mats;
@@ -62,6 +62,10 @@ export class Renderer {
     const mats = await Promise.all(bsp.texdata.map(t => this.mats.get(t.name)));
     this.world = { vao, mesh, lm, mats };
   }
+  /** pick the VTF frame: env_texturetoggle index (ToggleTexture proxy), AnimatedTexture rate, else frame 0 */
+  texOf(m: GLMat, f?: number) { const F = m.frames; if (!F) return m.tex;
+    if (f !== undefined && (m.toggle || !m.animRate)) return F[((f % F.length) + F.length) % F.length];
+    if (m.animRate) return F[Math.floor(this.time * m.animRate) % F.length]; return m.tex; }
   private drawModels(vp: M4, clip: Float32Array, translucent: boolean) {
     const gl = this.gl, P = this.prog.world, w = this.world;
     gl.useProgram(P.p); gl.uniformMatrix4fv(P.u.uVP, false, vp); gl.uniform4fv(P.u.uClip, clip);
@@ -72,7 +76,7 @@ export class Renderer {
       if (!inst.visible) continue; gl.uniformMatrix4fv(P.u.uModel, false, inst.matrix);
       for (const b of w.mesh.models[inst.model].batches) {
         const m = w.mats[b.texdata]; if (m.nodraw || m.translucent !== translucent) continue;
-        gl.bindTexture(gl.TEXTURE_2D, m.tex); gl.uniform4f(P.u.uTint, m.tint[0], m.tint[1], m.tint[2], m.tint[3] * (inst.alpha ?? 1)); gl.uniform1f(P.u.uAlphaTest, m.alphatest);
+        gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, inst.texFrame)); gl.uniform4f(P.u.uTint, m.tint[0], m.tint[1], m.tint[2], m.tint[3] * (inst.alpha ?? 1)); gl.uniform1f(P.u.uAlphaTest, m.alphatest);
         gl.uniform1f(P.u.uUnlit, m.unlit || m.selfillum ? 1 : 0);
         if (translucent) gl.blendFunc(gl.SRC_ALPHA, m.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
         gl.drawElements(gl.TRIANGLES, b.count, gl.UNSIGNED_INT, b.start * 4); this.stats.draws++;
@@ -84,7 +88,7 @@ export class Renderer {
       gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
       for (const d of md.draws) {
         const m = skin[d.mat] || skin[0]; if (!m || m.translucent !== translucent) continue;
-        gl.bindTexture(gl.TEXTURE_2D, m.tex); const t = pr.tint || [1, 1, 1]; gl.uniform4f(P.u.uTint, m.tint[0] * t[0], m.tint[1] * t[1], m.tint[2] * t[2], m.tint[3]); gl.uniform1f(P.u.uAlphaTest, m.alphatest || (m.translucent ? 0 : 0));
+        gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, pr.texFrame)); const t = pr.tint || [1, 1, 1]; gl.uniform4f(P.u.uTint, m.tint[0] * t[0], m.tint[1] * t[1], m.tint[2] * t[2], m.tint[3]); gl.uniform1f(P.u.uAlphaTest, m.alphatest || (m.translucent ? 0 : 0));
         gl.uniform1f(P.u.uUnlit, m.unlit ? 1 : 0);
         if (translucent) gl.blendFunc(gl.SRC_ALPHA, m.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
         gl.drawElements(gl.TRIANGLES, d.count, gl.UNSIGNED_INT, d.start * 4); this.stats.draws++;
@@ -92,9 +96,24 @@ export class Renderer {
     }
     gl.bindVertexArray(null);
   }
+  private ident = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  /** info_overlay decals (signs, floor arrows, indicator strips) */
+  private drawOverlays(vp: M4, clip: Float32Array) {
+    const gl = this.gl, P = this.prog.world, w = this.world; if (!w.mesh.overlays?.length) return;
+    gl.useProgram(P.p); gl.uniformMatrix4fv(P.u.uVP, false, vp); gl.uniform4fv(P.u.uClip, clip); gl.uniformMatrix4fv(P.u.uModel, false, this.ident);
+    gl.uniform1i(P.u.uTex, 0); gl.uniform1i(P.u.uLM, 1); gl.uniform1f(P.u.uLMScale, this.useLightmap ? 1 : 0); gl.uniform3f(P.u.uAmbient, 1, 1, 1);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, w.lm); gl.activeTexture(gl.TEXTURE0); gl.bindVertexArray(w.vao);
+    gl.enable(gl.BLEND); gl.depthMask(false); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -4);
+    for (const o of w.mesh.overlays) { const m = w.mats[o.texdata]; if (!m || m.nodraw) continue; const st = this.overlayState.get(o.id); if (st?.hidden) continue;
+      gl.blendFunc(gl.SRC_ALPHA, m.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+      gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, st?.texFrame)); gl.uniform4f(P.u.uTint, m.tint[0], m.tint[1], m.tint[2], m.tint[3]); gl.uniform1f(P.u.uAlphaTest, 0); gl.uniform1f(P.u.uUnlit, m.unlit || m.selfillum ? 1 : 0);
+      gl.drawElements(gl.TRIANGLES, o.count, gl.UNSIGNED_INT, o.start * 4); this.stats.draws++; }
+    gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true); gl.disable(gl.BLEND); gl.bindVertexArray(null);
+  }
   drawScene(vp: M4, clip: Float32Array) {
     const gl = this.gl; this.stats.views++;
     this.drawModels(vp, clip, false);
+    if (this.showOverlays) this.drawOverlays(vp, clip);
     for (const e of this.extra) e.draw(vp, clip);
     gl.enable(gl.BLEND); gl.depthMask(false); this.drawModels(vp, clip, true); gl.depthMask(true); gl.disable(gl.BLEND);
   }

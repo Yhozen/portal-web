@@ -5,7 +5,7 @@ import { dot } from './math.ts';
 export const STRIDE = 11; // pos3 uv2 lmuv2 normal3 alpha1
 export interface Batch { texdata: number; start: number; count: number; }
 export interface ModelMesh { batches: Batch[]; }
-export interface WorldMesh { verts: Float32Array; indices: Uint32Array; models: ModelMesh[]; lmW: number; lmH: number; lm: Uint8Array; faceTris: number; }
+export interface WorldMesh { verts: Float32Array; indices: Uint32Array; models: ModelMesh[]; lmW: number; lmH: number; lm: Uint8Array; faceTris: number; overlays: { id: number; texdata: number; start: number; count: number }[]; }
 
 const SKIP_FLAGS = SURF.SKY | SURF.SKY2D | SURF.NODRAW | SURF.HINT | SURF.SKIP | SURF.TRIGGER;
 
@@ -80,5 +80,21 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
     for (const [t, l] of byTex) { batches.push({ texdata: t, start: idx.length, count: l.length }); for (const i of l) idx.push(i); }
     models.push({ batches });
   }
-  return { verts: new Float32Array(verts), indices: new Uint32Array(idx), models, lmW, lmH, lm, faceTris };
+  // --- overlays: one quad each (not clipped to faces), lightmap sampled from their first face.
+  // UV corner order (u0v0, u0v1, u1v1, u1v0) as in noclip.website's MIT-licensed BSPFile.ts.
+  const overlays: WorldMesh['overlays'] = [];
+  for (const ov of bsp.overlays) {
+    if (ov.texinfo < 0 || !bsp.texinfo[ov.texinfo]) continue; const ti0 = bsp.texinfo[ov.texinfo]; if (ti0.texdata < 0) continue;
+    const N = ov.normal, U = [ov.pts[0][2], ov.pts[1][2], ov.pts[2][2]]; let V = [N[1] * U[2] - N[2] * U[1], N[2] * U[0] - N[0] * U[2], N[0] * U[1] - N[1] * U[0]];
+    if (ov.pts[3][2] === 1) V = V.map(x => -x);
+    const uv = [[ov.u[0], ov.v[0]], [ov.u[0], ov.v[1]], [ov.u[1], ov.v[1]], [ov.u[1], ov.v[0]]];
+    const fi = ov.faces[0], f = fi >= 0 ? bsp.faces[fi] : null, lmPos = f ? place.get(fi) : undefined, ti = f ? bsp.texinfo[f.texinfo] : null;
+    const base = verts.length / STRIDE;
+    for (let k = 0; k < 4; k++) { const q = ov.pts[k]; const p = [0, 1, 2].map(i => ov.origin[i] + U[i] * q[0] + V[i] * q[1] + N[i] * 0.25);
+      let lu = 0.5 / lmW, lv = 0.5 / lmH; if (lmPos && ti && f) { lu = (lmPos[0] + Math.min(f.lmSize[0], Math.max(0, dot(p, ti.ls) + ti.ls[3] - f.lmMins[0])) + 0.5) / lmW; lv = (lmPos[1] + Math.min(f.lmSize[1], Math.max(0, dot(p, ti.lt) + ti.lt[3] - f.lmMins[1])) + 0.5) / lmH; }
+      verts.push(p[0], p[1], p[2], uv[k][0], uv[k][1], lu, lv, N[0], N[1], N[2], 1); }
+    overlays.push({ id: ov.id, texdata: ti0.texdata, start: idx.length, count: 6 }); idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base, base + 2, base + 1, base, base + 3, base + 2);
+    overlays[overlays.length - 1].count = 12; // both windings: basis handedness varies
+  }
+  return { verts: new Float32Array(verts), indices: new Uint32Array(idx), models, lmW, lmH, lm, faceTris, overlays };
 }

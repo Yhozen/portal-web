@@ -15,6 +15,7 @@ export interface Node { plane: number; children: [number, number]; mins: number[
 export interface Leaf { contents: number; cluster: number; firstLeafBrush: number; numLeafBrushes: number; firstLeafFace: number; numLeafFaces: number; mins: number[]; maxs: number[] }
 export interface Brush { firstSide: number; numSides: number; contents: number; }
 export interface BrushSide { plane: number; texinfo: number; bevel: number; }
+export interface Overlay { id: number; texinfo: number; faces: number[]; u: number[]; v: number[]; pts: number[][]; origin: number[]; normal: number[]; }
 export interface StaticProp { model: string; origin: number[]; angles: number[]; skin: number; solid: number; }
 export type Entity = Record<string, string>;
 
@@ -27,7 +28,7 @@ export class BSP {
   planes: Plane[] = []; texinfo: TexInfo[] = []; texdata: TexData[] = []; verts!: Float32Array; edges!: Uint16Array; surfedges!: Int32Array;
   faces: Face[] = []; models: Model[] = []; dispinfo: DispInfo[] = []; dispVerts!: Float32Array; lighting!: Uint8Array;
   nodes: Node[] = []; leafs: Leaf[] = []; leafBrushes!: Uint16Array; leafFaces!: Uint16Array; brushes: Brush[] = []; brushSides: BrushSide[] = [];
-  entities: Entity[] = []; staticProps: StaticProp[] = []; pakfile: Uint8Array | null = null; numClusters = 0; vis: Uint8Array | null = null;
+  overlays: Overlay[] = []; entities: Entity[] = []; staticProps: StaticProp[] = []; pakfile: Uint8Array | null = null; numClusters = 0; vis: Uint8Array | null = null;
 
   constructor(buf: ArrayBuffer) {
     this.buf = buf; const dv = this.dv = new DataView(buf);
@@ -59,6 +60,9 @@ export class BSP {
     let lt = this.lumps[L.LIGHTING]; if (!lt.len) lt = this.lumps[L.LIGHTING_HDR];
     this.lighting = new Uint8Array(this.buf, lt.ofs, lt.len);
     this.models = this.arr(L.MODELS, 48, o => ({ mins: v3(o), maxs: v3(o + 12), origin: v3(o + 24), headnode: i32(o + 36), firstFace: i32(o + 40), numFaces: i32(o + 44) }));
+    // doverlay_t (352 bytes, layout from the public SDK 2013 bspfile.h); BasisU is packed into UVPoints[0..2].z, UVPoints[3].z flags a flipped V
+    this.overlays = this.arr(45, 352, o => { const fc = u16(o + 6) & 0x3fff; const faces: number[] = []; for (let k = 0; k < Math.min(fc, 64); k++) faces.push(i32(o + 8 + k * 4));
+      return { id: i32(o), texinfo: s16(o + 4), faces, u: [f(o + 264), f(o + 268)], v: [f(o + 272), f(o + 276)], pts: [v3(o + 280), v3(o + 292), v3(o + 304), v3(o + 316)], origin: v3(o + 328), normal: v3(o + 340) }; });
     this.dispinfo = this.arr(L.DISPINFO, 176, o => ({ start: v3(o), vertStart: i32(o + 12), power: i32(o + 20), mapFace: u16(o + 36) }));
     const dvl = this.lumps[L.DISP_VERTS]; this.dispVerts = new Float32Array(this.buf.slice(dvl.ofs, dvl.ofs + dvl.len));
     this.nodes = this.arr(L.NODES, 32, o => ({ plane: i32(o), children: [i32(o + 4), i32(o + 8)], mins: [s16(o + 12), s16(o + 14), s16(o + 16)], maxs: [s16(o + 18), s16(o + 20), s16(o + 22)] }));

@@ -84,6 +84,7 @@ export class Game {
       e.closedPos = [...e.origin]; e.openPos = ma(e.origin, size - +(kv.lip || 0), dir); e.speed = +(kv.speed || 100); e.state = 0; e.t = 0; // t: 0 closed .. 1 open
       if ((+kv.spawnflags & 1) || kv.spawnpos === '1') { e.t = 1; e.state = 1; }
     }
+    if (c === 'info_overlay_accessor') { e.ovl = {}; this.r.overlayState.set(+(kv.overlayid || -1), e.ovl); }
     if (c === 'func_rotating') { e.ang = [...e.angles] as V3; e.maxspeed = +(kv.maxspeed || 100); e.spinning = !!(+kv.spawnflags & 1); e.spinDir = (+kv.spawnflags & 2) ? -1 : 1;
       e.axis = (+kv.spawnflags & 4) ? 2 : (+kv.spawnflags & 8) ? 0 : 1; e.spinSpeed = e.spinning ? e.maxspeed : 0; }
     if (c === 'func_door_rotating' || c === 'prop_door_rotating') { e.ang = [...e.angles] as V3; e.closedAng = [...e.angles] as V3; const dist = +(kv.distance || 90) * ((+kv.spawnflags & 2) ? -1 : 1);
@@ -300,6 +301,11 @@ export class Game {
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
       else return false; return true; };
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
+    H.set('env_texturetoggle', (e, i, param) => {
+      const ts = this.io.find(e.kv.target || '', null, e); if (!ts.length) return i === 'settextureindex' || i === 'incrementtextureindex';
+      for (const t of ts) { const ins: any = t.inst || t.prop || t.ovl; if (!ins) continue;
+        if (i === 'settextureindex') ins.texFrame = +param || 0; else if (i === 'incrementtextureindex') ins.texFrame = (ins.texFrame || 0) + 1; else return false; }
+      return true; });
     H.set('func_rotating', (e, i, param) => { if (i === 'start') e.spinning = true; else if (i === 'stop') e.spinning = false; else if (i === 'toggle') e.spinning = !e.spinning;
       else if (i === 'reverse') e.spinDir = -e.spinDir; else if (i === 'setspeed') { e.maxspeed = (+(e.kv.maxspeed || 100)) * (+param || 0); e.spinning = +param > 0; } else return false; return true; });
     const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
@@ -351,7 +357,7 @@ export class Game {
     }
   }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.animateProps(dt);
+    this.animateProps(dt); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;

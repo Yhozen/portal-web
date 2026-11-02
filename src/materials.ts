@@ -3,10 +3,11 @@ import { loadVMT, type Material } from './vmt.ts';
 import { parseVTF, decodeToRGBA, FMT, TEXF } from './vtf.ts';
 
 export interface GLMat { name: string; vmt: Material | null; tex: WebGLTexture; w: number; h: number; translucent: boolean; additive: boolean; alphatest: number;
-  unlit: boolean; tint: [number, number, number, number]; nodraw: boolean; noportal: boolean; selfillum: boolean; }
+  unlit: boolean; tint: [number, number, number, number]; nodraw: boolean; noportal: boolean; selfillum: boolean;
+  frames?: WebGLTexture[]; animRate?: number; toggle?: boolean; }
 
 export class MaterialCache {
-  gl: WebGL2RenderingContext; assets: Assets; s3tc: any; mats = new Map<string, Promise<GLMat>>(); texs = new Map<string, Promise<{ tex: WebGLTexture; w: number; h: number } | null>>();
+  gl: WebGL2RenderingContext; assets: Assets; s3tc: any; mats = new Map<string, Promise<GLMat>>(); texs = new Map<string, Promise<{ tex: WebGLTexture; w: number; h: number; frames?: WebGLTexture[] } | null>>();
   white: WebGLTexture; missing: WebGLTexture; vtfBytes = 0;
   constructor(gl: WebGL2RenderingContext, assets: Assets) {
     this.gl = gl; this.assets = assets; this.s3tc = gl.getExtension('WEBGL_compressed_texture_s3tc');
@@ -23,20 +24,25 @@ export class MaterialCache {
     const buf = await this.assets.read('materials/' + path + '.vtf'); if (!buf) return null;
     let v; try { v = parseVTF(buf); } catch (e) { console.warn('vtf', path, e); return null; }
     this.vtfBytes += buf.byteLength;
-    const gl = this.gl, t = gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D, t);
+    const gl = this.gl;
+    const up = (fi: number) => {
+    const t = gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D, t);
     const cfmt = this.s3tc && ({ [FMT.DXT1]: this.s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT, [FMT.DXT1_ONEBITALPHA]: this.s3tc.COMPRESSED_RGBA_S3TC_DXT1_EXT, [FMT.DXT3]: this.s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT, [FMT.DXT5]: this.s3tc.COMPRESSED_RGBA_S3TC_DXT5_EXT } as Record<number, number>)[v.format];
     if (cfmt && v.width % 4 === 0 && v.height % 4 === 0) {
       let lv = 0;
-      for (let m = 0; m < v.mips; m++) { const w = Math.max(1, v.width >> m), h = Math.max(1, v.height >> m); gl.compressedTexImage2D(gl.TEXTURE_2D, lv++, cfmt, w, h, 0, v.data[m][0]); }
+      for (let m = 0; m < v.mips; m++) { const w = Math.max(1, v.width >> m), h = Math.max(1, v.height >> m); gl.compressedTexImage2D(gl.TEXTURE_2D, lv++, cfmt, w, h, 0, v.data[m][fi]); }
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, v.mips - 1);
     } else {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, v.width, v.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, decodeToRGBA(v.format, v.data[0][0], v.width, v.height));
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, v.width, v.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, decodeToRGBA(v.format, v.data[0][fi], v.width, v.height));
       gl.generateMipmap(gl.TEXTURE_2D);
     }
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, v.flags & TEXF.CLAMPS ? gl.CLAMP_TO_EDGE : gl.REPEAT);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, v.flags & TEXF.CLAMPT ? gl.CLAMP_TO_EDGE : gl.REPEAT);
-    return { tex: t, w: v.width, h: v.height };
+    return t; };
+    const t = up(0); let frames: WebGLTexture[] | undefined;
+    if (v.frames > 1) { frames = [t]; for (let f = 1; f < Math.min(v.frames, 32); f++) frames.push(v.data[0][f] ? up(f) : t); }
+    return { tex: t, w: v.width, h: v.height, frames };
   }
   get(name: string) {
     name = name.toLowerCase().replace(/\\/g, '/').replace(/\.vmt$/, '');
@@ -54,7 +60,10 @@ export class MaterialCache {
       m.tint = [c[0] / s, c[1] / s, c[2] / s, 0.35]; if (!base) base = ''; }
     if (P['$alpha']) m.tint[3] = +P['$alpha'], m.translucent = true;
     if (P['$color']) { const c = P['$color'].replace(/[{}\[\]]/g, ' ').trim().split(/\s+/).map(Number); const s = P['$color'].includes('{') ? 255 : 1; m.tint = [c[0] / s, c[1] / s, c[2] / s, m.tint[3]]; }
-    if (base) { const t = await this.texture(base); if (t) { m.tex = t.tex; m.w = t.w; m.h = t.h; } }
+    if (base) { const t = await this.texture(base); if (t) { m.tex = t.tex; m.w = t.w; m.h = t.h; m.frames = t.frames; } }
+    const px = vmt?.proxies; if (px && m.frames) for (const [k, v] of Object.entries(px)) { const kk = k.toLowerCase().replace(/#\d+$/, '');
+      if (kk === 'animatedtexture' && typeof v === 'object') m.animRate = +((v as any).animatedtextureframerate || 15);
+      if (kk === 'toggletexture') m.toggle = true; }
     else if (/refract|water/.test(sh)) m.tex = this.white;
     else if (!vmt) console.warn('missing material', name);
     return m;

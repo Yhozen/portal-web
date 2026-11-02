@@ -1,0 +1,415 @@
+import { BSP, SURF, CONTENTS } from './bsp.ts';
+import { Ent, IO } from './ents.ts';
+import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
+import { Player, HULL } from './player.ts';
+import { Renderer, throughPortal, type Portal, type Instance, type PropInst } from './render.ts';
+import type { ModelCache } from './models.ts';
+import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMatrix, xformPoint, xformDir, vectorAngles, parseV3, m4, len } from './math.ts';
+
+const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
+const PW = 32, PH = 54; // Portal 1 portal half-extents
+
+interface Cube { ent: Ent; pos: V3; vel: V3; held: boolean; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; }
+
+export class Game {
+  bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
+  portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; held: Cube | null = null;
+  portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
+  sounds: ((path: string, pos?: V3) => void) | null = null; stats = { teleports: 0, portalsPlaced: 0 }; noportalVolumes: Ent[] = [];
+  constructor(bsp: BSP, r: Renderer, models: ModelCache) {
+    this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
+    this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
+    const mk = (color: V3, name: string): Portal => ({ pos: [0, 0, 0], f: [1, 0, 0], r: [0, 1, 0], u: [0, 0, 1], color, open: false, linked: null, name });
+    this.gunPortals = [mk(BLUE, 'gun_blue'), mk(ORANGE, 'gun_orange')];
+    this.gunPortals[0].linked = this.gunPortals[1]; this.gunPortals[1].linked = this.gunPortals[0];
+    this.portals.push(...this.gunPortals); r.portals = this.portals;
+    this.player.ignoreFn = () => { this.tr.ignore = this.tunnelFor(this.player.pos, HULL.mins, this.player.maxs()); };
+    this.setupHandlers();
+    r.instances.push({ model: 0, matrix: m4(), visible: true });
+    for (const kv of bsp.entities) this.spawn(kv);
+    for (const p of bsp.staticProps) this.addProp(p.model, p.origin as V3, p.angles as V3, p.skin);
+    for (const t of this.io.ents) if (t.cls === 'point_template' && !(+t.kv.spawnflags & 1))
+      for (const [k, v] of Object.entries(t.kv)) if (/^template\d\d$/.test(k)) for (const e of this.io.byName.get(v.toLowerCase()) || []) { e.killed = true; e.onKill?.(); }
+    this.relinkMapPortals();
+  }
+  // ---------- spawning ----------
+  addProp(model: string, origin: V3, angles: V3, skin = 0): PropInst {
+    const pi: PropInst = { model: null, matrix: entityMatrix(origin, angles), visible: true, skin, ambient: this.ambientAt(origin) };
+    this.models.get(model).then(m => pi.model = m); this.r.props.push(pi); return pi;
+  }
+  ambientAt(p: V3): [number, number, number] {
+    // cheap stand-in for the ambient cube: sample the lightmap brightness of the floor below
+    void p; return [0.85, 0.85, 0.88];
+  }
+  brushModel(e: Ent) { const m = /^\*(\d+)$/.exec(e.kv.model || ''); return m ? +m[1] : -1; }
+  spawn(kv: Record<string, string>) {
+    const e = new Ent(kv); this.io.add(e); e.game = this; const c = e.cls, bm = this.brushModel(e);
+    e.pos = [...e.origin] as V3; e.spawnPos = [...e.origin] as V3;
+    if (c === 'worldspawn') return;
+    if (bm > 0) {
+      const M = this.bsp.models[bm]; e.bmins = add(M.mins as V3, e.origin); e.bmaxs = add(M.maxs as V3, e.origin); e.model = bm;
+      const visual = /^(func_door|func_brush|func_movelinear|func_tracktrain|func_wall|func_wall_toggle|func_button|func_rotating|func_door_rotating|func_illusionary|func_breakable|func_physbox|func_lod|func_train|func_reflective_glass|func_detail)/.test(c);
+      if (visual) {
+        const inst: Instance = { model: bm, matrix: entityMatrix(e.origin, e.angles), visible: c !== 'func_brush' || e.enabled || kv.startdisabled !== '1', alpha: kv.rendermode && kv.rendermode !== '0' ? +(kv.renderamt ?? 255) / 255 : 1 };
+        if (kv.rendermode === '10') inst.visible = false;
+        e.inst = inst; this.r.instances.push(inst);
+        const solid = !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
+        if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => !e.killed && (c !== 'func_brush' || e.enabled) }; e.col = col; this.tr.colliders.push(col); }
+        if (c === 'func_brush' && kv.startdisabled === '1') { e.enabled = false; inst.visible = false; }
+      }
+    }
+    if (c === 'func_door') {
+      const dir = angleVectors(parseV3(kv.movedir)).f; const M = this.bsp.models[bm];
+      const size = Math.abs(dir[0]) * (M.maxs[0] - M.mins[0]) + Math.abs(dir[1]) * (M.maxs[1] - M.mins[1]) + Math.abs(dir[2]) * (M.maxs[2] - M.mins[2]);
+      e.closedPos = [...e.origin]; e.openPos = ma(e.origin, size - +(kv.lip || 0), dir); e.speed = +(kv.speed || 100); e.state = 0; e.t = 0; // t: 0 closed .. 1 open
+      if ((+kv.spawnflags & 1) || kv.spawnpos === '1') { e.t = 1; e.state = 1; }
+    }
+    if (c === 'func_tracktrain') { e.speedNow = 0; e.startspeed = +(kv.startspeed || 100); e.pathName = (kv.target || '').toLowerCase(); }
+    if (c === 'prop_portal') {
+      const { f, r, u } = angleVectors(e.angles);
+      const p: Portal = { pos: e.origin, f, r, u, color: kv.portaltwo === '1' ? ORANGE : BLUE, open: false, linked: null, name: e.name }; e.portal = p; this.portals.push(p);
+      if (kv.activated === '1') this.activatePortal(e, true);
+    }
+    if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
+    if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
+      if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; }
+    }
+    if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
+    if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }
+    if (c === 'math_counter') { e.value = +(kv.startvalue || 0); e.min = +(kv.min || 0); e.max = +(kv.max || 0); }
+    if (/^trigger_/.test(c)) { e.touching = new Set(); if (kv.startdisabled === '1') e.enabled = false; }
+  }
+  spawnCube(e: Ent) {
+    const prop = this.addProp(e.kv.model || 'models/props/metal_box.mdl', e.origin, e.angles, +(e.kv.skin || 0));
+    const cube: Cube = { ent: e, pos: [...e.origin] as V3, vel: [0, 0, 0], held: false, prop, ext: 12, onGround: false, spawn: [...e.origin] as V3, alive: true, tunnel: null };
+    e.cube = cube; this.cubes.push(cube);
+    this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
+    e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
+    this.updateCubeBox(cube);
+  }
+  updateCubeBox(c: Cube) { const b = c.ent.box; b.mins = [c.pos[0] - c.ext, c.pos[1] - c.ext, c.pos[2] - c.ext]; b.maxs = [c.pos[0] + c.ext, c.pos[1] + c.ext, c.pos[2] + c.ext]; }
+  // ---------- portals ----------
+  activatePortal(e: Ent, on: boolean) {
+    const p: Portal = e.portal; if (!p) return;
+    if (on) for (const o of this.io.ents) if (o !== e && o.portal && o.kv.portaltwo === e.kv.portaltwo && o.portal.open) o.portal.open = false;
+    p.open = on; this.portalBrushes.delete(p); this.relinkMapPortals();
+  }
+  relinkMapPortals() {
+    const map = this.io.ents.filter(e => e.portal);
+    const blue = map.find(e => e.kv.portaltwo !== '1' && e.portal.open)?.portal, orange = map.find(e => e.kv.portaltwo === '1' && e.portal.open)?.portal;
+    for (const e of map) e.portal.linked = null;
+    if (blue && orange) { blue.linked = orange; orange.linked = blue; }
+  }
+  /** world brushes that make up the surface behind a portal (ignored while something passes through it) */
+  brushesBehind(p: Portal) {
+    let s = this.portalBrushes.get(p); if (s) return s; s = new Set();
+    const bsp = this.bsp;
+    for (let bi = 0; bi < bsp.brushes.length; bi++) {
+      const br = bsp.brushes[bi]; if (!(br.contents & (CONTENTS.SOLID | CONTENTS.PLAYERCLIP | CONTENTS.WINDOW))) continue;
+      // test portal hole (shrunk slightly) extruded 0.5..40 units behind the surface against the brush's planes (separating-axis on brush planes only)
+      let inside = true;
+      for (let i = 0; i < br.numSides && inside; i++) {
+        const pl = bsp.planes[bsp.brushSides[br.firstSide + i].plane];
+        // min over the hole box of dot(n, x) - d
+        const c = ma(p.pos, -20, p.f); const ex = Math.abs(dot(pl.n, p.r)) * (PW - 2) + Math.abs(dot(pl.n, p.u)) * (PH - 2) + Math.abs(dot(pl.n, p.f)) * 19.5;
+        if (dot(pl.n, c) - pl.d - ex > 0) inside = false;
+      }
+      if (inside) s.add(bi);
+    }
+    this.portalBrushes.set(p, s); return s;
+  }
+  /** if a box at pos fits inside an open, linked portal hole and is near/behind it, return the brushes to ignore */
+  tunnelFor(pos: V3, mins: V3, maxs: V3): Set<number> | null {
+    let out: Set<number> | null = null;
+    const ctr: V3 = [pos[0] + (mins[0] + maxs[0]) / 2, pos[1] + (mins[1] + maxs[1]) / 2, pos[2] + (mins[2] + maxs[2]) / 2];
+    const ext: V3 = [(maxs[0] - mins[0]) / 2, (maxs[1] - mins[1]) / 2, (maxs[2] - mins[2]) / 2];
+    for (const p of this.portals) {
+      if (!p.open || !p.linked || !p.linked.open) continue;
+      const d = sub(ctr, p.pos); const df = dot(d, p.f);
+      const ef = Math.abs(p.f[0]) * ext[0] + Math.abs(p.f[1]) * ext[1] + Math.abs(p.f[2]) * ext[2];
+      if (df - ef > 24 || df < -60) continue;
+      const er = Math.abs(p.r[0]) * ext[0] + Math.abs(p.r[1]) * ext[1] + Math.abs(p.r[2]) * ext[2], eu = Math.abs(p.u[0]) * ext[0] + Math.abs(p.u[1]) * ext[1] + Math.abs(p.u[2]) * ext[2];
+      if (Math.abs(dot(d, p.r)) + er > PW + 2) continue;
+      const du = dot(d, p.u), lowTol = Math.abs(p.f[2]) < 0.3 ? 20 : 2; // walls: let the hull's feet overhang the lower rim a step's height
+      if (du + eu > PH + 2 || du - eu < -PH - lowTol) continue;
+      const s = this.brushesBehind(p); if (!out) out = new Set(s); else for (const b of s) out.add(b);
+    }
+    return out;
+  }
+  /** has a point moved from in front of portal p to behind it, inside the hole? */
+  crossed(p: Portal, a: V3, b: V3) {
+    const da = dot(sub(a, p.pos), p.f), db = dot(sub(b, p.pos), p.f);
+    if (!(da >= 0 && db < 0)) return false;
+    const t = da / (da - db); const x = add(a, scale(sub(b, a), t)); const d = sub(x, p.pos);
+    const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
+  }
+  teleportPlayer(a: Portal, b: Portal) {
+    const M = throughPortal(a, b); const pl = this.player; const mid = (pl.maxs()[2]) / 2;
+    const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
+    pl.vel = xformDir(M, pl.vel);
+    const { f, u } = angleVectors(pl.ang); const nf = xformDir(M, f), nu = xformDir(M, u);
+    const na = vectorAngles(nf, nu); pl.ang = [Math.max(-89, Math.min(89, na[0])), na[1], 0];
+    pl.pos = [nc[0], nc[1], nc[2] - mid];
+    // exiting a floor portal: make sure we leave with at least a little speed so we clear the hole
+    const out = dot(pl.vel, b.f); if (out < 60) pl.vel = ma(pl.vel, 60 - out, b.f);
+    pl.onGround = false; this.stats.teleports++;
+    this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
+  }
+  shootPortal(which: 0 | 1) {
+    if (!this.hasGun) return;
+    const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
+    this.tr.ignore = null;
+    const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
+    if (t.fraction >= 1 || t.ent) return this.fizzleShot(which, 'nothing');
+    // find the surface flags of the brush side we hit
+    const n = t.normal; let flags = 0, texd = -1;
+    if (t.hit >= 0) { const br = this.bsp.brushes[t.hit]; let best = -1;
+      for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane]; const dd = dot(pl.n, n); if (dd > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, t.end) - pl.d) < 2) { best = sd.texinfo; break; } }
+      if (best >= 0) { flags = this.bsp.texinfo[best].flags; texd = this.bsp.texinfo[best].texdata; } }
+    const matName = texd >= 0 ? this.bsp.texdata[texd].name : '';
+    const mat = texd >= 0 ? this.r.world.mats[texd] : null;
+    if (flags & SURF.NOPORTAL || mat?.noportal || /toolsnodraw|toolsblack|toolsclip/.test(matName)) return this.fizzleShot(which, 'noportal ' + matName);
+    let up: V3;
+    if (Math.abs(n[2]) > 0.7) { const pf = angleVectors([0, this.player.ang[1], 0]).f; up = n[2] > 0 ? pf : scale(pf, -1); up = norm(sub(up, scale(n, dot(up, n)))); }
+    else up = norm(sub([0, 0, 1], scale(n, n[2])));
+    const right = cross(up, n); // r = up x f ... ensure right-handed: f x r = u? (Source: right = f x up)
+    const rr = norm(cross(n, up)); void right;
+    let pos = ma(t.end, 0, n);
+    const other = this.gunPortals[1 - which];
+    const fits = (c: V3) => {
+      for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const pt = add(add(c, scale(rr, a * (PW - 1))), scale(up, b * (PH - 1)));
+        const s = ma(pt, 2, n), e2 = ma(pt, -2, n); const q = this.tr.trace(s, e2, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
+        if (q.fraction >= 1 || q.startsolid || dot(q.normal, n) < 0.99 || q.ent) return false;
+        if (q.hit >= 0) { const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
+          if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, q.end) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; if (ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal) return false; break; } } }
+        // must not be covered (e.g. by geometry right in front)
+        const block = this.tr.trace(ma(pt, 3, n), ma(pt, 0.5, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt); if (block.startsolid) return false;
+      }
+      if (other.open && dot(other.f, n) > 0.99 && Math.abs(dot(sub(c, other.pos), n)) < 2) { const d = sub(c, other.pos); if (Math.abs(dot(d, other.r)) < PW * 2 && Math.abs(dot(d, other.u)) < PH * 2) return false; }
+      for (const v of this.noportalVolumes) if (v.enabled && c[0] > v.bmins[0] && c[0] < v.bmaxs[0] && c[1] > v.bmins[1] && c[1] < v.bmaxs[1] && c[2] > v.bmins[2] && c[2] < v.bmaxs[2]) return false;
+      return true;
+    };
+    // bump the portal away from edges until it fits (like the real game's placement nudging)
+    let ok = fits(pos);
+    for (let iter = 0; !ok && iter < 24; iter++) {
+      let moved = false;
+      for (const [ax, sgn] of [[rr, 1], [rr, -1], [up, 1], [up, -1]] as [V3, number][]) {
+        const ext = ax === rr ? PW : PH; const pt = add(pos, scale(ax, sgn * (ext - 1)));
+        const q = this.tr.trace(ma(pt, 2, n), ma(pt, -2, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
+        if (q.fraction >= 1 || dot(q.normal, n) < 0.99 || q.startsolid) { pos = add(pos, scale(ax, -sgn * 4)); moved = true; }
+      }
+      if (!moved) break; ok = fits(pos);
+    }
+    if (!ok) return this.fizzleShot(which, 'no fit');
+    const p = this.gunPortals[which];
+    p.pos = pos; p.f = [...n] as V3; p.u = up; p.r = rr; p.open = true; this.portalBrushes.delete(p); this.stats.portalsPlaced++;
+    // gun portals replace map portals of the same colour
+    for (const e of this.io.ents) if (e.portal && e.portal.open && (e.kv.portaltwo === '1') === (which === 1)) { e.portal.open = false; this.relinkMapPortals(); }
+    this.gunPortals[0].linked = this.gunPortals[1]; this.gunPortals[1].linked = this.gunPortals[0];
+    this.sounds?.(which ? 'weapons/portalgun/portalgun_shoot_red1.wav' : 'weapons/portalgun/portalgun_shoot_blue1.wav');
+  }
+  fizzleShot(which: number, why: string) { this.io.log.push(`portal ${which} failed: ${why}`); this.sounds?.('weapons/portalgun/portal_invalid_surface3.wav'); }
+  fizzleGunPortals() { for (const p of this.gunPortals) p.open = false; }
+  // ---------- handlers ----------
+  setupHandlers() {
+    const io = this.io, H = io.handlers;
+    H.set('logic_relay', (e, i) => {
+      if (i === 'trigger') { if (!e.enabled) return true; io.fire(e, 'ontrigger', null); if (+e.kv.spawnflags & 1) e.enabled = false; return true; }
+      if (i === 'cancelpending') { io.queue = io.queue.filter(q => q.caller !== e); return true; }
+      return false;
+    });
+    H.set('logic_timer', (e, i, p) => {
+      if (i === 'refiretime') { e.kv.refiretime = p; return true; } if (i === 'firetimer') { io.fire(e, 'ontimer', null); return true; }
+      if (i === 'resettimer') { e.next = +(e.kv.refiretime || 1); return true; }
+      if (i === 'enable') { e.enabled = true; e.next = +(e.kv.refiretime || 1); return true; } return false;
+    });
+    H.set('math_counter', (e, i, p) => {
+      const v0 = e.value;
+      if (i === 'add') e.value += +p; else if (i === 'subtract') e.value -= +p; else if (i === 'setvalue' || i === 'setvaluenofire') e.value = +p; else return false;
+      if (e.max || e.min) e.value = Math.max(e.min, Math.min(e.max || 1e9, e.value));
+      if (i !== 'setvaluenofire') io.fire(e, 'outvalue', null, String(e.value));
+      if (e.max && e.value >= e.max && v0 < e.max) io.fire(e, 'onhitmax', null); if (e.value <= e.min && v0 > e.min) io.fire(e, 'onhitmin', null);
+      return true;
+    });
+    H.set('logic_case', (e, i, p) => {
+      if (i === 'invalue') { for (let k = 1; k <= 16; k++) { const key = 'case' + String(k).padStart(2, '0'); if (e.kv[key] !== undefined && e.kv[key] === p) { io.fire(e, 'on' + key, null); return true; } } io.fire(e, 'ondefault', null, p); return true; }
+      if (i === 'pickrandom') { const ks = Object.keys(e.kv).filter(k => /^case\d\d$/.test(k)); if (ks.length) io.fire(e, 'on' + ks[Math.random() * ks.length | 0], null); return true; }
+      return false;
+    });
+    H.set('logic_choreographed_scene', (e, i) => {
+      // We can't play VCD choreography; approximate its timeline so map logic that waits on it still advances.
+      if (i === 'start') { io.fire(e, 'onstart', null); let k = 1; for (; k <= 16; k++) if (!e.outputs.has('ontrigger' + k)) break;
+        for (let j = 1; j < k; j++) io.send(e.name, '_trig' + j, '', j * 1.5, null, e); io.send(e.name, '_done', '', Math.max(4, k * 1.5), null, e); return true; }
+      if (i.startsWith('_trig')) { io.fire(e, 'ontrigger' + i.slice(5), null); return true; }
+      if (i === '_done') { io.fire(e, 'oncompletion', null); return true; }
+      return true;
+    });
+    H.set('prop_portal', (e, i, p) => {
+      if (i === 'setactivatedstate') { this.activatePortal(e, p === '1'); return true; }
+      if (i === 'fizzle') { this.activatePortal(e, false); return true; }
+      if (i === 'open') { this.activatePortal(e, true); return true; }
+      return true;
+    });
+    const doorMove = (e: Ent, open: boolean) => { if (e.locked) return; const target = open ? 1 : 0; if (e.state === target && e.moving !== true) return; e.state = target; e.moving = true; io.fire(e, open ? 'onopen' : 'onclose', null); };
+    H.set('func_door', (e, i) => {
+      if (i === 'open') doorMove(e, true); else if (i === 'close') doorMove(e, false); else if (i === 'toggle') doorMove(e, e.state === 0);
+      else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') { /* ignore */ }
+      return true;
+    });
+    H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; if (e.inst) e.inst.visible = e.enabled; return true; });
+    const propVis = (e: Ent, i: string) => { if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else return i === 'setanimation' || i === 'setdefaultanimation' || i === 'setplaybackrate'; return true; };
+    H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
+    H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') e.speedNow = e.startspeed; else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') e.speedNow = -e.startspeed; else if (i === 'setspeed') { } return true; });
+    H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
+    H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
+    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) this.respawnTemplate(t, e.origin); } return true; });
+    H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
+    H.set('env_fade', (e, i) => { if (i !== 'fade') return true; const from = +e.kv.spawnflags & 1; const dur = +(e.kv.duration || 1), hold = +(e.kv.holdtime || 0);
+      if (from) { this.hud.fade = 1; this.hud.fadeTarget = 0; this.hud.fadeRate = 1 / Math.max(0.01, dur); this.hud.fadeHoldUntil = io.time + hold; } else { this.hud.fadeTarget = 1; this.hud.fadeRate = 1 / Math.max(0.01, dur); } return true; });
+    H.set('trigger_portal_cleanser', (e, i) => { if (i === 'fizzleTouchingPortals'.toLowerCase()) this.fizzleGunPortals(); return false; });
+    H.set('ambient_generic', (e, i) => { if (i === 'playsound' && /\.wav$/i.test(e.kv.message || '')) this.sounds?.(e.kv.message, e.origin); return true; });
+    H.set('trigger_teleport', () => false); H.set('trigger_once', () => false); H.set('trigger_multiple', () => false);
+    H.set('player', (e, i) => { if (i === 'sethealth') {} return true; });
+    H.set('func_noportal_volume', () => false);
+    H.set('logic_auto', () => true);
+  }
+  respawnTemplate(t: Ent, at: V3 | null) {
+    // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps)
+    const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
+    for (const n of names) for (const src of this.io.byName.get(n) || []) {
+      if (!src.cube || src.isCopy) continue;
+      const kv = { ...src.kv, origin: (at || src.origin).join(' ') }; if (!(+t.kv.spawnflags & 2)) delete (kv as any).targetname;
+      const e = new Ent(kv); e.isCopy = true; e.game = this; e.pos = [...e.origin] as V3; this.io.add(e); this.spawnCube(e);
+      this.io.log.push(`${this.io.time.toFixed(2)} spawned ${n} at ${e.origin.map(v => v | 0)}`); break;
+    }
+  }
+  // ---------- per-tick update ----------
+  update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
+    const io = this.io; io.update(dt);
+    for (const e of io.ents) {
+      if (e.killed) continue;
+      if (e.cls === 'logic_timer' && e.enabled) { e.next -= dt; if (e.next <= 0) { io.fire(e, 'ontimer', null); const lo = +(e.kv.lowerrandombound || 0), hi = +(e.kv.upperrandombound || 0);
+        e.next = e.kv.userandomtime === '1' ? lo + Math.random() * (hi - lo) : +(e.kv.refiretime || 1); if (e.next <= 0) e.next = 1; } }
+      if (e.cls === 'func_door' && e.moving) {
+        const dist = len(sub(e.openPos, e.closedPos)) || 1; const step = e.speed * dt / dist; const tgt = e.state;
+        const before = e.t; e.t = tgt ? Math.min(1, e.t + step) : Math.max(0, e.t - step);
+        // don't crush: if the door would move into the player, stop for this tick
+        const np = add(e.closedPos, scale(sub(e.openPos, e.closedPos), e.t)); const old = e.pos.slice(); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2];
+        this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0xffffffff, this.playerEnt);
+        if (pt.startsolid && pt.ent === e) { const d = sub(np, old as V3); if (d[2] > 0 && Math.abs(d[2]) > Math.abs(d[0]) + Math.abs(d[1])) { this.player.pos = add(this.player.pos, d); } else { e.pos[0] = old[0]; e.pos[1] = old[1]; e.pos[2] = old[2]; e.t = before; } }
+        if (e.t === tgt) { e.moving = false; io.fire(e, tgt ? 'onfullyopen' : 'onfullyclosed', null); }
+      }
+      if (e.cls === 'func_tracktrain' && e.speedNow) {
+        const path = io.find(e.pathName, null, e)[0];
+        if (!path) e.speedNow = 0; else {
+          const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
+          const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
+          if (this.player.groundEnt === e || this.onTrain(e)) this.player.pos = add(this.player.pos, mv);
+          if (d <= step) { io.fire(path, 'onpass', null); const nxt = (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
+        }
+      }
+      if (e.inst && e.pos) e.inst.matrix = entityMatrix(e.pos, e.angles);
+    }
+    // parented props follow their parent's translation
+    for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
+      const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos) continue;
+      const off = sub(par.pos, par.spawnPos); if (e.prop) e.prop.matrix = entityMatrix(add(e.origin, off), e.angles);
+      if (e.inst) { e.pos = add(e.origin, off); e.inst.matrix = entityMatrix(e.pos, e.angles); if (e.col) e.col.offset = e.pos; }
+    }
+    // player
+    const prevC: V3 = add(this.player.pos, [0, 0, this.player.maxs()[2] / 2]);
+    this.player.move(input, dt);
+    const nowC: V3 = add(this.player.pos, [0, 0, this.player.maxs()[2] / 2]);
+    for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); break; }
+    this.tr.ignore = null;
+    // cubes
+    for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
+    // triggers
+    this.updateTriggers();
+    if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
+    if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
+    // held-cube prop matrix
+    for (const c of this.cubes) c.prop.matrix = entityMatrix(c.pos, c.held ? [0, this.player.ang[1], 0] : c.ent.angles);
+  }
+  onTrain(e: Ent) { const p = this.player.pos; const m = this.bsp.models[e.model]; return p[0] > e.pos[0] + m.mins[0] && p[0] < e.pos[0] + m.maxs[0] && p[1] > e.pos[1] + m.mins[1] && p[1] < e.pos[1] + m.maxs[1] && Math.abs(p[2] - (e.pos[2] + m.maxs[2])) < 4; }
+  updateCube(c: Cube, dt: number) {
+    const mins: V3 = [-c.ext, -c.ext, -c.ext], maxs: V3 = [c.ext, c.ext, c.ext];
+    const prev: V3 = [...c.pos] as V3;
+    c.ent.box.mins = [1e9, 1e9, 1e9]; c.ent.box.maxs = [1e9, 1e9, 1e9]; // don't collide with itself
+    if (c.held) {
+      const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
+      const want = ma(eye, 56, f); this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
+      const t = this.tr.trace(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
+      c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end;
+      if (len(sub(c.pos, want)) > 80) { c.held = false; this.held = null; }
+    } else {
+      c.vel[2] -= 600 * dt;
+      let left = dt;
+      for (let k = 0; k < 4 && left > 0; k++) {
+        this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
+        const end = ma(c.pos, left, c.vel); let t = this.tr.trace(c.pos, end, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
+        if (t.startsolid) { const eb = this.tr.extraBoxes; this.tr.extraBoxes = []; const t2 = this.tr.trace(c.pos, end, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt); this.tr.extraBoxes = eb; if (t2.allsolid) break; Object.assign(t, t2); }
+        c.pos = t.end; if (t.fraction >= 1) break; left *= 1 - t.fraction;
+        const vn = dot(c.vel, t.normal); c.vel = sub(c.vel, scale(t.normal, vn * 1.15));
+        if (t.normal[2] > 0.7) { c.onGround = true; }
+      }
+      // ground friction
+      const g = this.tr.trace(c.pos, [c.pos[0], c.pos[1], c.pos[2] - 1], mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
+      c.onGround = g.fraction < 1 && g.normal[2] > 0.7;
+      if (c.onGround) { const sp = Math.hypot(c.vel[0], c.vel[1]); const ns = Math.max(0, sp - 400 * dt); if (sp > 0) { c.vel[0] *= ns / sp; c.vel[1] *= ns / sp; } if (c.vel[2] < 0) c.vel[2] = 0;
+        // ride moving platforms
+        if (g.ent && g.ent.moving) { const d = sub(add(g.ent.closedPos, scale(sub(g.ent.openPos, g.ent.closedPos), g.ent.t)), g.ent.pos); void d; } }
+      if (c.pos[2] < -16000) c.ent.game.io.fire(c.ent, 'onoutofworld', c.ent);
+    }
+    this.tr.ignore = null;
+    for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, c.pos)) {
+      const M = throughPortal(p, p.linked); c.pos = xformPoint(M, c.pos); c.vel = xformDir(M, c.vel);
+      const out = dot(c.vel, p.linked.f); if (out < 60) c.vel = ma(c.vel, 60 - out, p.linked.f);
+      if (c.held) { c.held = false; this.held = null; } break;
+    }
+    this.updateCubeBox(c);
+  }
+  use() {
+    if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); this.held = null; return; }
+    const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
+    let best: Cube | null = null, bd = 90;
+    for (const c of this.cubes) { if (!c.alive) continue; const d = sub(c.pos, eye); const along = dot(d, f); if (along < 0 || along > 100) continue; const perp = len(sub(d, scale(f, along))); if (perp < c.ext + 10 && along < bd) { bd = along; best = c; } }
+    if (best) { best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
+    else {
+      // +use on func_button etc.
+      this.tr.ignore = null; const t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);
+      if (t.ent && t.ent.cls === 'func_button') this.io.fire(t.ent, 'onpressed', this.playerEnt);
+    }
+  }
+  updateTriggers() {
+    const io = this.io; const pl = this.player; const pmin = add(pl.pos, HULL.mins), pmax = add(pl.pos, pl.maxs());
+    const overlap = (a0: V3, a1: V3, b0: V3, b1: V3) => a0[0] < b1[0] && a1[0] > b0[0] && a0[1] < b1[1] && a1[1] > b0[1] && a0[2] < b1[2] && a1[2] > b0[2];
+    for (const e of io.ents) {
+      if (!e.touching || e.killed || !e.bmins) continue;
+      const sf = +(e.kv.spawnflags || 0); const now = new Set<Ent>();
+      if (e.enabled) {
+        if ((sf & 1 || sf & 64) && overlap(pmin, pmax, e.bmins, e.bmaxs)) now.add(this.playerEnt);
+        if (sf & 8 || sf & 64 || e.cls === 'trigger_portal_cleanser') for (const c of this.cubes) if (c.alive && overlap(sub(c.pos, [c.ext, c.ext, c.ext]), add(c.pos, [c.ext, c.ext, c.ext]), e.bmins, e.bmaxs)) now.add(c.ent);
+        if (e.kv.filtername) { const f = io.find(e.kv.filtername, null, e)[0]; if (f) for (const a of [...now]) if (!this.passFilter(f, a)) now.delete(a); }
+      }
+      for (const a of now) if (!e.touching.has(a)) {
+        e.touching.add(a); io.fire(e, 'onstarttouch', a);
+        if (e.cls === 'trigger_once') { io.fire(e, 'ontrigger', a); e.killed = true; }
+        else if (e.cls === 'trigger_multiple') { if (!e.waitUntil || io.time >= e.waitUntil) { io.fire(e, 'ontrigger', a); e.waitUntil = io.time + Math.max(0.1, +(e.kv.wait ?? 0.2)); } }
+        else if (e.cls === 'trigger_teleport') { const d = io.find(e.kv.target, null, e)[0]; if (d && a === this.playerEnt) { pl.pos = [...d.origin] as V3; pl.vel = [0, 0, 0]; pl.ang = [0, d.angles[1], 0]; } }
+        else if (e.cls === 'trigger_portal_cleanser') { if (a === this.playerEnt) { if (this.gunPortals.some(p => p.open)) io.fire(e, 'onfizzle', a); this.fizzleGunPortals(); } else if (a.cube) { io.fire(e, 'ondissolvebox', a); io.fire(e, 'ondissolve', a); a.killed = true; a.onKill?.(); } }
+        else if (e.cls === 'trigger_changelevel' && !(sf & 2) && a === this.playerEnt) this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase());
+      }
+      for (const a of [...e.touching]) if (!now.has(a)) { e.touching.delete(a); io.fire(e, 'onendtouch', a); if (!e.touching.size) io.fire(e, 'onendtouchall', a); }
+      if (e.cls === 'trigger_multiple' && e.touching.size && e.waitUntil && io.time >= e.waitUntil && +(e.kv.wait ?? 0) >= 0 && false) {}
+    }
+  }
+  passFilter(f: Ent, a: Ent) {
+    let ok = true;
+    if (f.cls === 'filter_activator_name') ok = a.name === (f.kv.filtername || '').toLowerCase();
+    else if (f.cls === 'filter_activator_class') ok = (a.cube ? 'prop_physics' : a.cls) === (f.kv.filterclass || '').toLowerCase();
+    if (f.kv.negated === '1') ok = !ok; return ok;
+  }
+}

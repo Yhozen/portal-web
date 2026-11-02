@@ -1,0 +1,11 @@
+node_modules/
+site/main.js
+site/main.js.map
+shots/
+*.png
+*.vpk
+*.bsp
+*.vtf
+*.vmt
+*.mdl
+*.wav

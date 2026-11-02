@@ -20,7 +20,7 @@ void main(){
   vec3 c = pow(t.rgb, vec3(2.2)) * lm;
   o = vec4(pow(c, vec3(1./2.2)), t.a);
 }`;
-const OVAL_VS = `layout(location=0) in vec2 aP; uniform mat4 uVP, uModel; uniform float uScale; out vec2 vP; void main(){ vP=aP*uScale; gl_Position=uVP*uModel*vec4(0., -vP.x*32., vP.y*54., 1.); }`;
+const OVAL_VS = `layout(location=0) in vec2 aP; uniform mat4 uVP, uModel; uniform float uScale, uFull; out vec2 vP; void main(){ vP=aP*uScale; gl_Position = uFull > .5 ? vec4(aP, -0.999, 1.) : uVP*uModel*vec4(0., -vP.x*32., vP.y*54., 1.); if (uFull > .5) vP = vec2(0.); }`;
 const OVAL_FS = `in vec2 vP; uniform vec4 uColor; uniform float uMode; out vec4 o;
 void main(){ float r = length(vP);
   if (uMode < 0.5) { if (r > 1.) discard; o = uColor; }               // solid / stencil fill
@@ -97,12 +97,12 @@ export class Renderer {
     for (const e of this.extra) e.draw(vp, clip);
     gl.enable(gl.BLEND); gl.depthMask(false); this.drawModels(vp, clip, true); gl.depthMask(true); gl.disable(gl.BLEND);
   }
-  private oval(vp: M4, p: Portal, mode: number, color: number[], scale = 1) {
-    const gl = this.gl, P = this.prog.oval; gl.useProgram(P.p);
+  private oval(vp: M4, p: Portal, mode: number, color: number[], scale = 1, full = false) {
+    const gl = this.gl, P = this.prog.oval; gl.useProgram(P.p); gl.uniform1f(P.u.uFull, full ? 1 : 0);
     // nudge off the wall to avoid z-fighting
     const m = portalMatrix(p); m[12] += p.f[0] * 0.6; m[13] += p.f[1] * 0.6; m[14] += p.f[2] * 0.6;
     gl.uniformMatrix4fv(P.u.uVP, false, vp); gl.uniformMatrix4fv(P.u.uModel, false, m); gl.uniform1f(P.u.uScale, scale); gl.uniform4fv(P.u.uColor, color); gl.uniform1f(P.u.uMode, mode);
-    gl.bindVertexArray(this.ovalVao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.bindVertexArray(null);
+    gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.ovalVao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.bindVertexArray(null); gl.enable(gl.CULL_FACE);
   }
   /** Recursive stencil portal rendering. view = world->camera, proj = projection. */
   renderView(proj: M4, view: M4, eye: V3, clip: Float32Array, level: number, exclude: Portal | null) {
@@ -113,13 +113,16 @@ export class Renderer {
     for (const a of vis) {
       const b = a.linked && a.linked.open ? a.linked : null;
       if (!b || level >= this.maxDepth || this.noPortalRender) { gl.stencilFunc(gl.EQUAL, level, 0xff); this.oval(vp, a, 0, b ? [a.color[0] * .5, a.color[1] * .5, a.color[2] * .5, 1] : [a.color[0] * .35, a.color[1] * .35, a.color[2] * .35, 1]); continue; }
+      // camera inside the portal hole (closer than the near plane): the whole view is through the portal
+      const de = dot(a.f, eye) - dot(a.f, a.pos), rl = (dot(a.r, eye) - dot(a.r, a.pos)) / 32, ul = (dot(a.u, eye) - dot(a.u, a.pos)) / 54;
+      const full = level === 0 && de < 3 && rl * rl + ul * ul < 0.9;
       // 1) mark portal pixels: level -> level+1
       gl.colorMask(false, false, false, false); gl.depthMask(false);
       gl.stencilFunc(gl.EQUAL, level, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
-      this.oval(vp, a, 0, [0, 0, 0, 1]);
+      this.oval(vp, a, 0, [0, 0, 0, 1], 1, full);
       // 2) clear depth inside
       gl.depthMask(true); gl.depthFunc(gl.ALWAYS); gl.stencilFunc(gl.EQUAL, level + 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
-      this.oval(vp, a, 1, [0, 0, 0, 1]); gl.depthFunc(gl.LEQUAL); gl.colorMask(true, true, true, true);
+      this.oval(vp, a, 1, [0, 0, 0, 1], 1, full); gl.depthFunc(gl.LEQUAL); gl.colorMask(true, true, true, true);
       // 3) virtual view through a, out of b
       const M = throughPortal(b, a); // takes world near b to virtual space near a
       const vview = mul(view, M);
@@ -128,7 +131,7 @@ export class Renderer {
       this.renderView(proj, vview, veye, vclip, level + 1, b);
       // 4) restore depth to the portal surface and stencil back to level
       gl.colorMask(false, false, false, false); gl.depthFunc(gl.ALWAYS); gl.stencilFunc(gl.EQUAL, level + 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR);
-      this.oval(vp, a, 0, [0, 0, 0, 1]);
+      this.oval(vp, a, 0, [0, 0, 0, 1], 1, full);
       gl.depthFunc(gl.LEQUAL); gl.colorMask(true, true, true, true); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
     }
     // rims

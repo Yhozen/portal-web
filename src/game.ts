@@ -112,8 +112,8 @@ export class Game {
       for (let i = 0; i < br.numSides && inside; i++) {
         const pl = bsp.planes[bsp.brushSides[br.firstSide + i].plane];
         // min over the hole box of dot(n, x) - d
-        const c = ma(p.pos, -20, p.f); const ex = Math.abs(dot(pl.n, p.r)) * (PW - 2) + Math.abs(dot(pl.n, p.u)) * (PH - 2) + Math.abs(dot(pl.n, p.f)) * 19.5;
-        if (dot(pl.n, c) - pl.d - ex > 0) inside = false;
+        const c = ma(p.pos, -20, p.f); const ex = Math.abs(dot(pl.n, p.r)) * (PW - 4) + Math.abs(dot(pl.n, p.u)) * (PH - 4) + Math.abs(dot(pl.n, p.f)) * 19.5;
+        if (dot(pl.n, c) - pl.d - ex > -1) inside = false;
       }
       if (inside) s.add(bi);
     }
@@ -145,8 +145,8 @@ export class Game {
     const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
   }
   teleportPlayer(a: Portal, b: Portal) {
-    const M = throughPortal(a, b); const pl = this.player; const mid = (pl.maxs()[2]) / 2;
-    const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
+    const M = throughPortal(a, b); const pl = this.player; const mid = pl.viewOffset;
+    const c: V3 = pl.eye(); const nc = xformPoint(M, c);
     pl.vel = xformDir(M, pl.vel);
     const { f, u } = angleVectors(pl.ang); const nf = xformDir(M, f), nu = xformDir(M, u);
     const na = vectorAngles(nf, nu); pl.ang = [Math.max(-89, Math.min(89, na[0])), na[1], 0];
@@ -154,6 +154,12 @@ export class Game {
     // exiting a floor portal: make sure we leave with at least a little speed so we clear the hole
     const out = dot(pl.vel, b.f); if (out < 60) pl.vel = ma(pl.vel, 60 - out, b.f);
     pl.onGround = false; this.stats.teleports++;
+    // un-stick: the exit hole may sit lower/higher than the hull (e.g. feet below the floor); nudge up/out until free
+    this.tr.ignore = this.tunnelFor(pl.pos, HULL.mins, pl.maxs());
+    const free = (q: V3) => !this.tr.trace(q, q, HULL.mins, pl.maxs(), 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000 | 0x2000000, pl).startsolid;
+    if (!free(pl.pos)) { let done = false;
+      for (let k = 1; k <= 40 && !done; k++) for (const d of [[0, 0, 1], b.f, [0, 0, -1]] as V3[]) { const q = ma(pl.pos, k, d); if (free(q)) { pl.pos = q; done = true; break; } } }
+    this.tr.ignore = null;
     this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
   }
   shootPortal(which: 0 | 1) {
@@ -319,9 +325,10 @@ export class Game {
       if (e.inst) { e.pos = add(e.origin, off); e.inst.matrix = entityMatrix(e.pos, e.angles); if (e.col) e.col.offset = e.pos; }
     }
     // player
-    const prevC: V3 = add(this.player.pos, [0, 0, this.player.maxs()[2] / 2]);
+    // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
+    const prevC: V3 = this.player.eye();
     this.player.move(input, dt);
-    const nowC: V3 = add(this.player.pos, [0, 0, this.player.maxs()[2] / 2]);
+    const nowC: V3 = this.player.eye();
     for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); break; }
     this.tr.ignore = null;
     // cubes

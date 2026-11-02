@@ -101,7 +101,7 @@ export class Game {
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
-      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); }
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
     if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }
@@ -383,7 +383,7 @@ export class Game {
       if (sq.frames > 1 && pr.rate) { let c = (pr.cycle || 0) + dt * pr.rate / dur;
         if (c >= 1) { if (pr.loop) c %= 1; else { c = 1; if (pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } } } pr.cycle = c; }
       const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3);
-      if (pr.posed !== key && pr.seq !== undefined) { if (pr.seq === 0 && !pr.cycle && !pr.skinned) { pr.posed = key; continue; } pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, pr.seq, pr.cycle || 0); pr.posed = key; }
+      if (pr.posed !== key && pr.seq !== undefined) { pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, pr.seq, pr.cycle || 0); pr.posed = key; }
     }
   }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {

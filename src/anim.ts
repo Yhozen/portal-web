@@ -5,7 +5,7 @@
 export interface Bone { name: string; parent: number; pos: number[]; quat: number[]; rot: number[]; posscale: number[]; rotscale: number[]; poseToBone: Float32Array /* 3x4 row-major */; }
 export interface Seq { name: string; activity: string; looping: boolean; anim: number; fps: number; frames: number; }
 export interface AnimDesc { name: string; fps: number; frames: number; flags: number; ofs: number; sectionFrames: number; sectionOfs: number; animblock: number; }
-export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; }
+export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; staticProp: boolean; }
 
 const cstr = (dv: DataView, o: number) => { let s = ''; for (let p = o; p < dv.byteLength; p++) { const c = dv.getUint8(p); if (!c) break; s += String.fromCharCode(c); } return s; };
 function half(h: number) { const s = h >> 15 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023; if (e === 0) return s * f * 2 ** -24; if (e === 31) return f ? NaN : s * Infinity; return s * (1 + f / 1024) * 2 ** (e - 15); }
@@ -28,7 +28,7 @@ export function parseSkeleton(buf: ArrayBuffer): Skeleton {
   for (let i = 0, n = i32(188), b = i32(192); i < n; i++) { const o = b + i * 212;
     const ai = dv.getInt16(o + i32(o + 60), true); const a = anims[ai];
     seqs.push({ name: cstr(dv, o + i32(o + 4)).toLowerCase(), activity: cstr(dv, o + i32(o + 8)).toLowerCase(), looping: !!(i32(o + 12) & 1), anim: ai, fps: a?.fps || 30, frames: a?.frames || 1 }); }
-  return { bones, seqs, anims, dv };
+  return { bones, seqs, anims, dv, staticProp: !!(i32(152) & 0x10) /* studiohdr_t.flags & STUDIOHDR_FLAGS_STATIC_PROP */ };
 }
 
 // mstudioanimvalue_t run-length decode
@@ -79,8 +79,11 @@ const slerp = (a: number[], b: number[], t: number) => {
 
 /** skinning matrices (3x4 row-major per bone, bone pose * poseToBone) for sequence seq at cycle 0..1 */
 export function poseMatrices(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
-  // Compiled animation tracks carry studiomdl's 90-degree root rotation, while the VVD bind pose (what static
-  // props show) does not. Normalise so that sequence 0, frame 0 maps to the bind pose exactly.
+  // Compiled animation tracks carry studiomdl's 90-degree root rotation. For models compiled as static props
+  // the VVD bind pose already has it baked in, so normalise those so sequence 0, frame 0 is the bind pose.
+  // Other models (door halves, buttons) must use the raw pose: their VVD verts are in the unrotated pose space
+  // (their hull, in model space, is the rotated one).
+  if (!sk.staticProp) return rawPose(sk, seqIdx, cycle);
   let C = fixCache.get(sk); if (!C) { const m0 = rawPose(sk, 0, 0); C = invert34(Array.from(m0.slice(0, 12))); fixCache.set(sk, C); }
   const raw = rawPose(sk, seqIdx, cycle), out = new Float32Array(raw.length);
   for (let i = 0; i < raw.length / 12; i++) out.set(mul34(C, 0, raw, i * 12), i * 12);

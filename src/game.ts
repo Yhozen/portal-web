@@ -83,7 +83,7 @@ export class Game {
       const dir = angleVectors(parseV3(kv.movedir)).f; const M = this.bsp.models[bm];
       const size = Math.abs(dir[0]) * (M.maxs[0] - M.mins[0]) + Math.abs(dir[1]) * (M.maxs[1] - M.mins[1]) + Math.abs(dir[2]) * (M.maxs[2] - M.mins[2]);
       e.closedPos = [...e.origin]; e.openPos = ma(e.origin, size - +(kv.lip || 0), dir); e.speed = +(kv.speed || 100); e.state = 0; e.t = 0; // t: 0 closed .. 1 open
-      if ((+kv.spawnflags & 1) || kv.spawnpos === '1') { e.t = 1; e.state = 1; }
+      if ((+kv.spawnflags & 1) || kv.spawnpos === '1') { e.t = 1; e.state = 1; for (let k = 0; k < 3; k++) e.pos[k] = e.openPos[k]; }
     }
     if (c === 'info_overlay_accessor') { e.ovl = {}; this.r.overlayState.set(+(kv.overlayid || -1), e.ovl); }
     if (c === 'func_rotating') { e.ang = [...e.angles] as V3; e.maxspeed = +(kv.maxspeed || 100); e.spinning = !!(+kv.spawnflags & 1); e.spinDir = (+kv.spawnflags & 2) ? -1 : 1;

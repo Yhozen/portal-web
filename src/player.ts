@@ -15,8 +15,13 @@ export class Player {
   maxs(): V3 { return this.ducked ? HULL.duckMaxs : HULL.maxs; }
   trace(a: V3, b: V3, maxs = this.maxs()): Trace { this.ignoreFn?.(); return this.tr.trace(a, b, HULL.mins, maxs, MASK_PLAYERSOLID, this); }
   eye(): V3 { return [this.pos[0], this.pos[1], this.pos[2] + this.viewOffset]; }
+  // Like gamemovement's CheckStuck: if we start inside something (e.g. a teleport destination exactly on the floor), nudge out.
+  unstick() { if (!this.trace(this.pos, this.pos).startsolid) return;
+    for (const dz of [0.125, 0.5, 1, 2, 4, 8, 12, 18]) for (const [dx, dy] of [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [8, 0], [-8, 0], [0, 8], [0, -8]]) {
+      const p: V3 = [this.pos[0] + dx, this.pos[1] + dy, this.pos[2] + dz]; if (!this.trace(p, p).startsolid) { this.pos = p; return; } } }
   move(inp: Input, dt: number) {
     if (this.noclip) { const { f, r } = angleVectors(this.ang); const s = 600 * dt; for (let i = 0; i < 3; i++) this.pos[i] += (f[i] * inp.fwd + r[i] * inp.side) * s; this.vel = [0, 0, 0]; return; }
+    this.unstick();
     this.duck(inp.duck);
     this.categorize();
     const yaw = [0, this.ang[1], 0]; const { f, r } = angleVectors(yaw);

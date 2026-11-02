@@ -25,6 +25,7 @@ window.AP = (() => {
       if (dp > 0 && dp < 40 && Math.abs(lr) < 14 && Math.abs(lu) < 40) { const o = [b.pos[0] + b.f[0] * 40, b.pos[1] + b.f[1] * 40, b.pos[2] + b.f[2] * 40 - 20]; const q = floorAt(o); if (q) out.push({ q, c: 60, portal: a }); } }
     return out;
   }
+  const ZT = { lo: -64, hi: 64 }; // arrival z window (node z minus target z)
   function plan(target, R = 28, maxN = 60000) {
     const hs = hurt(); const start = [...pl.pos]; const open = [{ p: start, g: 0, f: 0, k: key(start) }]; const best = new Map([[open[0].k, 0]]); const prev = new Map(); const nodeAt = new Map([[open[0].k, start]]);
     const h = p => Math.hypot(p[0] - target[0], p[1] - target[1], (p[2] - target[2]) * 0.5);
@@ -32,7 +33,7 @@ window.AP = (() => {
     while (open.length && n++ < maxN) {
       let bi = 0; for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i; const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
       if (cur.g > best.get(cur.k)) continue; { const hc = h(cur.p); if (hc < nearH) { nearH = hc; near = cur; } }
-      if (Math.hypot(cur.p[0] - target[0], cur.p[1] - target[1]) < R && Math.abs(cur.p[2] - target[2]) < 64) {
+      if (Math.hypot(cur.p[0] - target[0], cur.p[1] - target[1]) < R && cur.p[2] - target[2] > ZT.lo && cur.p[2] - target[2] < ZT.hi) {
         const path = []; let k = cur.k, node = cur; while (node) { path.push(node); node = prev.get(node.k); } return { ok: true, path: path.reverse(), expanded: n }; }
       for (const nb of neighbors(cur.p, hs)) { const k = key(nb.q), g = cur.g + nb.c; if (g < (best.get(k) ?? 1e9)) { best.set(k, g); const node = { p: nb.q, g, f: g + h(nb.q) * 1.2, k, portal: nb.portal }; prev.set(k, cur); nodeAt.set(k, nb.q); open.push(node); } }
     }
@@ -74,7 +75,8 @@ window.AP = (() => {
     for (const which of [0, 1]) { if (!G.canFire[which]) continue; r = portalSolve(target, R, which, { vantage: true, spacing: 200, pitches: [-30, -15, 0, 15, 30, 60, 89], ...opts }); if (r.ok) return r; }
     return r; }
   // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
-  function pickUp(cube) { let r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
+  // a cube up to ~150 units above the floor (on a pedestal) can still be grabbed: the use() ray reaches 100 units from the eye
+  function pickUp(cube) { ZT.lo = -150; let r; try { r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 72); } finally { ZT.lo = -64; } if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
     lookAt(cube.pos); wait(0.1); if (!G.held) G.use(); wait(0.3); return { ok: !!G.held, why: G.held ? '' : 'use() did not grab' }; }
   function placeCube(cube, b) { if (!G.held) { const p = pickUp(cube); if (!p.ok) return p; }
     let r = reach([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
@@ -106,5 +108,5 @@ window.AP = (() => {
   const floorUnder = e => { const c = centre(e); const t = pl.trace([c[0], c[1], e.bmaxs[2] - 4], [c[0], c[1], e.bmins[2] - 200]); return t.fraction < 1 ? t.end : [c[0], c[1], e.bmins[2]]; };
   const centre = e => [0, 1, 2].map(i => (e.bmins[i] + e.bmaxs[i]) / 2);
   const ent = n => G.io.ents.find(e => e.name === n);
-  return { LOG, reach, floorUnder, portalSolve, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
+  return { LOG, ZT, reach, floorUnder, portalSolve, plan, walk, goto, gotoRetry, pickUp, placeCube, centre, ent, wait, lookAt, approach };
 })();

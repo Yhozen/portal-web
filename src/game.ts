@@ -114,7 +114,7 @@ export class Game {
     e.cube = cube; this.cubes.push(cube);
     this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
     e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
-    this.updateCubeBox(cube);
+    this.updateCubeBox(cube); if (e.killed) e.onKill();
   }
   updateCubeBox(c: Cube) { const b = c.ent.box, x = halfExtent(c).map(v => Math.min(v, c.ext * 1.3)); b.mins = [c.pos[0] - x[0], c.pos[1] - x[1], c.pos[2] - x[2]]; b.maxs = [c.pos[0] + x[0], c.pos[1] + x[1], c.pos[2] + x[2]]; }
   // ---------- portals ----------

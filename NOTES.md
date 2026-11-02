@@ -23,3 +23,14 @@
 - 11:37 portalSolve (sweeps real gun shots, vantage spots); testchmb_a_01 completed by real traversal (~82 s). shots/27, 28
 - 11:41 prop_physics Wake/Sleep/EnableMotion; brush toggles wake cubes. a02 part 1 solved by autopilot: box drops into pit, drop in, grab it, shoot blue on pit wall, exit via fixed orange with the box, box on button, middle elevator up. shots/29-a02-pit.png
 - 12:07 Killed point_template originals were still drawn (a02 showed two cubes on the pedestal) -> hidden at spawn. Autopilot can grab cubes resting on pedestals (arrival z window).
+
+## 12:10–12:32 EST
+- MDL pose: non-static-prop models use the raw sequence pose (studiohdr flags & 0x10 at offset 152); this fixed the door halves showing as a black edge-on slab. Rest-posed prop_dynamics start animating again when SetAnimation arrives (restPose).
+- HUD hint key names are spaced out ("[W]   [S]" instead of running together).
+- Fresh screenshots: 30 (a02 part 1 done, inside the elevator), 32 (exit door opening), 33 (pedestal), 34 (cube tumbling), 35 (GLaDOS caption), 36 (a02 part 1 rerun after the fixes).
+- Perf (headless SwiftShader, 1024x640): a00 776 ms / 32 fps; a02 735 ms / 34 fps; a14 1405 ms / 31.5 fps; escape_02 2402 ms / 28 fps, 215 draws (was 1446 draws / about 11 fps before PVS).
+- a00 autopilot regression bisected. There were two causes:
+  1. In 4db4a7f, wakeCubes() woke every cube whenever any door moved or brush toggled. Now it only wakes cubes within 96u of that entity's bounds.
+  2. In 2fc8bf3/c39a010, pickUp/placeCube started using reach and a wider z window. They now try plain gotoRetry first and fall back to the wider window only if that fails.
+  After the fix, a00 → a01 at 117.8 s, a01 → a02 at 81.8 s, and a02 part 1 reaches the middle elevator top at 70.6 s.
+- a02 part 2 is still open. The second box sits in a pit and the pedestal box is out of reach from the floor. The intended route probably goes through the fixed orange portal_a1_rm3a at (704,1148,759), which trigger (448,464,611) activates. The exit needs counter_buttons_rm3a = 2.

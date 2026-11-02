@@ -1,3 +1,4 @@
+import { Sound } from './audio.ts';
 import { BSP } from './bsp.ts';
 import { Assets } from './assets.ts';
 import { Zip } from './zip.ts';
@@ -57,17 +58,18 @@ async function main() {
     if (from) { u.set('landmark', lm); u.set('lp', sub(pl.pos, parseV3(from.origin)).map(v => v.toFixed(1)).join(',')); u.set('ang', pl.ang.map(v => v.toFixed(1)).join(',')); }
     log('changelevel', map); if (q.get('nochange') !== '1') location.search = u.toString(); else (window as any).changedTo = map;
   };
-  // sound (bonus): plain PCM wavs decode in the browser; others are skipped
-  let actx: AudioContext | null = null; const sbuf = new Map<string, Promise<AudioBuffer | null>>();
-  game.sounds = (path) => { if (!actx) return; const p = 'sound/' + path.replace(/^[*#@^)(}$!?<>]+/, '').toLowerCase();
-    if (!sbuf.has(p)) sbuf.set(p, assets.read(p).then(b => b ? actx!.decodeAudioData(b.slice(0)).catch(() => null) : null));
-    sbuf.get(p)!.then(b => { if (!b || !actx) return; const s = actx.createBufferSource(); s.buffer = b; const g = actx.createGain(); g.gain.value = 0.5; s.connect(g).connect(actx.destination); s.start(); }); };
+  // sound: soundscripts, PCM/ADPCM wav, mp3, scene dialogue + captions (audio starts on the first click: browser autoplay rules)
+  const snd = new Sound(assets); game.snd = snd;
+  const capDiv = document.createElement('div'); capDiv.style.cssText = 'position:fixed;left:50%;bottom:70px;transform:translateX(-50%);max-width:60%;color:#f0c8d8;background:rgba(0,0,0,.55);font:16px sans-serif;padding:6px 12px;border-radius:4px;text-align:center;display:none;pointer-events:none';
+  document.body.appendChild(capDiv); (window as any).snd = snd;
+  setInterval(() => { const now = game.io.time; game.captions = game.captions.filter(c => c.until > now); const t = game.captions.map(c => c.text).join('<br>'); capDiv.innerHTML = t; capDiv.style.display = t ? 'block' : 'none'; snd.listener = game.player.eye(); }, 100);
+  const unlockAudio = () => { const first = !snd.ctx; snd.unlock(); if (first) snd.ready.then(() => game.startAmbients()); };
   // input
   const keys = new Set<string>(); let noclip = false;
   addEventListener('keydown', e => { keys.add(e.code); if (document.pointerLockElement === canvas) e.preventDefault();
     if (e.code === 'KeyE' && !e.repeat) game.use(); if (e.code === 'KeyV' && !e.repeat) noclip = !noclip; if (e.code === 'KeyR' && !e.repeat) location.reload(); });
   addEventListener('keyup', e => keys.delete(e.code));
-  canvas.addEventListener('click', () => { canvas.requestPointerLock(); if (!actx) { actx = new AudioContext(); } });
+  canvas.addEventListener('click', () => { canvas.requestPointerLock(); unlockAudio(); });
   addEventListener('keydown', e => { if (document.pointerLockElement === canvas) return; if (e.code === 'KeyQ') game.shootPortal(0); if (e.code === 'KeyF') game.shootPortal(1); });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('mousedown', e => { if (document.pointerLockElement !== canvas) return; if (e.button === 0) game.shootPortal(0); if (e.button === 2) game.shootPortal(1); });

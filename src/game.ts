@@ -1,3 +1,4 @@
+import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel } from './models.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
@@ -18,7 +19,7 @@ export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
-  sounds: ((path: string, pos?: V3) => void) | null = null; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = [];
+  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
     this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
     this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
@@ -245,9 +246,15 @@ export class Game {
     // gun portals replace map portals of the same colour
     for (const e of this.io.ents) if (e.portal && e.portal.open && (e.kv.portaltwo === '1') === (which === 1)) e.portal.open = false;
     this.relinkMapPortals();
-    this.sounds?.(which ? 'weapons/portalgun/portalgun_shoot_red1.wav' : 'weapons/portalgun/portalgun_shoot_blue1.wav');
+    this.snd?.play(which ? 'weapons/portalgun/portalgun_shoot_red1.wav' : 'weapons/portalgun/portalgun_shoot_blue1.wav');
   }
-  fizzleShot(which: number, why: string) { this.io.log.push(`portal ${which} failed: ${why}`); this.sounds?.('weapons/portalgun/portal_invalid_surface3.wav'); }
+  startAmbients() { for (const e of this.io.ents) if (e.cls === 'ambient_generic' && !(+(e.kv.spawnflags || 0) & 16) && !e.sndH && !e.killed) this.io.deliver(e, 'playsound', '', null, e); }
+  /** play scene line n (soundscript) with its caption, then chain to the next */
+  speak(e: Ent, n: number) { const name = e.sceneSounds?.[n]; if (!name || !e.playing) return; const sn = this.snd; if (!sn) return;
+    const cap = sn.caption(name); const h = sn.play(name, e.origin, { everywhere: true }); e.sndH = h;
+    const t0 = this.io.time; const wait = () => { if (!e.playing || h.stopped) return; if (h.dur) { if (cap) { this.captions = this.captions.filter(c => c.until - 0.5 > this.io.time && c.text !== cap).slice(-1); this.captions.push({ text: cap, until: this.io.time + h.dur + 0.5 }); } setTimeout(() => this.speak(e, n + 1), h.dur * 1000 + 100); } else if (this.io.time - t0 < 5) setTimeout(wait, 100); else { if (cap) this.captions.push({ text: cap, until: t0 + 4 }); this.speak(e, n + 1); } };
+    wait(); }
+  fizzleShot(which: number, why: string) { this.io.log.push(`portal ${which} failed: ${why}`); this.snd?.play('weapons/portalgun/portal_invalid_surface3.wav'); }
   fizzleGunPortals() { for (const p of this.gunPortals) p.open = false; this.relinkMapPortals(); }
   // ---------- handlers ----------
   setupHandlers() {
@@ -276,11 +283,17 @@ export class Game {
       return false;
     });
     H.set('logic_choreographed_scene', (e, i) => {
-      // We can't play VCD choreography; approximate its timeline so map logic that waits on it still advances.
-      if (i === 'start') { io.fire(e, 'onstart', null); let k = 1; for (; k <= 16; k++) if (!e.outputs.has('ontrigger' + k)) break;
-        for (let j = 1; j < k; j++) io.send(e.name, '_trig' + j, '', j * 1.5, null, e); io.send(e.name, '_done', '', Math.max(4, k * 1.5), null, e); return true; }
-      if (i.startsWith('_trig')) { io.fire(e, 'ontrigger' + i.slice(5), null); return true; }
-      if (i === '_done') { io.fire(e, 'oncompletion', null); return true; }
+      // VCD choreography: timing + dialogue come from the scene's summary in scenes/scenes.image (total length + the sounds it speaks).
+      // Sounds play back to back with English captions; OnTrigger outputs are spread across the scene since we don't run the event timeline.
+      if (i === 'start') { if (e.playing) return true; e.playing = true; io.fire(e, 'onstart', null);
+        const info = this.snd?.scene(e.kv.scenefile || ''); const dur = info ? Math.max(0.5, info.msecs / 1000) : 4; e.sceneSounds = info?.sounds || [];
+        io.log.push(`${io.time.toFixed(2)} scene ${e.kv.scenefile} ${dur.toFixed(1)}s ${e.sceneSounds.join(',')}`);
+        let k = 1; for (; k <= 16; k++) if (!e.outputs.has('ontrigger' + k)) break;
+        for (let j = 1; j < k; j++) io.send(e.name, '_trig' + j, '', dur * j / k, null, e); io.send(e.name, '_done', '', dur, null, e);
+        this.speak(e, 0); return true; }
+      if (i.startsWith('_trig')) { if (e.playing) io.fire(e, 'ontrigger' + i.slice(5), null); return true; }
+      if (i === '_done') { if (!e.playing) return true; e.playing = false; io.fire(e, 'oncompletion', null); return true; }
+      if (i === 'cancel' || i === 'stop') { e.playing = false; e.sndH?.stop(); io.cancel?.(e.name); return true; }
       return true;
     });
     H.set('prop_portal', (e, i, p) => {
@@ -319,7 +332,10 @@ export class Game {
     H.set('env_fade', (e, i) => { if (i !== 'fade') return true; const from = +e.kv.spawnflags & 1; const dur = +(e.kv.duration || 1), hold = +(e.kv.holdtime || 0);
       if (from) { this.hud.fade = 1; this.hud.fadeTarget = 0; this.hud.fadeRate = 1 / Math.max(0.01, dur); this.hud.fadeHoldUntil = io.time + hold; } else { this.hud.fadeTarget = 1; this.hud.fadeRate = 1 / Math.max(0.01, dur); } return true; });
     H.set('trigger_portal_cleanser', (e, i) => { if (i === 'fizzleTouchingPortals'.toLowerCase()) this.fizzleGunPortals(); return false; });
-    H.set('ambient_generic', (e, i) => { if (i === 'playsound' && /\.wav$/i.test(e.kv.message || '')) this.sounds?.(e.kv.message, e.origin); return true; });
+    H.set('ambient_generic', (e, i, p) => { const sn = this.snd; const fl = +(e.kv.spawnflags || 0);
+      const start = () => { e.sndH?.stop(); if (!sn) return; const msg = e.kv.message || ''; e.sndH = sn.play(msg, e.pos || e.origin, { vol: Math.min(1, +(e.kv.health ?? 10) / 10), everywhere: !!(fl & 1), loop: fl & 32 ? false : undefined, music: /^portal\.song|music\//i.test(msg) }); this.io.log.push(`${io.time.toFixed(2)} sound ${msg}`); };
+      if (i === 'playsound') start(); else if (i === 'stopsound') e.sndH?.stop(); else if (i === 'togglesound') { if (e.sndH && !e.sndH.stopped) e.sndH.stop(); else start(); }
+      else if (i === 'volume' && e.sndH?.src) { /* runtime volume changes are ignored */ void p; } return true; });
     H.set('trigger_teleport', () => false); H.set('trigger_once', () => false); H.set('trigger_multiple', () => false);
     H.set('player', (e, i) => { if (i === 'sethealth') {} return true; });
     H.set('func_noportal_volume', () => false);

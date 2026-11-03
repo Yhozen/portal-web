@@ -4,19 +4,24 @@ import { MaterialCache, type GLMat } from './materials.ts';
 import { mul, type M4, type V3, basisMatrix, invertRigid, dot, cross } from './math.ts';
 import type { BSP } from './bsp.ts';
 import type { GLModel, Skinned } from './models.ts';
+import { LightCubes, type Cube } from './light.ts';
 
 const WORLD_VS = `
 layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUV; layout(location=2) in vec2 aLM; layout(location=3) in vec3 aN; layout(location=4) in float aA;
 uniform mat4 uVP, uModel; out vec2 vUV, vLM; out vec3 vW, vN; out float vA;
 void main(){ vec4 w = uModel*vec4(aPos,1.); vW=w.xyz; vUV=aUV; vLM=aLM; vN=mat3(uModel)*aN; vA=aA; gl_Position=uVP*w; }`;
 const WORLD_FS = `
-in vec2 vUV, vLM; in vec3 vW, vN; in float vA; uniform sampler2D uTex, uLM; uniform vec4 uClip, uTint; uniform float uAlphaTest, uUnlit, uLMScale; uniform vec3 uAmbient;
+in vec2 vUV, vLM; in vec3 vW, vN; in float vA; uniform sampler2D uTex, uLM; uniform vec4 uClip, uTint; uniform float uAlphaTest, uUnlit, uLMScale, uUseCube; uniform vec3 uAmbient, uCube[6];
 out vec4 o;
 void main(){
   if (dot(vW, uClip.xyz) < uClip.w) discard;
   vec4 t = texture(uTex, vUV) * uTint;
   if (uAlphaTest > 0. && t.a < uAlphaTest) discard;
-  vec3 lm = uUnlit > .5 ? vec3(1.) : (uLMScale > 0. ? pow(texture(uLM, vLM).rgb, vec3(2.2)) * 4. : uAmbient * (0.65 + 0.35*max(dot(normalize(vN), normalize(vec3(.3,.2,.9))),0.)));
+  vec3 n = normalize(vN), n2 = n * n;
+  // models: the leaf ambient cube, weighted by the squared normal components (+X -X +Y -Y +Z -Z)
+  vec3 cube = n2.x * (n.x >= 0. ? uCube[0] : uCube[1]) + n2.y * (n.y >= 0. ? uCube[2] : uCube[3]) + n2.z * (n.z >= 0. ? uCube[4] : uCube[5]);
+  vec3 lm = uUnlit > .5 ? vec3(1.) : (uLMScale > 0. ? pow(texture(uLM, vLM).rgb, vec3(2.2)) * 4. :
+    (uUseCube > .5 ? cube * uAmbient : uAmbient * (0.65 + 0.35*max(dot(n, normalize(vec3(.3,.2,.9))),0.))));
   vec3 c = pow(t.rgb, vec3(2.2)) * lm;
   o = vec4(pow(c, vec3(1./2.2)), t.a);
 }`;
@@ -34,8 +39,10 @@ export interface Portal { pos: V3; f: V3; r: V3; u: V3; color: V3; open: boolean
 export interface Instance { model: number; matrix: M4; visible: boolean; alpha?: number; texFrame?: number; }
 export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
 export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; texFrame?: number; ambient: [number, number, number]; tint?: [number, number, number];
+  /** cached ambient cube and the lighting origin it was sampled at */ lightCube?: Cube | null; lightAt?: [number, number, number];
   seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; onDone?: () => void; restPose?: boolean; }
 
+const ONE3 = new Float32Array([1, 1, 1]);
 export function portalMatrix(p: Portal) { return basisMatrix(p.pos, p.f, [-p.r[0], -p.r[1], -p.r[2]], p.u); }
 const ROT180 = (() => { const m = new Float32Array(16); m[0] = -1; m[5] = -1; m[10] = 1; m[15] = 1; return m; })();
 /** world transform taking things at portal a to portal b (exit through b) */
@@ -44,6 +51,7 @@ export function throughPortal(a: Portal, b: Portal) { return mul(portalMatrix(b)
 export class Renderer {
   gl: WebGL2RenderingContext; mats: MaterialCache; world!: { vao: WebGLVertexArrayObject; mesh: WorldMesh; lm: WebGLTexture; mats: GLMat[] };
   prog = { world: null as any, oval: null as any }; ovalVao: WebGLVertexArrayObject; instances: Instance[] = []; time = 0; overlayState = new Map<number, { texFrame?: number; hidden?: boolean }>(); showOverlays = true; portals: Portal[] = []; extra: MeshDraw[] = []; props: PropInst[] = [];
+  cubes: LightCubes | null = null; useCubes = true;
   maxDepth = 2; stats = { draws: 0, views: 0, pvsHits: 0, pvsBuilds: 0, culled: 0 }; usePVS = true; bsp: BSP | null = null;
   private pvsCache = new Map<number, { vao: WebGLVertexArrayObject; ib: WebGLBuffer; batches: { texdata: number; start: number; count: number }[] }>();
   private vb: WebGLBuffer | null = null; private visBits: Uint8Array | null = null; private visCluster = -2;
@@ -82,7 +90,7 @@ export class Renderer {
   }
   async setWorld(bsp: BSP, mesh: WorldMesh) {
     const gl = this.gl, vao = gl.createVertexArray()!; gl.bindVertexArray(vao);
-    const vb = this.vb = gl.createBuffer(); this.bsp = bsp; this.pvsCache.clear(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.verts, gl.STATIC_DRAW);
+    const vb = this.vb = gl.createBuffer(); this.bsp = bsp; this.cubes = new LightCubes(bsp); this.pvsCache.clear(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.verts, gl.STATIC_DRAW);
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
     const at = [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 3, 7], [4, 1, 10]];
     for (const [l, n, o] of at) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, n, gl.FLOAT, false, STRIDE * 4, o * 4); }
@@ -120,7 +128,8 @@ export class Renderer {
     gl.uniform1f(P.u.uLMScale, 0);
     for (const pr of this.props) {
       if (!pr.visible || !pr.model) continue; const md = pr.model; if (!this.seenBox(pr.matrix, md.data.mins, md.data.maxs)) { this.stats.culled++; continue; } gl.bindVertexArray(pr.skinned ? pr.skinned.vao : md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
-      gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
+      const cube = this.useCubes ? this.propCube(pr) : null; gl.uniform1f(P.u.uUseCube, cube ? 1 : 0);
+      if (cube) { gl.uniform3fv(P.u.uCube, cube); gl.uniform3fv(P.u.uAmbient, ONE3); } else gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
       for (const d of md.draws) {
         const m = skin[d.mat] || skin[0]; if (!m || m.translucent !== translucent) continue;
         gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, pr.texFrame)); const t = pr.tint || [1, 1, 1]; gl.uniform4f(P.u.uTint, m.tint[0] * t[0], m.tint[1] * t[1], m.tint[2] * t[2], m.tint[3]); gl.uniform1f(P.u.uAlphaTest, m.alphatest || (m.translucent ? 0 : 0));
@@ -129,7 +138,14 @@ export class Renderer {
         gl.drawElements(gl.TRIANGLES, d.count, gl.UNSIGNED_INT, d.start * 4); this.stats.draws++;
       }
     }
-    gl.bindVertexArray(null);
+    gl.uniform1f(P.u.uUseCube, 0); gl.bindVertexArray(null);
+  }
+  /** ambient cube at the prop's lighting origin (its bounding-box centre, as Source lights models), resampled when it moves */
+  private propCube(pr: PropInst) {
+    if (!this.cubes?.ok || !pr.model) return null; const m = pr.matrix, b = pr.model.data, c = [0, 1, 2].map(k => (b.mins[k] + b.maxs[k]) / 2);
+    const o: [number, number, number] = [0, 1, 2].map(k => m[k] * c[0] + m[4 + k] * c[1] + m[8 + k] * c[2] + m[12 + k]) as any;
+    const a = pr.lightAt; if (pr.lightCube !== undefined && a && Math.abs(a[0] - o[0]) + Math.abs(a[1] - o[1]) + Math.abs(a[2] - o[2]) < 1) return pr.lightCube;
+    pr.lightAt = o; return pr.lightCube = this.cubes.at(o);
   }
   private ident = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
   /** info_overlay decals (signs, floor arrows, indicator strips) */

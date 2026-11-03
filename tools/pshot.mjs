@@ -19,6 +19,7 @@ for (let i = 0; i < views.length; i++) {
     window.__pose = pose; return JSON.stringify(g.game.gunPortals?.map(q => q && q.open ? q.pos.map(x => x | 0) : null)) + (jr !== undefined ? ' js: ' + jr : ''); }, v);
   for (let k = 0; k < 6; k++) { await p.waitForTimeout(250); await p.evaluate(() => window.__pose()); }
   const st = await p.evaluate(() => JSON.stringify({ fps: +window.game.stats.fps.toFixed(1), draws: window.game.r.stats.draws, views: window.game.r.stats.views }));
+  if (v.post) console.log('post:', await p.evaluate(v.post));
   await p.screenshot({ path: prefix + i + '.png' }); console.log(prefix + i + '.png', 'portals', r, st);
 }
 await b.close();

@@ -1,0 +1,44 @@
+{
+  "name": "portal-web-deploy",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
+    "guard": "node scripts/guard.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node --test tests/browser.test.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "serve": "node scripts/serve.mjs",
+    "dev": "node scripts/dev.mjs",
+    "deploy": "pnpm build && pnpm alchemy deploy --stage preview --profile default",
+    "plan": "pnpm build && pnpm alchemy plan --stage preview --profile default"
+  },
+  "dependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@effect/platform-bun": "4.0.6",
+    "@effect/platform-node": "4.0.6",
+    "alchemy": "2.0.0-beta.84",
+    "effect": "4.0.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261024.1",
+    "@types/node": "^24.19.2",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.64.1",
+    "rolldown": "1.2.13",
+    "typescript": "^6.0.3",
+    "workerd": "1.20261012.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  }
+}

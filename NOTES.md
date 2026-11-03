@@ -81,3 +81,32 @@ Portal Wiki). Xash3D FWGS / cs16-client / hlsdk-portable looked at for ideas onl
   entities parented to props that are not on trains. Next: dump switch2 pos/worldM vs the button collider offset at 123 s.
   Chamber 12 (box/fryer, exit elevator a07_08) not started.
 - Shots: shots/40-a05-fryer-route-box-on-platform.png, shots/41-a06-fling-pillar.png, shots/42-a07-dual-gun.png (local, gitignored).
+
+## 2026-11-02 21:30–23:40 EST — hosted preview (Cloudflare) + bring-your-own-files
+
+### DEPLOY
+- `web/` holds the Alchemy v2 stack `PortalWeb` (stage `preview`), modelled on Horizon origin/main `web/`.
+  Worker `portal-web-preview` runs on `portal.rccpr.tech`, behind Access One-time PIN with the same
+  allowlist as Horizon. A private R2 bucket holds only the ~130 kB engine bundle. The steps are in
+  web/README.md: on the Mac, `cd web && pnpm install && pnpm build && pnpm test && pnpm check &&
+  pnpm alchemy plan --stage preview --profile default && pnpm alchemy deploy --stage preview --profile default`.
+- Cloudflare needs the `rccpr.tech` zone on Horizon's account, Zero Trust enabled, and the One-time PIN
+  IdP that HorizonWeb owns (it is looked up, never created or adopted). The custom domain creates
+  its own DNS record and certificate.
+- The guard (scripts/guard.mjs) blocks Valve extensions, Steam paths, Valve file magic and files over
+  10 MB at build, plan and upload time. No game data is in git, the build or R2.
+
+### Engine side
+- src/files.ts adds the FileSource interface (server or local). src/vpkdir.ts holds a shared VPK
+  directory parser. src/localfs.ts implements import selection and validation, the OPFS
+  copy/resume/forget, BrowserVpk (File.slice reads) and LocalSource. src/picker.ts is the first-run
+  screen.
+- Server mode is unchanged (it is still the default for site/).
+
+### Verified
+- `pnpm test`: 17/17 pass, including Chromium on synthetic fixtures.
+- e2e against the local workerd: the real install went through the folder input. 1,148 files
+  (4.13 GB) were copied in about 18 s. a00 rendered from OPFS (load 224 ms, lit fraction 0.999), the
+  reload skipped the picker, the autopilot reached a01 at 117.8 s, and forget worked.
+- Server mode: autopilot a00 → a01.
+- Shots: shots/43-44 (server), shots/45-50 (hosted).

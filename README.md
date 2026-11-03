@@ -16,6 +16,12 @@ node server/server.ts  # http://127.0.0.1:8420/  (Node >= 23, uses built-in TS s
 Open `http://127.0.0.1:8420/?map=testchmb_a_00` and click the canvas to grab the mouse.
 To use a different install, set `PORTAL_DIR=/path/to/steamapps/common/Portal`.
 
+### Hosted mode (private preview)
+`web/` deploys the engine only to Cloudflare (`https://portal.rccpr.tech`, behind Access). There, each
+player picks their own Portal folder. It is copied into the browser's private storage (OPFS) and read
+from there; nothing is uploaded. See [web/README.md](web/README.md). Locally, `?files=local` uses the same
+path against `site/`, `?files=manage` opens the files screen, and `?files=server` forces the local server.
+
 ### Controls
 | key | action |
 |---|---|

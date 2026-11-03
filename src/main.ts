@@ -1,6 +1,7 @@
 import { Sound } from './audio.ts';
 import { BSP } from './bsp.ts';
 import { Assets } from './assets.ts';
+import { openFileSource } from './files.ts';
 import { Zip } from './zip.ts';
 import { buildWorld } from './world.ts';
 import { MaterialCache } from './materials.ts';
@@ -17,7 +18,8 @@ async function main() {
   const canvas = document.getElementById('c') as HTMLCanvasElement;
   const gl = canvas.getContext('webgl2', { stencil: true, antialias: false, powerPreference: 'high-performance' })!;
   if (!gl) throw new Error('WebGL2 not available');
-  const t0 = performance.now(); const assets = new Assets();
+  const source = await openFileSource();
+  const t0 = performance.now(); const assets = new Assets(source);
   log('loading', mapName);
   const buf = await assets.read(`maps/${mapName}.bsp`); if (!buf) throw new Error('map not found');
   const tFetch = performance.now();
@@ -55,7 +57,7 @@ async function main() {
   if (q.get('ang') && !lmName) pl.ang = q.get('ang')!.split(',').map(Number) as V3;
   game.changeLevel = (map, lm) => {
     const from = bsp.entities.find(e => e.classname === 'info_landmark' && (e.targetname || '').toLowerCase() === lm);
-    const u = new URLSearchParams(q); u.set('map', map); u.delete('pos');
+    const u = new URLSearchParams(q); u.set('map', map); u.delete('pos'); if (u.get('files') === 'manage') u.delete('files');
     if (from) { u.set('landmark', lm); u.set('lp', sub(pl.pos, parseV3(from.origin)).map(v => v.toFixed(1)).join(',')); u.set('ang', pl.ang.map(v => v.toFixed(1)).join(',')); }
     log('changelevel', map); if (q.get('nochange') !== '1') location.search = u.toString(); else (window as any).changedTo = map;
   };

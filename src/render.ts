@@ -20,11 +20,14 @@ void main(){
   vec3 c = pow(t.rgb, vec3(2.2)) * lm;
   o = vec4(pow(c, vec3(1./2.2)), t.a);
 }`;
-const OVAL_VS = `layout(location=0) in vec2 aP; uniform mat4 uVP, uModel; uniform float uScale, uFull; out vec2 vP; void main(){ vP=aP*uScale; gl_Position = uFull > .5 ? vec4(aP, -0.999, 1.) : uVP*uModel*vec4(0., -vP.x*32., vP.y*54., 1.); if (uFull > .5) vP = vec2(0.); }`;
+const OVAL_VS = `layout(location=0) in vec2 aP; uniform mat4 uVP, uModel; uniform float uScale, uFull, uMode; out vec2 vP; void main(){ vP=aP*uScale; gl_Position = uFull > .5 ? vec4(aP, -0.999, 1.) : uVP*uModel*vec4(0., -vP.x*32., vP.y*54., 1.); if (uFull > .5) vP = vec2(0.);
+  // depth-clear pass (mode 1): put the oval on the far plane so it writes depth 1. Done here rather than with
+  // gl_FragDepth, which would leave the other modes' depth undefined (ANGLE/SwiftShader wrote 0: portals showed through walls).
+  if (uMode > .5 && uMode < 1.5) gl_Position.z = gl_Position.w; }`;
 const OVAL_FS = `in vec2 vP; uniform vec4 uColor; uniform float uMode; out vec4 o;
 void main(){ float r = length(vP);
   if (uMode < 0.5) { if (r > 1.) discard; o = uColor; }               // solid / stencil fill
-  else if (uMode < 1.5) { if (r > 1.) discard; o = uColor; gl_FragDepth = 1.; } // depth clear
+  else if (uMode < 1.5) { if (r > 1.) discard; o = uColor; } // depth clear (far-plane depth comes from the vertex shader)
   else { float k = smoothstep(1.12, 1.0, r) * smoothstep(0.80, 1.0, r); if (k <= 0.01) discard; o = vec4(uColor.rgb * (0.6 + 0.8*k), k); } }`;
 
 export interface Portal { pos: V3; f: V3; r: V3; u: V3; color: V3; open: boolean; linked: Portal | null; name: string; }
@@ -142,11 +145,17 @@ export class Renderer {
       gl.drawElements(gl.TRIANGLES, o.count, gl.UNSIGNED_INT, o.start * 4); this.stats.draws++; }
     gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true); gl.disable(gl.BLEND); gl.bindVertexArray(null);
   }
+  /** opaque pass: world/brush models, props, overlays, extra meshes (all write depth except the overlays) */
   drawScene(vp: M4, clip: Float32Array, visAt?: ArrayLike<number>) {
-    const gl = this.gl; this.stats.views++; this.setVis(visAt ? this.clusterAt(visAt) : -1);
+    this.stats.views++; this.setVis(visAt ? this.clusterAt(visAt) : -1);
     this.drawModels(vp, clip, false);
     if (this.showOverlays) this.drawOverlays(vp, clip);
     for (const e of this.extra) e.draw(vp, clip);
+  }
+  /** translucent pass (glass, grates, sprites). Runs after this view's portals so glass in front of a portal still tints it
+   *  and a portal behind glass never paints over the glass. Re-selects the PVS row, since nested views changed it. */
+  drawTranslucent(vp: M4, clip: Float32Array, visAt?: ArrayLike<number>) {
+    const gl = this.gl; this.setVis(visAt ? this.clusterAt(visAt) : -1);
     gl.enable(gl.BLEND); gl.depthMask(false); this.drawModels(vp, clip, true); gl.depthMask(true); gl.disable(gl.BLEND);
   }
   private oval(vp: M4, p: Portal, mode: number, color: number[], scale = 1, full = false) {
@@ -190,6 +199,7 @@ export class Renderer {
     gl.stencilFunc(gl.EQUAL, level, 0xff); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     for (const a of vis) this.oval(vp, a, 2, [a.color[0], a.color[1], a.color[2], 1], 1.12);
     gl.depthMask(true); gl.disable(gl.BLEND);
+    this.drawTranslucent(vp, clip, visAt);
     void cross;
   }
   frame(proj: M4, view: M4, eye: V3) {

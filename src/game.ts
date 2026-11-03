@@ -505,7 +505,7 @@ export class Game {
           const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
           if (this.player.groundEnt === e || this.onTrain(e)) { this.player.pos = add(this.player.pos, mv); this.trainCarried = true; }
-          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', null); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
+          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', e); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
       if (e.cls === 'func_rotating') { const target = e.spinning ? e.maxspeed : 0; const acc = Math.max(1, e.maxspeed) * dt / Math.max(0.1, +(e.kv.fanfriction || 20) / 20);

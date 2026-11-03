@@ -52,6 +52,10 @@ export class IO {
     if (input === 'clearparent') { if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
     if (input === 'kill') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     if (input === 'killhierarchy') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
+    // AddOutput (Valve Developer Wiki): "OnFoo target:input:param:delay:times" adds an output; "key value" sets a keyvalue
+    if (input === 'addoutput') { const m = /^(\S+)\s+(.*)$/.exec(param.trim()); if (!m) return; const parts = m[2].split(':');
+      if (parts.length >= 2) { const k = m[1].toLowerCase(); const l = e.outputs.get(k) || []; l.push({ target: parts[0].toLowerCase(), input: (parts[1] || '').toLowerCase(), param: parts[2] || '', delay: +(parts[3] || 0) || 0, times: parts[4] === undefined ? -1 : +parts[4] } as any); e.outputs.set(k, l); }
+      else e.kv[m[1].toLowerCase()] = m[2]; return; }
     if (input.startsWith('fireuser')) { this.fire(e, 'onuser' + input.slice(8), act); return; }
     const h = this.handlers.get(e.cls); if (h && h(e, input, param, act, caller)) return;
     if (input === 'enable') e.enabled = true; else if (input === 'disable') e.enabled = false; else if (input === 'toggle') e.enabled = !e.enabled;

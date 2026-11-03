@@ -33,6 +33,14 @@ lg('orange north', waitOrange([-192, 191], 30) + ' t ' + io.time.toFixed(1) + ' 
 { const n0 = tele(); for (let i = 0; i < 200 && tele() === n0; i++) { game.pl.ang = [0, Math.atan2(fl[1] - game.pl.pos[1], fl[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, IN(1)); } lg('tele', tele() - n0 + ' at ' + P()); idle(60); lg('landed', P() + ' cart ' + cart.pos.map(v => v|0)); }
 for (let i = 0; i < 66 * 25 && !(cart.pos[1] < -240 && Math.abs(cart.speedNow || 0) < 1); i++) game.step(1/66, IN(0)); lg('ride', P() + ' cart ' + cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
 lg('to gun', AP.reach([-190, -340, game.pl.pos[2]], 20)); AP.wait(1); lg('gun', G.canFire + ' at ' + P());
+// exit: the switch behind the pedestal lifts a panel above the catcher; orange through it, blue on the north wall where the scaffold docks
+lg('to switch', AP.reach([-192, -415, game.pl.pos[2]], 10)); AP.lookAt([-192, -464, 192]); AP.wait(0.2); G.use(); AP.wait(0.6); lg('switch2', io.log.filter(l => /door_exit_a07_pa\.open|relay_exit_door/.test(l)).slice(-2));
+for (const t of [[-192, -784, 320], [-192, -784, 300], [-192, -784, 340]]) { const r = shoot(1, t); lg('orange through door', r); if (G.gunPortals[1].open && G.gunPortals[1].pos[1] < -790) break; }
+lg('blue north', shoot(0, [-192, 191, 190]));
+for (let i = 0; i < 66 * 40 && !(cart.pos[1] < -245 && Math.abs(cart.speedNow || 0) < 1); i++) game.step(1/66, IN(0)); lg('cart back', cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
+lg('board', AP.reach([-192, -260, game.pl.pos[2] + 7], 16)); lg('on', P());
+for (let i = 0; i < 66 * 30 && !(cart.pos[1] > 120); i++) game.step(1/66, IN(0)); lg('docked', P() + ' cart ' + cart.pos.map(v => v|0));
+{ const n0 = tele(); for (let i = 0; i < 300 && tele() === n0; i++) { game.pl.ang = [0, 90, 0]; game.step(1/66, IN(1, i % 40 === 20)); } lg('tele', tele() - n0 + ' at ' + P()); idle(60); lg('exit room', P()); }
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.filter(l => !/try\d+ no path/.test(l)).slice(-10).join('\n'));
 out.push(io.log.filter(l => /teleport|picked|fizz|ball_trap|rail_cart|catch|gone|ball through|portal 1 failed|rail_cart|lift/.test(l)).slice(-30).join('\n'));

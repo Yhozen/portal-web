@@ -74,3 +74,10 @@ Portal Wiki). Xash3D FWGS / cs16-client / hlsdk-portable looked at for ideas onl
   - +use trace sees past non-usable brush entities (the scaffold sat between eye and the exit switch).
   - Script tools/play/testchmb_a_07.js: launcher room -> ball caught -> scaffold -> dual portal gun at ~121 s.
 - Regression at 3eee15e: a00 117.8, a01 82.1, a02 149.3, a04 71.5, a05 46.5, a06 59.2 s (a03 below).
+- Regression at 64822db (20:16 EST, all pass): a00 117.8, a01 82.1, a02 149.3, a03 119.3, a04 71.5, a05 46.5, a06 59.2 s.
+- a07 status (20:23 EST): route verified to the dual portal gun (~122 s), scaffold now shuttles both ways (AddOutput). Gap: the exit
+  switch button_exit_door_a07_pa is parented to prop switch2; at 123 s its collider is not where the +use ray looks (trace from
+  eye -192,-430,188 toward -192,-464,192 hits nothing, while at t=0 the same ray hits it). Likely the parent-offset of brush
+  entities parented to props that are not on trains. Next: dump switch2 pos/worldM vs the button collider offset at 123 s.
+  Chamber 12 (box/fryer, exit elevator a07_08) not started.
+- Shots: shots/40-a05-fryer-route-box-on-platform.png, shots/41-a06-fling-pillar.png, shots/42-a07-dual-gun.png (local, gitignored).

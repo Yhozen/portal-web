@@ -34,7 +34,10 @@ lg('orange north', waitOrange([-192, 191], 30) + ' t ' + io.time.toFixed(1) + ' 
 for (let i = 0; i < 66 * 25 && !(cart.pos[1] < -240 && Math.abs(cart.speedNow || 0) < 1); i++) game.step(1/66, IN(0)); lg('ride', P() + ' cart ' + cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
 lg('to gun', AP.reach([-190, -340, game.pl.pos[2]], 20)); AP.wait(1); lg('gun', G.canFire + ' at ' + P());
 // exit: the switch behind the pedestal lifts a panel above the catcher; orange through it, blue on the north wall where the scaffold docks
-lg('to switch', AP.reach([-192, -415, game.pl.pos[2]], 10)); AP.lookAt([-192, -464, 192]); AP.wait(0.2); G.use(); AP.wait(0.6); lg('switch2', io.log.filter(l => /door_exit_a07_pa\.open|relay_exit_door/.test(l)).slice(-2));
+lg('to switch', AP.reach([-192, -415, game.pl.pos[2]], 10)); AP.lookAt([-192, -464, 192]); AP.wait(0.2);
+{ const eye = G.player.eye(); const b = E('button_exit_door_a07_pa'); G.tr.ignore = null; const tt = G.tr.trace(eye, [-192, -464, 192], [0,0,0], [0,0,0], 0xffffffff, G.playerEnt);
+  lg('sw dbg', 'eye ' + eye.map(v=>v|0) + ' ang ' + G.player.ang.map(v=>v|0) + ' hit ' + (tt.ent ? tt.ent.cls + ':' + tt.ent.name : 'world') + ' f ' + tt.fraction.toFixed(2) + ' held ' + !!G.held + ' btn t ' + b.t + ' locked ' + b.locked); }
+G.use(); AP.wait(0.6); lg('switch2', io.log.filter(l => /door_exit_a07_pa\.open|relay_exit_door/.test(l)).slice(-2));
 for (const t of [[-192, -784, 320], [-192, -784, 300], [-192, -784, 340]]) { const r = shoot(1, t); lg('orange through door', r); if (G.gunPortals[1].open && G.gunPortals[1].pos[1] < -790) break; }
 lg('blue north', shoot(0, [-192, 191, 190]));
 for (let i = 0; i < 66 * 40 && !(cart.pos[1] < -245 && Math.abs(cart.speedNow || 0) < 1); i++) game.step(1/66, IN(0)); lg('cart back', cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));

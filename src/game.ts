@@ -134,11 +134,23 @@ export class Game {
     if (blue && orange) { blue.linked = orange; orange.linked = blue; }
   }
   /** world brushes that make up the surface behind a portal (ignored while something passes through it) */
+  /** brush indices under a brush model's BSP head node */
+  modelBrushes(headnode: number) { const bsp = this.bsp, out = new Set<number>(), st = [headnode];
+    while (st.length) { const n = st.pop()!; if (n < 0) { const lf = bsp.leafs[-1 - n]; for (let i = 0; i < lf.numLeafBrushes; i++) out.add(bsp.leafBrushes[lf.firstLeafBrush + i]); } else st.push(...bsp.nodes[n].children); }
+    return out; }
   brushesBehind(p: Portal) {
     let s = this.portalBrushes.get(p); if (s) return s; s = new Set();
     const bsp = this.bsp;
-    for (let bi = 0; bi < bsp.brushes.length; bi++) {
-      const br = bsp.brushes[bi]; if (!(br.contents & (CONTENTS.SOLID | CONTENTS.PLAYERCLIP | CONTENTS.WINDOW))) continue;
+    const onCol = (p as any).onCol, off: V3 = onCol ? (p as any).onOff : [0, 0, 0]; const only = onCol ? this.modelBrushes(onCol.headnode) : null;
+    // a portal on a brush entity: its own brushes (in the entity's local frame) plus world brushes right behind it
+    if (only) for (const bi of only) { const br = bsp.brushes[bi]; let inside = true;
+      for (let i = 0; i < br.numSides && inside; i++) { const pl = bsp.planes[bsp.brushSides[br.firstSide + i].plane];
+        const c = sub(ma(p.pos, -20, p.f), off); const ex = Math.abs(dot(pl.n, p.r)) * (PW - 4) + Math.abs(dot(pl.n, p.u)) * (PH - 4) + Math.abs(dot(pl.n, p.f)) * 19.5;
+        if (dot(pl.n, c) - pl.d - ex > -1) inside = false; }
+      if (inside) s.add(bi); }
+    const world = (this as any).worldBrushes ??= this.modelBrushes(bsp.models[0].headnode); // brush-entity brushes live in their own frames
+    for (let bi = 0; bi < bsp.brushes.length; bi++) { if (!world.has(bi)) continue;
+      const br = bsp.brushes[bi]; if (!(br.contents & (CONTENTS.SOLID | CONTENTS.PLAYERCLIP | CONTENTS.WINDOW | CONTENTS.GRATE))) continue; // grates too: a06 has a grating 16u under its pit-floor portal surface
       // test portal hole (shrunk slightly) extruded 0.5..40 units behind the surface against the brush's planes (separating-axis on brush planes only)
       let inside = true;
       for (let i = 0; i < br.numSides && inside; i++) {
@@ -206,11 +218,14 @@ export class Game {
     const eye = src ? src.eye : this.player.eye(); const f = src ? src.f : angleVectors(this.player.ang).f;
     this.tr.ignore = null;
     const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
-    if (t.fraction >= 1 || t.ent) return this.fizzleShot(which, 'nothing');
+    // brush entities (func_brush / func_door, e.g. a06's fling pillars) take portals while they hold still; the portal fizzles if they move
+    const R0 = t.col?.rot; const onCol = t.ent && t.col && (!R0 || (R0[0] > 0.999 && R0[5] > 0.999 && R0[10] > 0.999)) && /^func_(brush|door|wall)$/.test(t.ent.cls) ? t.col : null; // unrotated only
+    if (t.fraction >= 1 || (t.ent && !onCol)) return this.fizzleShot(which, 'nothing');
+    const off: V3 = onCol ? [...onCol.offset] as V3 : [0, 0, 0];
     // find the surface flags of the brush side we hit
     const n = t.normal; let flags = 0, texd = -1;
     if (t.hit >= 0) { const br = this.bsp.brushes[t.hit]; let best = -1;
-      for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane]; const dd = dot(pl.n, n); if (dd > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, t.end) - pl.d) < 2) { best = sd.texinfo; break; } }
+      for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane]; const dd = dot(pl.n, n); if (dd > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(t.end, off)) - pl.d) < 2) { best = sd.texinfo; break; } }
       if (best >= 0) { flags = this.bsp.texinfo[best].flags; texd = this.bsp.texinfo[best].texdata; } }
     const matName = texd >= 0 ? this.bsp.texdata[texd].name : '';
     const mat = texd >= 0 ? this.r.world.mats[texd] : null;
@@ -226,9 +241,9 @@ export class Game {
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
         const pt = add(add(c, scale(rr, a * (PW - 1))), scale(up, b * (PH - 1)));
         const s = ma(pt, 2, n), e2 = ma(pt, -2, n); const q = this.tr.trace(s, e2, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
-        if (q.fraction >= 1 || q.startsolid || dot(q.normal, n) < 0.99 || q.ent) return false;
+        if (q.fraction >= 1 || q.startsolid || dot(q.normal, n) < 0.99 || (q.ent && q.ent !== t.ent) || (!q.ent && onCol)) return false;
         if (q.hit >= 0) { const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
-          if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, q.end) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; if (ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal) return false; break; } } }
+          if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; if (ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal) return false; break; } } }
         // must not be covered (e.g. by geometry right in front)
         const block = this.tr.trace(ma(pt, 3, n), ma(pt, 0.5, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt); if (block.startsolid) return false;
       }
@@ -249,7 +264,7 @@ export class Game {
     }
     if (!ok) return this.fizzleShot(which, 'no fit');
     const p = this.gunPortals[which];
-    p.pos = pos; p.f = [...n] as V3; p.u = up; p.r = rr; p.open = true; this.portalBrushes.delete(p); this.stats.portalsPlaced++;
+    p.pos = pos; p.f = [...n] as V3; p.u = up; p.r = rr; p.open = true; (p as any).onCol = onCol; (p as any).onOff = off; this.portalBrushes.delete(p); this.stats.portalsPlaced++;
     // gun portals replace map portals of the same colour
     for (const e of this.io.ents) if (e.portal && e.portal.open && (e.kv.portaltwo === '1') === (which === 1)) e.portal.open = false;
     this.relinkMapPortals();
@@ -532,6 +547,8 @@ export class Game {
     this.updateBalls(dt);
     // triggers
     this.updateGunPickup(); this.updateMMC();
+    // a gun portal on a brush entity fizzles as soon as that entity moves
+    for (const gp of this.gunPortals) { const c = (gp as any).onCol, o = (gp as any).onOff; if (gp.open && c && (Math.abs(c.offset[0] - o[0]) + Math.abs(c.offset[1] - o[1]) + Math.abs(c.offset[2] - o[2]) > 0.5 || !c.enabled())) { gp.open = false; (gp as any).onCol = null; this.relinkMapPortals(); io.log.push(`${io.time.toFixed(2)} ${gp.name} fizzled: its surface moved`); } }
     this.updateTriggers();
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }

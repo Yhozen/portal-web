@@ -520,7 +520,7 @@ export class Game {
     }
     // parented triggers (e.g. a lift's ride trigger) follow their parent's translation
     for (const e of io.ents) if (e.kv.parentname && e.touching && e.bmins && !e.killed) {
-      const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || par === e) continue; const pp: V3 = par.pos || par.origin;
+      const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || par === e) continue; const pp: V3 = par.worldM && par.kv.parentname ? [par.worldM[12], par.worldM[13], par.worldM[14]] : par.pos || par.origin; // a07: parent is a prop riding a train
       if (!e.trigBase) e.trigBase = { lo: [...e.bmins], hi: [...e.bmaxs], p: [...pp] };
       const d = sub(pp, e.trigBase.p); e.bmins = add(e.trigBase.lo, d); e.bmaxs = add(e.trigBase.hi, d);
     }

@@ -25,7 +25,15 @@ for (const v of [[-638, -150], [-560, -250], [-700, -100], [-638, 0]]) { if (sc)
 const caught = () => io.log.some(l => /ball_trap_10.*(ontrigger|trigger\(\))|rail_cart_rm6.start/.test(l));
 for (let i = 0; i < 66 * 60 && !caught(); i++) game.step(1/66, IN(0));
 lg('caught', caught() + ' t ' + io.time.toFixed(1) + ' orange ' + G.gunPortals[1].pos.map(v => v|0));
+// scaffold: rail_cart_rm6 rides to the north wall. Blue on the launcher-room floor; when the pedestal's orange is back on the north wall
+// (above the parked scaffold) step through and drop onto it, then it carries us to the pedestal.
+const cart = E('rail_cart_rm6'); for (let i = 0; i < 66 * 20 && cart.pos[1] < 120; i++) game.step(1/66, IN(0)); lg('cart', cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
+const fl = [game.pl.pos[0], game.pl.pos[1] + 70, game.pl.pos[2]]; lg('blue floor', shoot(0, fl));
+lg('orange north', waitOrange([-192, 191], 30) + ' t ' + io.time.toFixed(1) + ' cart ' + cart.pos.map(v => v|0));
+{ const n0 = tele(); for (let i = 0; i < 200 && tele() === n0; i++) { game.pl.ang = [0, Math.atan2(fl[1] - game.pl.pos[1], fl[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, IN(1)); } lg('tele', tele() - n0 + ' at ' + P()); idle(60); lg('landed', P() + ' cart ' + cart.pos.map(v => v|0)); }
+for (let i = 0; i < 66 * 25 && !(cart.pos[1] < -240 && Math.abs(cart.speedNow || 0) < 1); i++) game.step(1/66, IN(0)); lg('ride', P() + ' cart ' + cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
+lg('to gun', AP.reach([-190, -340, game.pl.pos[2]], 20)); AP.wait(1); lg('gun', G.canFire + ' at ' + P());
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.filter(l => !/try\d+ no path/.test(l)).slice(-10).join('\n'));
-out.push(io.log.filter(l => /teleport|picked|fizz|ball_trap|rail_cart|catch|gone|ball through|portal 1 failed/.test(l)).slice(-30).join('\n'));
+out.push(io.log.filter(l => /teleport|picked|fizz|ball_trap|rail_cart|catch|gone|ball through|portal 1 failed|rail_cart|lift/.test(l)).slice(-30).join('\n'));
 return out.join('\n'); })()

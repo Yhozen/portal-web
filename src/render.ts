@@ -8,20 +8,21 @@ import { LightCubes, type Cube } from './light.ts';
 
 const WORLD_VS = `
 layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUV; layout(location=2) in vec2 aLM; layout(location=3) in vec3 aN; layout(location=4) in float aA;
-uniform mat4 uVP, uModel; out vec2 vUV, vLM; out vec3 vW, vN; out float vA;
-void main(){ vec4 w = uModel*vec4(aPos,1.); vW=w.xyz; vUV=aUV; vLM=aLM; vN=mat3(uModel)*aN; vA=aA; gl_Position=uVP*w; }`;
+uniform mat4 uVP, uModel; uniform float uUseCube; uniform vec3 uAmbient, uCube[6]; out vec2 vUV, vLM; out vec3 vW, vN, vAmb; out float vA;
+void main(){ vec4 w = uModel*vec4(aPos,1.); vW=w.xyz; vUV=aUV; vLM=aLM; vN=mat3(uModel)*aN; vA=aA; gl_Position=uVP*w;
+  // non-lightmapped (model) lighting, per vertex as Source does for models: the leaf ambient cube weighted by the squared
+  // normal components (+X -X +Y -Y +Z -Z), or the flat fallback ambient
+  vec3 n = normalize(vN), n2 = n * n;
+  vAmb = uUseCube > .5 ? uAmbient * (n2.x * (n.x >= 0. ? uCube[0] : uCube[1]) + n2.y * (n.y >= 0. ? uCube[2] : uCube[3]) + n2.z * (n.z >= 0. ? uCube[4] : uCube[5]))
+                       : uAmbient * (0.65 + 0.35*max(dot(n, normalize(vec3(.3,.2,.9))),0.)); }`;
 const WORLD_FS = `
-in vec2 vUV, vLM; in vec3 vW, vN; in float vA; uniform sampler2D uTex, uLM; uniform vec4 uClip, uTint; uniform float uAlphaTest, uUnlit, uLMScale, uUseCube; uniform vec3 uAmbient, uCube[6];
+in vec2 vUV, vLM; in vec3 vW, vN, vAmb; in float vA; uniform sampler2D uTex, uLM; uniform vec4 uClip, uTint; uniform float uAlphaTest, uUnlit, uLMScale;
 out vec4 o;
 void main(){
   if (dot(vW, uClip.xyz) < uClip.w) discard;
   vec4 t = texture(uTex, vUV) * uTint;
   if (uAlphaTest > 0. && t.a < uAlphaTest) discard;
-  vec3 n = normalize(vN), n2 = n * n;
-  // models: the leaf ambient cube, weighted by the squared normal components (+X -X +Y -Y +Z -Z)
-  vec3 cube = n2.x * (n.x >= 0. ? uCube[0] : uCube[1]) + n2.y * (n.y >= 0. ? uCube[2] : uCube[3]) + n2.z * (n.z >= 0. ? uCube[4] : uCube[5]);
-  vec3 lm = uUnlit > .5 ? vec3(1.) : (uLMScale > 0. ? pow(texture(uLM, vLM).rgb, vec3(2.2)) * 4. :
-    (uUseCube > .5 ? cube * uAmbient : uAmbient * (0.65 + 0.35*max(dot(n, normalize(vec3(.3,.2,.9))),0.))));
+  vec3 lm = uUnlit > .5 ? vec3(1.) : (uLMScale > 0. ? pow(texture(uLM, vLM).rgb, vec3(2.2)) * 4. : vAmb);
   vec3 c = pow(t.rgb, vec3(2.2)) * lm;
   o = vec4(pow(c, vec3(1./2.2)), t.a);
 }`;

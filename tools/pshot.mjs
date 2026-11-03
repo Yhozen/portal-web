@@ -1,5 +1,5 @@
 // Pose screenshots with optional scripted portal shots. Usage:
-//   node tools/pshot.mjs map out-prefix '[{"pos":[x,y,z],"ang":[p,y,0],"shoot":[[which,[ex,ey,ez],[fx,fy,fz]],...],"open":[["portal_a","portal_b"]]}]' [port]
+//   [FPSMS=6000] node tools/pshot.mjs map out-prefix '[{"pos":[x,y,z],"ang":[p,y,0],"shoot":[[which,[ex,ey,ez],[fx,fy,fz]],...],"open":[["portal_a","portal_b"]]}]' [port]
 // Player is put in noclip and the intro fade is skipped, so the pose holds still.
 import { chromium } from 'playwright-core';
 const [map = 'testchmb_a_00', prefix = '/tmp/p', viewsJ = '[]', base = 'http://127.0.0.1:8420/'] = process.argv.slice(2);
@@ -18,6 +18,8 @@ for (let i = 0; i < views.length; i++) {
     pose(); for (const [w, e, f] of v.shoot || []) g.game.shootPortal(w, { eye: e, f });
     window.__pose = pose; return JSON.stringify(g.game.gunPortals?.map(q => q && q.open ? q.pos.map(x => x | 0) : null)) + (jr !== undefined ? ' js: ' + jr : ''); }, v);
   for (let k = 0; k < 6; k++) { await p.waitForTimeout(250); await p.evaluate(() => window.__pose()); }
+  if (process.env.FPSMS) { const xs = [], ms = []; for (let k = 0; k < +process.env.FPSMS / 500; k++) { await p.waitForTimeout(500); const [f, m] = await p.evaluate(() => { window.__pose(); return [window.game.stats.fps, window.game.stats.frameMs]; }); xs.push(f); ms.push(m); }
+    const med = a => a.sort((x, y) => x - y)[a.length >> 1].toFixed(1); console.log('fps median', med(xs), 'frameMs median', med(ms)); }
   const st = await p.evaluate(() => JSON.stringify({ fps: +window.game.stats.fps.toFixed(1), draws: window.game.r.stats.draws, views: window.game.r.stats.views }));
   if (v.post) console.log('post:', await p.evaluate(v.post));
   await p.screenshot({ path: prefix + i + '.png' }); console.log(prefix + i + '.png', 'portals', r, st);

@@ -17,7 +17,9 @@
     "serve": "node scripts/serve.mjs",
     "dev": "node scripts/dev.mjs",
     "deploy": "pnpm build && pnpm alchemy deploy --stage preview --profile default",
-    "plan": "pnpm build && pnpm alchemy plan --stage preview --profile default"
+    "plan": "pnpm build && pnpm alchemy plan --stage preview --profile default",
+    "upload-game-files": "node scripts/upload-game-files.mjs",
+    "guard:repo": "node scripts/guard.mjs --repo"
   },
   "dependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
@@ -30,6 +32,7 @@
     "@cloudflare/workers-types": "^5.20261024.1",
     "@types/node": "^24.19.2",
     "esbuild": "^0.28.2",
+    "miniflare": "4.20260730.0",
     "playwright-core": "^1.64.1",
     "rolldown": "1.2.13",
     "typescript": "^6.0.3",

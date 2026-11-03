@@ -3,7 +3,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Effect from "effect/Effect";
 import { readFile } from "node:fs/promises";
 import { api } from "./scripts/cloudflare.ts";
-import { allowedEmails, domain, workerName } from "./scripts/config.mjs";
+import { allowedEmails, domain, gameFilesBucket, ownerEmail, workerName } from "./scripts/config.mjs";
 import { uploadAssets } from "./scripts/artifacts.mjs";
 import { guardBuild } from "./scripts/guard.mjs";
 
@@ -32,6 +32,11 @@ export default Alchemy.Stack("PortalWeb", {
   }).pipe(Effect.orDie);
   // Private bucket for engine builds only (no r2.dev URL). Old builds stay for rollback.
   const bucket = yield* Cloudflare.R2.Bucket("Engine", { publicAccess: false });
+  // Second private bucket: the owner's own Portal files. The stack only creates it (empty); it is filled
+  // from the owner's Mac by `pnpm upload-game-files`, never by build or deploy. No r2.dev URL, no custom
+  // domain, no CORS: the only way in is the Worker's owner-only /files/ route (or the owner's API token).
+  // Destroying the stack fails while it holds objects (forceDestroy stays off).
+  const gameFiles = yield* Cloudflare.R2.Bucket("GameFiles", { name: gameFilesBucket, publicAccess: false, domains: [], cors: [] });
   // The account's one-time PIN login is a singleton already managed by the HorizonWeb stack: look it up
   // instead of creating (or adopting, and later deleting) it here.
   const login = Cloudflare.Access.getIdentityProvider({ type: "onetimepin" });
@@ -48,8 +53,9 @@ export default Alchemy.Stack("PortalWeb", {
     },
     cache: { enabled: true, crossVersionCache: true },
     entrypoints: { default: { cache: { enabled: false } }, Assets: { cache: { enabled: true } } },
-    env: { BUCKET: bucket, ALLOWED_EMAILS: allowedEmails.join(","), RELEASE_ID: published.releaseId },
+    env: { BUCKET: bucket, FILES: gameFiles, ALLOWED_EMAILS: allowedEmails.join(","), OWNER_EMAIL: ownerEmail,
+      RELEASE_ID: published.releaseId },
     observability: { enabled: true },
   });
-  return { url: game.url, bucketName: bucket.bucketName, releaseId: published.releaseId };
+  return { url: game.url, bucketName: bucket.bucketName, gameFilesBucket: gameFiles.bucketName, releaseId: published.releaseId };
 }));

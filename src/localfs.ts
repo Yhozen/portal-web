@@ -2,6 +2,8 @@
 // The hosted build never serves game content: on first run the player points the page at their Steam
 // install (folder picker, drag and drop, or a folder <input>), the needed files are copied into this
 // browser's private storage, and later loads read them from there. "Forget files" deletes the copy.
+// In the hosted preview the owner can instead load their own copy from the private bucket (/files/,
+// owner-only); everyone else gets 403 there and uses the picker.
 import type { FileSource } from './files.ts';
 import { LOOSE_MOUNTS, normPath, parseVpkDir, VPK_EMBEDDED, VPK_MOUNTS, type VpkEntry } from './vpkdir.ts';
 import { showFilesScreen } from './picker.ts';
@@ -252,9 +254,12 @@ export async function importFiles(c: Candidate[], onProgress: (p: Progress) => v
 export const fmtBytes = (n: number) => n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(0) + ' MB' : (n / 1e3).toFixed(0) + ' kB';
 
 // ---- reading ------------------------------------------------------------------------------------------------
+// What the VPK reader needs from a file: a File/Blob from OPFS, or a RemoteFile read with HTTP Range.
+export interface BlobLike { readonly size: number; slice(start: number, end: number): { arrayBuffer(): Promise<ArrayBuffer> }; }
+
 class BrowserVpk {
-  entries: Map<string, VpkEntry>; private dataStart: number; private dirFile: File; private archive: (n: number) => Promise<File | null>;
-  constructor(entries: Map<string, VpkEntry>, dataStart: number, dirFile: File, archive: (n: number) => Promise<File | null>) {
+  entries: Map<string, VpkEntry>; private dataStart: number; private dirFile: BlobLike; private archive: (n: number) => Promise<BlobLike | null>;
+  constructor(entries: Map<string, VpkEntry>, dataStart: number, dirFile: BlobLike, archive: (n: number) => Promise<BlobLike | null>) {
     this.entries = entries; this.dataStart = dataStart; this.dirFile = dirFile; this.archive = archive;
   }
   async read(k: string): Promise<ArrayBuffer | null | undefined> {
@@ -272,21 +277,24 @@ class BrowserVpk {
   }
 }
 
-export class LocalSource implements FileSource {
-  readonly kind = 'local';
-  private vpks: BrowserVpk[] = []; private loose = new Map<string, string>(); private files = new Map<string, Promise<File | null>>();
-  private root: FileSystemDirectoryHandle; manifest: Manifest;
-  constructor(root: FileSystemDirectoryHandle, manifest: Manifest) { this.root = root; this.manifest = manifest; }
+// A Portal install laid out as install-root paths (manifest: rel -> size), mounted with the engine's search order.
+abstract class TreeSource implements FileSource {
+  abstract readonly kind: FileSource['kind'];
+  private vpks: BrowserVpk[] = []; private loose = new Map<string, string>(); private files = new Map<string, Promise<BlobLike | null>>();
+  manifest: Manifest;
+  constructor(manifest: Manifest) { this.manifest = manifest; }
+  protected abstract open(rel: string): Promise<BlobLike | null>;
+  protected openDir(rel: string) { return this.file(rel); }
   file(rel: string) {
     let f = this.files.get(rel);
-    if (!f) { f = dirOf(this.root, rel, false).then(async ({ dir, name }) => (await dir.getFileHandle(name)).getFile()).catch(() => null); this.files.set(rel, f); }
+    if (!f) { f = this.open(rel).catch(() => null); this.files.set(rel, f); }
     return f;
   }
   async mount() {
     for (const v of VPK_MOUNTS) {
-      const dirFile = this.manifest.files[`${v}_dir.vpk`] !== undefined ? await this.file(`${v}_dir.vpk`) : null;
+      const dirFile = this.manifest.files[`${v}_dir.vpk`] !== undefined ? await this.openDir(`${v}_dir.vpk`) : null;
       if (!dirFile) continue;
-      const d = parseVpkDir(new Uint8Array(await dirFile.arrayBuffer()));
+      const d = parseVpkDir(new Uint8Array(await dirFile.slice(0, dirFile.size).arrayBuffer()));
       this.vpks.push(new BrowserVpk(d.entries, d.dataStart, dirFile, n => this.file(`${v}_${String(n).padStart(3, '0')}.vpk`)));
     }
     for (const m of LOOSE_MOUNTS) for (const rel of Object.keys(this.manifest.files)) {
@@ -298,8 +306,56 @@ export class LocalSource implements FileSource {
   async read(p: string) {
     for (const v of this.vpks) { const b = await v.read(p); if (b !== undefined) return b; }
     const rel = this.loose.get(p); if (!rel) return null;
-    const f = await this.file(rel); return f ? f.arrayBuffer() : null;
+    const f = await this.file(rel); return f ? f.slice(0, f.size).arrayBuffer() : null;
   }
+}
+
+export class LocalSource extends TreeSource {
+  readonly kind = 'local';
+  private root: FileSystemDirectoryHandle;
+  constructor(root: FileSystemDirectoryHandle, manifest: Manifest) { super(manifest); this.root = root; }
+  protected open(rel: string) { return dirOf(this.root, rel, false).then(async ({ dir, name }) => (await dir.getFileHandle(name)).getFile()); }
+}
+
+// ---- owner's private hosted copy (/files/ on the preview Worker) ------------------------------------------
+export const FILES_BASE = '/files/';
+const fileUrl = (rel: string) => FILES_BASE + rel.split('/').map(encodeURIComponent).join('/');
+
+// A file in the private bucket, read lazily with HTTP Range requests (VPK archives are up to ~130 MB).
+export class RemoteFile implements BlobLike {
+  readonly size: number; private url: string;
+  constructor(url: string, size: number) { this.url = url; this.size = size; }
+  slice(start: number, end: number) {
+    return { arrayBuffer: async () => {
+      const whole = start <= 0 && end >= this.size;
+      const r = await fetch(this.url, { credentials: 'same-origin', headers: whole ? {} : { Range: `bytes=${start}-${end - 1}` } });
+      if (r.status !== (whole ? 200 : 206)) { await r.body?.cancel(); throw new Error(`${this.url}: HTTP ${r.status}`); }
+      return r.arrayBuffer();
+    } };
+  }
+}
+
+export class HostedSource extends TreeSource {
+  readonly kind = 'hosted-private';
+  protected async open(rel: string) {
+    const size = this.manifest.files[rel]; return size === undefined ? null : new RemoteFile(fileUrl(rel), size);
+  }
+  // VPK directories are small (<1 MB) and hold embedded data: fetch each once and keep it in memory.
+  protected async openDir(rel: string) {
+    const f = await this.file(rel); if (!f) return null;
+    return new Blob([await f.slice(0, f.size).arrayBuffer()]);
+  }
+}
+
+// 200 with a manifest: the signed-in Access identity is the owner and the bucket has been filled.
+// 403 (not the owner), 404 (nothing uploaded, or not the hosted Worker) or any error: use the picker.
+export async function probeHosted(): Promise<{ status: number; manifest: Manifest | null }> {
+  try {
+    const r = await fetch(FILES_BASE + MANIFEST, { credentials: 'same-origin', cache: 'no-store' });
+    if (!r.ok) { await r.body?.cancel(); return { status: r.status, manifest: null }; }
+    const m = await r.json() as Manifest;
+    return { status: r.status, manifest: m?.format === 1 && m.files ? m : null };
+  } catch { return { status: 0, manifest: null }; }
 }
 
 export async function openStore(): Promise<LocalSource | null> {
@@ -307,9 +363,19 @@ export async function openStore(): Promise<LocalSource | null> {
   return new LocalSource(await storeRoot(false), m).mount();
 }
 
+// Hosted-mode order: ?files=manage shows the files screen; a complete copy in this browser (OPFS) is used
+// first (fastest, no network); then the owner's private hosted copy; otherwise the picker.
+// ?files=hosted requires the hosted copy; ?files=device skips it.
 export async function openLocalSource(): Promise<FileSource> {
-  const manage = new URLSearchParams(location.search).get('files') === 'manage';
-  let src = manage ? null : await openStore().catch(() => null);
+  const q = new URLSearchParams(location.search).get('files');
+  const manage = q === 'manage';
+  let src: FileSource | null = manage || q === 'hosted' ? null : await openStore().catch(() => null);
+  if (!src && !manage && q !== 'device') {
+    const { status, manifest } = await probeHosted();
+    (globalThis as any).hostedFiles = status;
+    if (manifest) src = await new HostedSource(manifest).mount();
+    else if (q === 'hosted') throw new Error(`Hosted Portal files unavailable (HTTP ${status})`);
+  }
   if (!src) { await showFilesScreen(); src = await openStore(); }
   if (!src) throw new Error('No Portal files available');
   addManageButton();

@@ -1,9 +1,11 @@
 // Where game files come from. Two interchangeable sources behind one interface:
 //  - ServerSource: the localhost dev server (node server/server.ts) streams /fs/<path> from the Steam install.
 //  - LocalSource (localfs.ts): files the player copied from their own install into this browser's private
-//    storage (OPFS). Used by the hosted build; nothing from the game is ever uploaded anywhere.
+//    storage (OPFS). Used by the hosted build; the page never uploads anything.
+//  - HostedSource (localfs.ts, kind 'hosted-private'): the owner's own copy in the hosted preview's private
+//    R2 bucket, served by the Worker at /files/ only to the owner's Access identity (403 for everyone else).
 export interface FileSource {
-  readonly kind: 'server' | 'local';
+  readonly kind: 'server' | 'local' | 'hosted-private';
   read(path: string): Promise<ArrayBuffer | null>; // path is already normalised (lower case, forward slashes)
 }
 

@@ -19,7 +19,8 @@ To use a different install, set `PORTAL_DIR=/path/to/steamapps/common/Portal`.
 ### Hosted mode (private preview)
 `web/` deploys the engine only to Cloudflare (`https://portal.rccpr.tech`, behind Access). There, each
 player picks their own Portal folder. It is copied into the browser's private storage (OPFS) and read
-from there; nothing is uploaded. See [web/README.md](web/README.md). Locally, `?files=local` uses the same
+from there; nothing is uploaded. The owner can also put his own copy in a private R2 bucket that only
+his Access identity can read (`pnpm upload-game-files`, run by hand). See [web/README.md](web/README.md). Locally, `?files=local` uses the same
 path against `site/`, `?files=manage` opens the files screen, and `?files=server` forces the local server.
 
 ### Controls

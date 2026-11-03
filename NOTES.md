@@ -94,7 +94,8 @@ Portal Wiki). Xash3D FWGS / cs16-client / hlsdk-portable looked at for ideas onl
   IdP that HorizonWeb owns (it is looked up, never created or adopted). The custom domain creates
   its own DNS record and certificate.
 - The guard (scripts/guard.mjs) blocks Valve extensions, Steam paths, Valve file magic and files over
-  10 MB at build, plan and upload time. No game data is in git, the build or R2.
+  10 MB at build, plan and upload time. No game data is in git, the build or the engine bucket.
+  `--repo` checks the working tree and all history.
 
 ### Engine side
 - src/files.ts adds the FileSource interface (server or local). src/vpkdir.ts holds a shared VPK
@@ -110,3 +111,34 @@ Portal Wiki). Xash3D FWGS / cs16-client / hlsdk-portable looked at for ideas onl
   reload skipped the picker, the autopilot reached a01 at 117.8 s, and forget worked.
 - Server mode: autopilot a00 → a01.
 - Shots: shots/43-44 (server), shots/45-50 (hosted).
+
+## 2026-11-03 EST — owner-only private game-files bucket
+
+### DEPLOY (addendum)
+- The stack also creates the R2 bucket `portal-web-preview-game-files`: private, no r2.dev, no domain,
+  no CORS. The Worker gets `FILES` and `OWNER_EMAIL=gabriel@garox.org`. gabrielgarox@gmail.com is not
+  in Horizon's allowlist, so the allowlisted garox.org address is used; config.mjs throws if the owner
+  isn't allowlisted.
+- After `pnpm alchemy deploy --stage preview --profile default`, upload by hand from the Mac (never
+  part of build or deploy):
+  `pnpm upload-game-files --from "~/Library/Application Support/Steam/steamapps/common/Portal"`
+  (add `--dry-run` first if you like). It is resumable, skips unchanged files (size+MD5) and writes the
+  manifest last.
+- Costs: 4.13 GB is inside R2's 10 GB free tier (otherwise about $0.06/month). About 1.15k Class A
+  operations per full upload, about 390 Class B operations plus Worker requests per a00 load, and no
+  egress fees.
+- `/files/*`: Access first, then the allowlist, then owner-only (anyone else gets 403 and the picker).
+  Responses are `private, max-age=86400` and `Vary: Cookie`, with Range/ETag support. They are never
+  stored in the shared Workers Cache.
+- Engine source order: an OPFS copy first, then hosted-private, then the picker. Use `?files=hosted`
+  or `?files=device` to override.
+
+### Verified
+- `pnpm test` 26/26, `pnpm test:browser` 4/4, `pnpm check` clean, `pnpm build` (engine only, about
+  130 kB), `guard --repo` clean.
+- `pnpm dev` now runs on miniflare with local R2. The bucket was seeded with `--local` from the box
+  install: 1,148 files (4.13 GB) in 88 s; a re-run took 26 s and skipped all of them.
+- e2e, owner: a00 came from /files with no picker (source hosted-private, 380 reads, load 630 ms, lit
+  0.999), and the autopilot reached testchmb_a_01. friend@localhost got 403 and the picker; OPFS
+  import, reload, autopilot to a01 and forget all passed. Shots 51/52 (owner), 45–50 (friend).
+- Server mode is unchanged (source server, no /files requests).

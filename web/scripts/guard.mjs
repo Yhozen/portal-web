@@ -1,5 +1,7 @@
 // Fails the build/deploy if anything other than the clean-room engine is about to be uploaded or bundled.
 // Valve's files (VPK, BSP, VTF, VMT, MDL, sounds, captions, ...) stay on the player's own disk.
+import { execFileSync } from "node:child_process";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,7 +83,57 @@ export async function guardBuild(webRoot) {
   return files.length;
 }
 
+// Repository (and therefore any git bundle of it): no game file may ever be committed. Checks the working
+// tree files git would commit (tracked + untracked-not-ignored) and every blob reachable from `ref`.
+function repoProblem(name, size) {
+  const ext = extname(name).toLowerCase();
+  if (VALVE_EXTENSIONS.has(ext)) return `${name}: game file type ${ext} must never be committed`;
+  if (STEAM_PATH.test(name)) return `${name}: looks like a Steam install path`;
+  if (size > MAX_FILE) return `${name}: ${size} bytes is too large for this repository`;
+  return null;
+}
+export function assertRepoClean(repoRoot, ref = "HEAD") {
+  const git = (args, input) => execFileSync("git", ["-C", repoRoot, ...args], { input, maxBuffer: 1 << 30 });
+  const problems = [];
+  const work = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]).toString().split("\0").filter(Boolean);
+  for (const name of new Set(work)) {
+    const path = join(repoRoot, name);
+    let size; try { size = statSync(path).size; } catch { continue; } // deleted in the working tree
+    const named = repoProblem(name, size);
+    if (named) { problems.push(named); continue; }
+    const bytes = Buffer.alloc(16), fd = openSync(path, "r");
+    try { readSync(fd, bytes, 0, 16, 0); } finally { closeSync(fd); }
+    const p = checkMagic(name, bytes); if (p) problems.push(p);
+  }
+  const objects = git(["rev-list", "--objects", ref]).toString().split("\n").filter(Boolean)
+    .map((line) => ({ sha: line.slice(0, 40), name: line.slice(41) })).filter((o) => o.name);
+  const info = git(["cat-file", "--batch-check=%(objecttype) %(objectsize)"], objects.map((o) => o.sha).join("\n") + "\n")
+    .toString().trim().split("\n");
+  const blobs = [];
+  objects.forEach((o, i) => {
+    if (!info[i].startsWith("blob ")) return;
+    const p = repoProblem(o.name, Number(info[i].split(" ")[1]));
+    if (p) problems.push(`history: ${p}`); else blobs.push(o);
+  });
+  for (const o of blobs) {
+    const head = git(["cat-file", "blob", o.sha]).subarray(0, 16);
+    const p = checkMagic(o.name, head); if (p) problems.push(`history: ${p}`);
+  }
+  if (problems.length) throw new Error("Game files must never be committed:\n  " + [...new Set(problems)].join("\n  "));
+  return { workingTree: new Set(work).size, historyBlobs: blobs.length };
+}
+function checkMagic(name, bytes) {
+  for (const [magic, label] of MAGIC) if (magic.every((b, i) => bytes[i] === b)) return `${name}: contents look like ${label} data`;
+  return null;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const count = await guardBuild(fileURLToPath(new URL("..", import.meta.url)));
-  console.log(`Guard: ${count} files checked, engine only`);
+  if (process.argv.includes("--repo")) {
+    const repo = execFileSync("git", ["-C", fileURLToPath(new URL("..", import.meta.url)), "rev-parse", "--show-toplevel"]).toString().trim();
+    const r = assertRepoClean(repo, process.argv[process.argv.indexOf("--repo") + 1] ?? "HEAD");
+    console.log(`Guard: repository clean (${r.workingTree} working-tree files, ${r.historyBlobs} blobs in history)`);
+  } else {
+    const count = await guardBuild(fileURLToPath(new URL("..", import.meta.url)));
+    console.log(`Guard: ${count} files checked, engine only`);
+  }
 }

@@ -54,3 +54,23 @@
 - a05 (WIP script): the naive route carries the box through trigger_fryer_rm5-a and it fizzles (re-drop works). Needs a portal route
   around the fryer using portal_a_lvl5-a (-128,-191,178, facing +x).
 - Shots: shots/38-a02-part2-both-buttons.png, shots/37-a03-cart-ride.png, shots/39-a04-cart-ride.png (local only, gitignored).
+
+## 2026-11-02 18:27–20:35 EST — a05, a06 complete; a07 ball chambers (clean-room)
+References: SDK 2013 (public ValveSoftware/source-sdk-2013, doors.cpp CBaseDoor::DoorGoUp direction rule), Valve Developer Wiki
+(func_portal_bumper, env_entity_maker, AddOutput, point_template), walkthroughs for solution routes only (StrategyWiki, Thonky,
+Portal Wiki). Xash3D FWGS / cs16-client / hlsdk-portable looked at for ideas only; no code copied. No leaked code used.
+- a05 (b1636ca): box carried around trigger_fryer_rm5-a via the fixed orange on the platform (drop box to fire, re-pick);
+  held-cube snags logged -> a06 at 46.5 s.
+- a06 (9b08fc7): portals on static brush entities (fling pillars), grate brushes kept solid inside portal tunnels, fall-loop
+  flings -> a07 at 59.2 s.
+- a07 (d126ea3, 1f93f70, 75af16d, 3eee15e + later):
+  - point_template-spawned weapon_portalgun revives on ForceSpawn (gun on the rotating pedestal).
+  - func_door / func_door_rotating with "Use Opens" (256) act as +use buttons (a07 switches are rotating doors).
+  - Yaw rotating doors that aren't one-way swing away from the activator (SDK 2013 rule) -> pedestal fires -x, +y, +x, skips -y.
+  - func_portal_bumper: placement shifts the portal off bumper volumes (4..96u) before failing (ball now meets the catcher hole).
+  - Energy-ball portal crossings logged; parented triggers follow prop parents that ride trains (scaffold ride trigger).
+  - Generic AddOutput input ("OnFoo t:i:p:d:n" appends an output, "key value" sets a kv); func_tracktrain passes itself as
+    the activator of path_track OnPass, so "!activator" AddOutputs on paths work -> scaffold shuttles back and forth.
+  - +use trace sees past non-usable brush entities (the scaffold sat between eye and the exit switch).
+  - Script tools/play/testchmb_a_07.js: launcher room -> ball caught -> scaffold -> dual portal gun at ~121 s.
+- Regression at 3eee15e: a00 117.8, a01 82.1, a02 149.3, a04 71.5, a05 46.5, a06 59.2 s (a03 below).

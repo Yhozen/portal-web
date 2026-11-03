@@ -24,7 +24,7 @@ export class Tracer {
     this.cur++;
     this.walk(this.bsp.models[0].headnode, 0, 1, s, e, w);
     for (const c of this.colliders) {
-      if (c.ent === skipEnt || !c.enabled()) continue;
+      if (c.ent === skipEnt || (skipEnt instanceof Set && skipEnt.has(c.ent)) || !c.enabled()) continue;
       let ss: V3 = [s[0] - c.offset[0], s[1] - c.offset[1], s[2] - c.offset[2]], ee: V3 = [e[0] - c.offset[0], e[1] - c.offset[1], e[2] - c.offset[2]];
       const R = c.rot; // rotated brush entity: sweep in its local frame (the box stays axis-aligned there; approximate)
       if (R) { const inv = (v: V3): V3 => [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[4] * v[0] + R[5] * v[1] + R[6] * v[2], R[8] * v[0] + R[9] * v[1] + R[10] * v[2]]; ss = inv(ss); ee = inv(ee); }
@@ -33,7 +33,7 @@ export class Tracer {
       if (tr.fraction < before || (tr.startsolid && !bs)) { tr.ent = c.ent; tr.col = c; if (R && tr.fraction < before) { const n = tr.normal; tr.normal = [R[0] * n[0] + R[4] * n[1] + R[8] * n[2], R[1] * n[0] + R[5] * n[1] + R[9] * n[2], R[2] * n[0] + R[6] * n[1] + R[10] * n[2]]; } }
     }
     for (const b of this.extraBoxes) {
-      if (b.ent === skipEnt) continue; const before = tr.fraction, bs = tr.startsolid;
+      if (b.ent === skipEnt || (skipEnt instanceof Set && skipEnt.has(b.ent))) continue; const before = tr.fraction, bs = tr.startsolid;
       this.clipBox(b.mins, b.maxs, w);
       if (tr.fraction < before || (tr.startsolid && !bs)) { tr.ent = b.ent; tr.col = undefined; }
     }

@@ -614,7 +614,10 @@ export class Game {
     if (best) { best.Rrel = mul(invertRigid(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0])), best.R); best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
     else {
       // +use on func_button etc.
-      this.tr.ignore = null; const t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);
+      this.tr.ignore = null; let t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);
+      // see past non-usable brush entities (a07: the scaffold the player rides sits between eye and the exit switch)
+      const skip = new Set<any>([this.playerEnt]); const usable = (x: any) => x && (x.cls === 'func_button' || (/^func_door(_rotating)?$/.test(x.cls) && (+x.kv.spawnflags & 256)));
+      for (let k = 0; k < 3 && t.ent && !usable(t.ent); k++) { skip.add(t.ent); t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, skip); }
       if (t.ent && t.ent.cls === 'func_button') this.io.fire(t.ent, 'onpressed', this.playerEnt);
       // doors with the "Use Opens" spawnflag (256) act as use buttons (a07's pedestal switches are func_door_rotating)
       else if (t.ent && /^func_door(_rotating)?$/.test(t.ent.cls) && (+t.ent.kv.spawnflags & 256)) this.io.deliver(t.ent, 'open', '', this.playerEnt, this.playerEnt);

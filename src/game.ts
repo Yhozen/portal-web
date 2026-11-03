@@ -89,7 +89,7 @@ export class Game {
     if (c === 'func_rotating') { e.ang = [...e.angles] as V3; e.maxspeed = +(kv.maxspeed || 100); e.spinning = !!(+kv.spawnflags & 1); e.spinDir = (+kv.spawnflags & 2) ? -1 : 1;
       e.axis = (+kv.spawnflags & 4) ? 2 : (+kv.spawnflags & 8) ? 0 : 1; e.spinSpeed = e.spinning ? e.maxspeed : 0; }
     if (c === 'func_door_rotating' || c === 'prop_door_rotating') { e.ang = [...e.angles] as V3; e.closedAng = [...e.angles] as V3; const dist = +(kv.distance || 90) * ((+kv.spawnflags & 2) ? -1 : 1);
-      const ax = (+kv.spawnflags & 64) ? 2 : (+kv.spawnflags & 128) ? 0 : 1; e.openAng = [...e.angles] as V3; e.openAng[ax] += dist; e.speed = +(kv.speed || 100); e.t = 0; e.state = 0;
+      const ax = (+kv.spawnflags & 64) ? 2 : (+kv.spawnflags & 128) ? 0 : 1; e.openAng = [...e.angles] as V3; e.openAng[ax] += dist; e.rotAx = ax; e.rotDist = dist; e.speed = +(kv.speed || 100); e.t = 0; e.state = 0;
       if (+kv.spawnflags & 1) { e.t = 1; e.state = 1; } }
     if (c === 'func_tracktrain') { e.speedNow = 0; e.startspeed = +(kv.startspeed || 100); e.pathName = (kv.target || '').toLowerCase(); }
     if (c === 'prop_portal') {
@@ -352,7 +352,13 @@ export class Game {
       this.shootPortal((+m[1] - 1) as 0 | 1, { eye: ma(o, 20, f), f }); return true; });
     H.set('func_rotating', (e, i, param) => { if (i === 'start') e.spinning = true; else if (i === 'stop') e.spinning = false; else if (i === 'toggle') e.spinning = !e.spinning;
       else if (i === 'reverse') e.spinDir = -e.spinDir; else if (i === 'setspeed') { e.maxspeed = (+(e.kv.maxspeed || 100)) * (+param || 0); e.spinning = +param > 0; } else return false; return true; });
-    const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
+    // SDK 2013 doors.cpp (CBaseDoor::DoorGoUp): a yaw-rotating door that isn't one-way (spawnflag 16) swings away from its activator. Our I/O
+    // doesn't carry the activator into the door, so use the player (single-player). a07's rotating pedestal gun relies on this: it must turn clockwise.
+    const awaySign = (e: Ent) => { if (e.cls !== 'func_door_rotating' || e.rotAx !== 1 || (+e.kv.spawnflags & 16) || !e.bmins) return 1;
+      const a = this.player.pos, o = e.pos || e.origin; const np = [Math.max(e.bmins[0], Math.min(e.bmaxs[0], a[0])), Math.max(e.bmins[1], Math.min(e.bmaxs[1], a[1]))];
+      const ox = o[0] - a[0], oy = o[1] - a[1], nx = np[0] - a[0], ny = np[1] - a[1]; return ox * ny - oy * nx > 0 ? -1 : 1; };
+    const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked && e.rotAx !== undefined && (e.t || 0) === 0) e.openAng[e.rotAx] = e.closedAng[e.rotAx] + e.rotDist * awaySign(e);
+      if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
       else if (i === 'toggle') { e.state = 1 - e.state; e.moving = true; } else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') e.speed = +param || e.speed; else return false; return true; };
     H.set('func_door_rotating', rotDoor); H.set('prop_door_rotating', rotDoor);
     H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath && e.curPath.kv.target) e.pathName = e.curPath.kv.target.toLowerCase(); if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') { e.speedNow = -e.startspeed;
@@ -443,6 +449,7 @@ export class Game {
     // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps)
     const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
     for (const n of names) for (const src of this.io.byName.get(n) || []) {
+      if (src.cls === 'weapon_portalgun' && !src.picked) { src.killed = false; if (src.prop) src.prop.visible = true; this.io.log.push(`${this.io.time.toFixed(2)} spawned ${n} (portal gun)`); continue; } // a07: the next map's gun is a template spawned on new game
       if (!src.cube || src.isCopy) continue;
       const kv = { ...src.kv, origin: (at || src.origin).join(' ') }; if (!(+t.kv.spawnflags & 2)) delete (kv as any).targetname;
       const e = new Ent(kv); e.isCopy = true; e.game = this; e.pos = [...e.origin] as V3; this.io.add(e); this.spawnCube(e);
@@ -603,6 +610,8 @@ export class Game {
       // +use on func_button etc.
       this.tr.ignore = null; const t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);
       if (t.ent && t.ent.cls === 'func_button') this.io.fire(t.ent, 'onpressed', this.playerEnt);
+      // doors with the "Use Opens" spawnflag (256) act as use buttons (a07's pedestal switches are func_door_rotating)
+      else if (t.ent && /^func_door(_rotating)?$/.test(t.ent.cls) && (+t.ent.kv.spawnflags & 256)) this.io.deliver(t.ent, 'open', '', this.playerEnt, this.playerEnt);
     }
   }
   // weapon_portalgun: picked up by walking near it; its canfireportal1/2 keyvalues decide which colours work
@@ -615,7 +624,7 @@ export class Game {
   }
   pickGun(g: Ent) {
     const had = this.hasGunBefore; this.hasGun = true; this.canFire = [g.kv.canfireportal1 !== '0' || (had && this.canFire[0]), g.kv.canfireportal2 !== '0' || (had && this.canFire[1])];
-    this.hasGunBefore = true; g.killed = true; g.onKill?.(); this.io.fire(g, 'onplayerpickup', this.playerEnt); this.io.log.push(`${this.io.time.toFixed(2)} picked up ${g.name} (blue ${this.canFire[0]}, orange ${this.canFire[1]})`);
+    this.hasGunBefore = true; g.killed = true; g.picked = true; g.onKill?.(); this.io.fire(g, 'onplayerpickup', this.playerEnt); this.io.log.push(`${this.io.time.toFixed(2)} picked up ${g.name} (blue ${this.canFire[0]}, orange ${this.canFire[1]})`);
   }
   mmcs = new Set<any>();
   updateMMC() { for (const e of this.mmcs) { const L = e.lerp; if (!L) { this.mmcs.delete(e); continue; } let u = (this.io.time - L.t0) / L.d;

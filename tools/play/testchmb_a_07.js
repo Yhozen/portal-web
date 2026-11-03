@@ -27,5 +27,5 @@ for (let i = 0; i < 66 * 60 && !caught(); i++) game.step(1/66, IN(0));
 lg('caught', caught() + ' t ' + io.time.toFixed(1) + ' orange ' + G.gunPortals[1].pos.map(v => v|0));
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.filter(l => !/try\d+ no path/.test(l)).slice(-10).join('\n'));
-out.push(io.log.filter(l => /teleport|picked|fizz|ball_trap|rail_cart|catch|gone/.test(l)).slice(-20).join('\n'));
+out.push(io.log.filter(l => /teleport|picked|fizz|ball_trap|rail_cart|catch|gone|ball through|portal 1 failed/.test(l)).slice(-30).join('\n'));
 return out.join('\n'); })()

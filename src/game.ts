@@ -19,7 +19,7 @@ export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
-  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = [];
+  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
     this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
     this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
@@ -98,6 +98,7 @@ export class Game {
       if (kv.activated === '1') this.activatePortal(e, true);
     }
     if (c === 'weapon_portalgun' && !/spawn/.test(e.name)) { e.prop = this.addProp('models/weapons/w_portalgun.mdl', e.origin, e.angles); e.onKill = () => { if (e.prop) e.prop.visible = false; }; }
+    if (c === 'func_portal_bumper') this.bumpers.push(e);
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
@@ -262,6 +263,11 @@ export class Game {
       }
       if (!moved) break; ok = fits(pos);
     }
+    // func_portal_bumper: placement is pushed off these volumes (Valve Developer Wiki). Try the smallest in-plane shift that clears every bumper and still fits.
+    const bumped = (c: V3) => this.bumpers.some(v => { const lo = v.bmins, hi = v.bmaxs; for (let a = 0; a < 3; a++) { const ext = Math.abs(rr[a]) * PW + Math.abs(up[a]) * PH + Math.abs(n[a]) * 2; if (c[a] + ext <= lo[a] || c[a] - ext >= hi[a]) return false; } return true; });
+    if (ok && bumped(pos)) { let best: V3 | null = null;
+      for (let d = 4; d <= 96 && !best; d += 4) for (const ax of [up, scale(up, -1), rr, scale(rr, -1)]) { const c2 = ma(pos, d, ax); if (!bumped(c2) && fits(c2)) { best = c2; break; } }
+      if (best) pos = best; else ok = false; }
     if (!ok) return this.fizzleShot(which, 'no fit');
     const p = this.gunPortals[which];
     p.pos = pos; p.f = [...n] as V3; p.u = up; p.r = rr; p.open = true; (p as any).onCol = onCol; (p as any).onOff = off; this.portalBrushes.delete(p); this.stats.portalsPlaced++;
@@ -439,7 +445,7 @@ export class Game {
       this.tr.ignore = null;
       for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, b.pos)) {
         const M = throughPortal(p, p.linked); b.pos = xformPoint(M, b.pos); b.vel = xformDir(M, b.vel);
-        b.die = Math.max(b.die, io.time + (+(b.launcher.kv.minlifeafterportal || 6))); break; }
+        b.die = Math.max(b.die, io.time + (+(b.launcher.kv.minlifeafterportal || 6))); io.log.push(`${io.time.toFixed(2)} energy ball through ${p.name} at ${b.pos.map(v => v | 0)}`); break; }
       b.ent.pos = b.pos; b.ent.origin = b.pos;
       const m = entityMatrix(b.pos, [0, io.time * 400 % 360, 0]); b.prop.matrix = m;
     }

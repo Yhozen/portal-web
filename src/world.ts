@@ -86,12 +86,24 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
   // --- overlays: one quad each (not clipped to faces), lightmap sampled from their first face.
   // UV corner order (u0v0, u0v1, u1v1, u1v0) as in noclip.website's MIT-licensed BSPFile.ts.
   const overlays: WorldMesh['overlays'] = [];
+  // Lightmap source for an overlay: its first lit face. Some have no faces at all (the compiler only lists world faces, so an
+  // overlay on a brush entity such as a00's button platforms gets none); for those, find a lit face of any model on the same
+  // plane whose lightmap covers the overlay origin. Without this they sampled the atlas filler and showed up 4x overbright white.
+  const overlayLitFace = (ov: typeof bsp.overlays[number]) => {
+    for (const fi of ov.faces) if (place.has(fi)) return fi;
+    const N = ov.normal, P = ov.origin;
+    for (let fi = 0; fi < bsp.faces.length; fi++) { const f = bsp.faces[fi]; if (!place.has(fi) || f.texinfo < 0) continue;
+      const pl = bsp.planes[f.plane], sg = f.side ? -1 : 1; if (sg * dot(pl.n, N) < 0.99 || Math.abs(dot(pl.n, P) - pl.d) > 1) continue;
+      const ti = bsp.texinfo[f.texinfo], ls = dot(P, ti.ls) + ti.ls[3] - f.lmMins[0], lt = dot(P, ti.lt) + ti.lt[3] - f.lmMins[1];
+      if (ls >= 0 && lt >= 0 && ls <= f.lmSize[0] && lt <= f.lmSize[1]) return fi; }
+    return -1;
+  };
   for (const ov of bsp.overlays) {
     if (ov.texinfo < 0 || !bsp.texinfo[ov.texinfo]) continue; const ti0 = bsp.texinfo[ov.texinfo]; if (ti0.texdata < 0) continue;
     const N = ov.normal, U = [ov.pts[0][2], ov.pts[1][2], ov.pts[2][2]]; let V = [N[1] * U[2] - N[2] * U[1], N[2] * U[0] - N[0] * U[2], N[0] * U[1] - N[1] * U[0]];
     if (ov.pts[3][2] === 1) V = V.map(x => -x);
     const uv = [[ov.u[0], ov.v[0]], [ov.u[0], ov.v[1]], [ov.u[1], ov.v[1]], [ov.u[1], ov.v[0]]];
-    const fi = ov.faces[0], f = fi >= 0 ? bsp.faces[fi] : null, lmPos = f ? place.get(fi) : undefined, ti = f ? bsp.texinfo[f.texinfo] : null;
+    const fi = overlayLitFace(ov), f = fi >= 0 ? bsp.faces[fi] : null, lmPos = f ? place.get(fi) : undefined, ti = f ? bsp.texinfo[f.texinfo] : null;
     const base = verts.length / STRIDE;
     for (let k = 0; k < 4; k++) { const q = ov.pts[k]; const p = [0, 1, 2].map(i => ov.origin[i] + U[i] * q[0] + V[i] * q[1] + N[i] * 0.25);
       let lu = 0.5 / lmW, lv = 0.5 / lmH; if (lmPos && ti && f) { lu = (lmPos[0] + Math.min(f.lmSize[0], Math.max(0, dot(p, ti.ls) + ti.ls[3] - f.lmMins[0])) + 0.5) / lmW; lv = (lmPos[1] + Math.min(f.lmSize[1], Math.max(0, dot(p, ti.lt) + ti.lt[3] - f.lmMins[1])) + 0.5) / lmH; }

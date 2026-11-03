@@ -30,6 +30,9 @@ importers:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -967,6 +970,9 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
+
   capnp-es@0.0.16:
     resolution: {integrity: sha512-pqhhnRqGfDdgHa+rz4JVO9j1jnkyqsHRYrD4RBtIwxCknYSRG7Mjs+x3IRfd20u+ZGS0IhW2L7cDv9ZcIkCYhQ==}
     hasBin: true
@@ -1815,6 +1821,8 @@ snapshots:
   ansi-regex@6.4.0: {}
 
   ansi-styles@6.2.3: {}
+
+  aws4fetch@1.0.20: {}
 
   capnp-es@0.0.16(typescript@6.0.3):
     optionalDependencies:

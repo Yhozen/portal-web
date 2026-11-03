@@ -130,3 +130,72 @@ export function bindingTarget(bucket) {
     async delete(key) { await bucket.delete(key); },
   };
 }
+
+// Any S3-compatible endpoint (R2: https://<account>.r2.cloudflarestorage.com, region "auto"), path-style
+// {endpoint}/{bucket}/{key}. `signedFetch(url, init)` signs with SigV4 (aws4fetch's AwsClient.fetch);
+// bodies are streamed with UNSIGNED-PAYLOAD, so each attempt re-opens the file. Single-part PUTs keep
+// the ETag equal to the MD5, which is what the skip-unchanged check compares (R2 allows up to 5 GB).
+export function s3Target(signedFetch, endpoint, bucket, { retries = 4, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const base = `${endpoint.replace(/\/+$/, "")}/${encodeURIComponent(bucket)}`;
+  const url = (key) => `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const unxml = (s) => s.replace(/&(lt|gt|quot|apos|amp|#(\d+)|#x([0-9a-f]+));/gi, (m, n, d, h) =>
+    d ? String.fromCodePoint(+d) : h ? String.fromCodePoint(parseInt(h, 16)) : { lt: "<", gt: ">", quot: '"', apos: "'", amp: "&" }[n.toLowerCase()]);
+  async function call(what, make, ok = (s) => s >= 200 && s < 300) {
+    for (let attempt = 0; ; attempt++) {
+      let res, err;
+      try { res = await signedFetch(...make()); } catch (e) { err = e; }
+      if (res && ok(res.status)) return res;
+      const body = res ? await res.text().catch(() => "") : "";
+      const code = /<Code>([^<]*)<\/Code>/.exec(body)?.[1];
+      // Auth and client errors will not fix themselves (e.g. AccessDenied: token for another bucket or read-only).
+      const permanent = res && res.status < 500 && res.status !== 429;
+      if (permanent || attempt >= retries) {
+        throw new Error(`S3 ${what} failed: ${res ? `HTTP ${res.status}${code ? ` ${code}` : ""}` : String(err?.message ?? err)}`);
+      }
+      await wait(1000 * 2 ** attempt);
+    }
+  }
+  return {
+    async list() {
+      const out = new Map();
+      let token = "";
+      for (;;) {
+        const res = await call("list", () => [`${base}?list-type=2&max-keys=1000${token ? `&continuation-token=${encodeURIComponent(token)}` : ""}`]);
+        const xml = await res.text();
+        for (const [, c] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+          const tag = (t) => unxml(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`).exec(c)?.[1] ?? "");
+          out.set(tag("Key"), { size: Number(tag("Size")), etag: tag("ETag").replaceAll('"', "") });
+        }
+        token = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? unxml(/<NextContinuationToken>([^<]*)</.exec(xml)?.[1] ?? "") : "";
+        if (!token) break;
+      }
+      return out;
+    },
+    async put(key, file, size, contentType, contentMd5) {
+      const { Readable } = await import("node:stream");
+      const headers = { "Content-Type": contentType, "Content-Length": String(size), "Cache-Control": "private, max-age=86400",
+        "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD" };
+      if (contentMd5) headers["Content-MD5"] = Buffer.from(contentMd5, "hex").toString("base64"); // server rejects corrupted bodies
+      await (await call(`PUT ${key}`, () => [url(key), { method: "PUT", duplex: "half", headers,
+        body: Readable.toWeb(createReadStream(file)) }])).arrayBuffer();
+    },
+    async putJson(key, value) {
+      const text = JSON.stringify(value);
+      await (await call(`PUT ${key}`, () => [url(key), { method: "PUT", body: text,
+        headers: { "Content-Type": "application/json", "Cache-Control": "private, no-store" } }])).arrayBuffer();
+    },
+    async delete(key) {
+      await (await call(`DELETE ${key}`, () => [url(key), { method: "DELETE" }], (s) => (s >= 200 && s < 300) || s === 404)).arrayBuffer();
+    },
+  };
+}
+
+// Reads R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (values are never printed).
+export async function s3TargetFromEnv(bucket, env = process.env) {
+  const missing = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].filter((k) => !env[k]);
+  if (missing.length) throw new Error(`--s3 needs ${missing.join(", ")} in the environment`);
+  const { AwsClient } = await import("aws4fetch");
+  const client = new AwsClient({ accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    service: "s3", region: "auto", retries: 0 });
+  return s3Target((u, init) => client.fetch(u, init), env.R2_ENDPOINT, bucket);
+}

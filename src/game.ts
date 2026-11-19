@@ -499,10 +499,11 @@ export class Game {
   balls: { ent: Ent; pos: V3; vel: V3; r: number; die: number; launcher: Ent; prop: PropInst }[] = [];
   launchBall(L: Ent) {
     const io = this.io; const f = angleVectors(L.angles || [0, 0, 0]).f; const spd = +(L.kv.minspeed || 200) || 200; const r = +(L.kv.ballradius || 12) || 12;
-    const e = new Ent({ classname: 'prop_energy_ball', origin: L.origin.join(' ') }); e.game = this; this.io.add(e);
-    const prop = this.addProp('models/effects/combineball.mdl', [...L.origin] as V3, [0, 0, 0]);
+    const e = new Ent({ classname: 'prop_energy_ball', origin: L.origin.join(' '), model: 'models/effects/combineball.mdl' }); e.game = this; this.io.add(e);
+    const prop = this.addProp(e.kv.model, [...L.origin] as V3, [0, 0, 0]);
     const b = { ent: e, pos: ma(L.origin, r + 2, f), vel: scale(f, spd), r, die: io.time + (+(L.kv.balllifetime || 12) || 12), launcher: L, prop };
     e.ball = b; e.onKill = () => { prop.visible = false; io.log.push(`${io.time.toFixed(2)} energy ball gone at ${b.pos.map(v => v | 0)}${io.time >= b.die ? ' (expired)' : ''}`); this.balls = this.balls.filter(x => x !== b); };
+    e.prop = prop; this.playAnim(e, 'idle', true); // combineball.mdl's own looping idle turns its three bones (about 86 deg/s)
     this.balls.push(b); io.fire(L, 'onpostspawnball', e); io.log.push(`${io.time.toFixed(2)} energy ball from ${L.name}`);
   }
   updateBalls(dt: number) {
@@ -529,7 +530,10 @@ export class Game {
         const M = throughPortal(p, p.linked); b.pos = xformPoint(M, b.pos); b.vel = xformDir(M, b.vel);
         b.die = Math.max(b.die, io.time + (+(b.launcher.kv.minlifeafterportal || 6))); io.log.push(`${io.time.toFixed(2)} energy ball through ${p.name} at ${b.pos.map(v => v | 0)}`); break; }
       b.ent.pos = b.pos; b.ent.origin = b.pos;
-      const m = entityMatrix(b.pos, [0, io.time * 400 % 360, 0]); b.prop.matrix = m;
+      // combineball.mdl is built to be seen from one side: its glow cards are flat and the shell is a dome, facing -y in
+      // the bind pose, and the idle's base bone turns that to +x. So the ball keeps its +x on the viewer, or most
+      // directions show a sliver (checks/energy-ball.ctl)
+      { const v = sub(this.player.eye(), b.pos); b.prop.matrix = entityMatrix(b.pos, [-Math.atan2(v[2], Math.hypot(v[0], v[1])) * 180 / Math.PI, Math.atan2(v[1], v[0]) * 180 / Math.PI, 0]); }
     }
   }
   prevPath(p: Ent) { return this.io.ents.find(q => q.cls === 'path_track' && !q.killed && (q.kv.target || '').toLowerCase() === p.name) || null; }

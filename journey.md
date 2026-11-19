@@ -239,3 +239,22 @@ combine_ball_launcher open and close 0.970 (0.967), light_rail_endcap movedown 1
 per-tick turn, 10.2° at tick 8, is Scene_Root: idle_closed and open store that bone 90° apart about z and the 0.2 s
 fade slerps between them on a bell curve (1.5, 4.1, ... 10.2, ... 2.1). Root and both door leaves don't follow it
 (Root's world axes don't move at all), so it isn't visible; the leaves turn about 1.2° a tick, smoothly. No pops.
+
+**12:05 PM, floor buttons.** checks/button.ctl drops the a00 cube on the second button. floor_button_door_a00 is a
+func_door moving down (movedir 90 0 0) at 25 units/s with lip 0 on an 8-unit-deep brush, so 0.32 s, about 21 ticks.
+The probe has it moving from tick 12 to 33, the parented button_top following 1:1 (137.56 to 129.56), the exit doors
+opening, the indicator strip switching from blue to orange; taking the cube off brings it back up in 21 ticks.
+Linear constant-speed motion is what func_door does. Nothing to fix.
+
+**12:10 PM, energy balls.** checks/energy-ball.ctl films one a04 ball in flight: 200 units/s constant, life ticking
+down from 16 s. Two problems, both in how the ball model is drawn:
+- the in-flight ball never played combineball.mdl's looping idle (31 frames at 4 fps), the port spun it at a
+  made-up 400°/s yaw instead. It now plays the idle, and the probe shows 1/7.5 cycles per second.
+- the model is built to be seen from one side. Its two glow cards are flat quads with normal -y and the shell is a
+  dome from y -11.2 to 2.5, in the bind pose; the idle's base bone holds that turned to +x for the whole loop. Any
+  other angle showed a sliver, so with the yaw spin the ball flickered between a sphere and a sliver, and from the
+  side it was mostly a sliver. The ball now keeps its +x on the viewer. That is also the only orientation in which
+  the animation's base-bone turn makes sense, which is why I took it over facing -y.
+checks/energy-ball-views.ctl holds a ball and looks at it from three sides: before, one sphere and two slivers;
+after, a sphere from every side (energy-ball-views-compare.png, energy-ball-compare.mp4). The caught ball in the
+catchers is a plain prop_dynamic on an attachment and is left alone.

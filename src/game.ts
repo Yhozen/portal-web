@@ -2,6 +2,7 @@ import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel } from './models.ts';
 import { F } from './anim.ts';
+import { aimTable, aimFor, approach } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -20,7 +21,7 @@ export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
-  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = [];
+  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = []; cameras: Ent[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
     this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
     this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
@@ -98,6 +99,7 @@ export class Game {
       const p: Portal = { pos: e.origin, f, r, u, color: kv.portaltwo === '1' ? ORANGE : BLUE, open: false, linked: null, name: e.name }; e.portal = p; this.portals.push(p);
       if (kv.activated === '1') this.activatePortal(e, true);
     }
+    if (c === 'npc_security_camera') { kv.model ||= 'models/props/security_camera.mdl'; e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); e.prop.poses = [0, 0]; this.cameras.push(e); }
     if (c === 'weapon_portalgun' && !/spawn/.test(e.name)) { e.prop = this.addProp('models/weapons/w_portalgun.mdl', e.origin, e.angles); e.onKill = () => { if (e.prop) e.prop.visible = false; }; }
     if (c === 'func_portal_bumper') this.bumpers.push(e);
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
@@ -342,6 +344,7 @@ export class Game {
       else if (i === 'setdefaultanimation') { e.defaultAnim = param; }
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
       else return false; return true; };
+    H.set('npc_security_camera', (e, i) => { if (i === 'disable') e.camDisabled = true; else if (i === 'enable') e.camDisabled = false; else return false; return true; });
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
     // material_modify_control: drives $frame of its parent brush's material (Valve Developer Wiki); used by the a00 countdown clock
     H.set('material_modify_control', (e, i, param) => { const par = e.kv.parentname ? this.io.find(e.kv.parentname, null, e)[0] : null; const ins: any = par && (par.inst || par.prop); if (!ins) return true;
@@ -500,8 +503,20 @@ export class Game {
       if (pr.posed !== key) { const seq = pr.seq, cyc = pr.cycle || 0, ex = fades || poses ? { fades, poses } : undefined; pr.posed = key; pr.repose = () => { pr.repose = undefined; pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, seq, cyc, ex); }; }
     }
   }
+  /** security cameras follow the player's eye while they can see it (see src/npc.ts) */
+  updateCameras(dt: number) {
+    const eye = this.player.eye(), TURN = 90 * dt; // degrees per second
+    for (const e of this.cameras) { const pr = e.prop, m = pr?.model; if (!pr || !m || e.killed || !pr.visible || e.camDisabled) continue;
+      const t = aimTable(m); if (!t) continue;
+      if (!e.camInit) { e.camInit = true; pr.poses = [...t.rest]; }   // spawn looking straight out, not at pose 0 (straight down)
+      const W = this.entWorld(e), lens = xformPoint(W, t.lensPos), to = sub(eye, lens), dist = len(to);
+      const local = xformDir(invertRigid(W), scale(to, 1 / (dist || 1)));
+      let goal = t.rest;
+      if (dist < 2048 && local[0] > -0.2 && this.tr.ray(lens, eye, MASK_SHOT_PORTAL).fraction > 0.98) goal = aimFor(t, local as V3, e.prop.poses);
+      const P = pr.poses ??= [0, 0]; P[0] = approach(P[0], goal[0], TURN); P[1] = approach(P[1], goal[1], TURN); e.camSees = goal !== t.rest; }
+  }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.animateProps(dt); this.r.time += dt;
+    this.updateCameras(dt); this.animateProps(dt); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;

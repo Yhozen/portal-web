@@ -23,6 +23,7 @@ commands:
   map NAME [QUERY]            load a map (nochange=1 is always set); replies load time, requests, MB, warnings
   pose X Y Z PITCH YAW        noclip, intro fade off, feet at X Y Z (eye is 64 above), view angles in degrees
   look PITCH YAW              change only the view angles
+  lookat X Y Z|off            keep the view aimed at a point on every tick of step, record and poses
   noclip on|off               off lets step run the real player physics and game logic
   step N [KEYS]               advance N fixed ticks (1/66 s); KEYS like w, wd, space, duck held for those ticks
   shoot blue|orange           fire the portal gun along the current view (as the mouse does)
@@ -127,10 +128,14 @@ const handlers = {
     return page.evaluate(v => { const g = window.game, h = g.game.hud; g.pl.noclip = true; h.fade = 0; h.fadeTarget = 0; h.fadeHoldUntil = 0; g.pl.pos = [v[0], v[1], v[2]]; g.pl.ang = [v[3], v[4], 0]; g.pl.vel = [0, 0, 0];
       return { pos: g.pl.pos, ang: g.pl.ang, cluster: g.r.clusterAt(g.pl.eye()) }; }, v); },
   async look(w) { need(); const p = num(w[1], 'pitch'), y = num(w[2], 'yaw'); return page.evaluate(([p, y]) => { window.game.pl.ang = [p, y, 0]; return { ang: window.game.pl.ang }; }, [p, y]); },
+  async lookat(w) { need(); if (w[1] === 'off') return page.evaluate(() => { window.__aim = null; return { lookat: null }; });
+    const p = w.slice(1, 4).map((v, i) => num(v, 'xyz'[i])); return page.evaluate(p => { const g = window.game;
+      window.__aim = () => { const e = g.pl.eye(), d = [p[0] - e[0], p[1] - e[1], p[2] - e[2]]; g.pl.ang = [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0]; };
+      window.__aim(); return { lookat: p, ang: g.pl.ang }; }, p); },
   async noclip(w) { need(); const on = w[1] !== 'off'; return page.evaluate(on => { window.game.pl.noclip = on; return { noclip: on }; }, on); },
   async step(w) { need(); const n = Math.max(0, Math.floor(num(w[1] ?? 1, 'N'))); const k = (w[2] || '').toLowerCase();
     const inp = { fwd: (k.includes('w') ? 1 : 0) - (k.includes('s') && !k.includes('space') ? 1 : 0), side: (k.includes('d') && !k.includes('duck') ? 1 : 0) - (k.includes('a') && !k.includes('space') ? 1 : 0), jump: k.includes('space'), duck: k.includes('duck') };
-    return page.evaluate(([n, inp]) => { const g = window.game, T = 1 / 66; const t = performance.now(); for (let i = 0; i < n; i++) g.step(T, inp);
+    return page.evaluate(([n, inp]) => { const g = window.game, T = 1 / 66; const t = performance.now(); for (let i = 0; i < n; i++) { window.__aim?.(); g.step(T, inp); }
       return { ticks: n, sim_ms: +(performance.now() - t).toFixed(2), pos: g.pl.pos.map(v => +v.toFixed(2)), vel: g.pl.vel.map(v => +v.toFixed(2)) }; }, [n, inp]); },
   async shoot(w) { need(); const which = { blue: 0, orange: 1, '0': 0, '1': 1 }[w[1]]; if (which === undefined) throw Object.assign(new Error('shoot blue|orange'), { usage: true });
     return page.evaluate(which => { const g = window.game; g.game.shootPortal(which); const p = g.game.gunPortals?.[which]; return { portal: which ? 'orange' : 'blue', open: !!p?.open, pos: p?.open ? p.pos.map(v => +v.toFixed(1)) : null }; }, which); },
@@ -178,7 +183,7 @@ const handlers = {
     let fferr = ''; ff.stderr.on('data', d => fferr += d); const done = new Promise(r => ff.on('exit', r));
     let ticks = 0, sim = 0, draw = 0, failed = null; const per = [];
     for (let i = 0; i < frames; i++) { const want = Math.round(i * 66 / fps) - ticks;   // tick at which frame i is shown (frame 0 = now)
-      let r; try { r = await page.evaluate(([n, inp, src]) => { const g = window.game, T = 1 / 66; const t = performance.now(); for (let k = 0; k < n; k++) g.step(T, inp); const sim = performance.now() - t;
+      let r; try { r = await page.evaluate(([n, inp, src]) => { const g = window.game, T = 1 / 66; const t = performance.now(); for (let k = 0; k < n; k++) { window.__aim?.(); g.step(T, inp); } window.__aim?.(); const sim = performance.now() - t;
         const st = (0, eval)(src)(); const gl = document.getElementById('c').getContext('webgl2'), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
         let s = ''; for (let o = 0; o < px.length; o += 0x8000) s += String.fromCharCode.apply(null, px.subarray(o, o + 0x8000)); return { sim, frame_ms: st.frame_ms, b64: btoa(s), probe: window.__probe ? window.__probe() : undefined }; }, [want, inp, `(${RENDER})`]); } catch (e) { failed = { frame: i, error: String(e.message || e).split('\n')[0] }; break; }
       ticks += want; sim += r.sim; draw += r.frame_ms; if (r.probe !== undefined) per.push({ frame: i, tick: ticks, probe: r.probe });
@@ -211,7 +216,7 @@ const handlers = {
         const sk = m.skel, M = g.anim.boneMatrices(sk, pr.seq, pr.cycle || 0, pr), sq = sk.seqs[pr.seq];
         out.push({ tick, t: r3(tick * T), ent: e?.name || null, model: e?.kv?.model || m.data.name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(5), ...(pr.fades?.length ? { fades: pr.fades.map(f => ({ seq: sk.seqs[f.seq]?.name, cycle: +f.cycle.toFixed(4), weight: +f.weight.toFixed(4) })) } : {}), ...(pr.poses ? { poses: pr.poses.slice() } : {}),
           bones: sk.bones.map((b, i) => ({ name: b.name, pos: [M[i * 12 + 3], M[i * 12 + 7], M[i * 12 + 11]].map(r3), fwd: [M[i * 12], M[i * 12 + 4], M[i * 12 + 8]].map(r3) })) }); } };
-      sample(0); for (let k = 1; k <= n; k++) { g.step(T, inp); if (k % every === 0) sample(k); } return out; }, [n, re, every, inp]);
+      sample(0); for (let k = 1; k <= n; k++) { window.__aim?.(); g.step(T, inp); if (k % every === 0) sample(k); } return out; }, [n, re, every, inp]);
     writeFileSync(f, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
     // summary per prop: sequences seen with first/last tick, and the measured cycle rate against fps/(frames-1)
     const sum = {}; for (const l of lines) { const k = (l.ent || '') + ' ' + l.model; const s = sum[k] ??= { samples: 0, seqs: [] }; s.samples++; const last = s.seqs[s.seqs.length - 1];

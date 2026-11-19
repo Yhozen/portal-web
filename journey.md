@@ -101,3 +101,20 @@ The refactor that exposes bone matrices to the harness leaves rendering unchange
 Evidence: /workspace/portal-web-shots/anim/destruction-before.mp4 (30 frames, then the error at tick 80), destruction-after.mp4 (the full 54.5 s at 24 fps, 640x400) and destruction-after-sheet.png. mdl-info --continuity on all six destruction models now decodes every frame. The last-frame rule changes nothing visible elsewhere (GLaDOS's sectioned idle moves by under 0.01 units at that frame).
 
 Also: `SetDefaultAnimation` with an empty value (relay_boss_burn_state_4 sends that to glados_body before "death") now clears the default, instead of falling back to the map's "idle" when the death sequence ends.
+
+**9:40 AM, sequence cross-fades.** Rebuilt the pose path the way SDK 2013's bone_setup.cpp lays it out (CalcPoseSingle
+blend grid with the posekey branch, delta layers via QuaternionSM/MA, autoplay layers, pose parameters defaulting to 0
+in their own units), then added sequence transitions as C_BaseAnimating does: fade time min(old fadeout, new fadein),
+weight on the 3s²−2s³ spline, STUDIO_SNAP skips it. GLaDOS's idle→hit switch used to move a bone 44.6 units in one
+tick; with the fade the largest per-tick move is 13.6 units, which is the animation's own motion
+(`poses` max_move, glados-hit-compare.mp4). Also fixed: `SetDefaultAnimation` with an empty value, onDone overwriting
+the next sequence's cycle, hidden props freezing. GLaDOS check frames and 30 later-chamber views are byte-identical to
+the pre-refactor build.
+
+**9:54 AM, security cameras track the player.** npc_security_camera had no model at all (kv.model was undefined, the
+spawn crashed). Now it spawns security_camera.mdl and aims with aim_yaw/aim_pitch. The aim isn't guessed: the lens axis
+is the "light" attachment's +y, and a 5° table over both pose ranges says where each pose points. Pitch 0 is straight
+down and every direction has two poses (yaw, p) and (yaw±180, −p), so the pick has a small continuity penalty, or it
+flipped between them. Rest is (0, 120), looking straight out. 90°/s turn rate; sight test is a MASK_SHOT_PORTAL ray.
+New harness `lookat X Y Z` keeps the view on a point every tick. checks/camera-track.ctl: while the player strafes
+under cam1 in a00 the lens-to-eye error is median 4°, max 8° once it has turned to them (was: no camera).

@@ -35,3 +35,20 @@ First try drew the 2D sky as a small cube around the eye. It looked right except
 Frame rate at the ending view (headless SwiftShader, 1024x526, median over 5 s): 40 fps and 6.2 ms per frame without the sky, 28.5 fps and 10.2 ms with it. That is the cost of drawing the 3D skybox area (about 110 extra draws) and is only paid where the sky is visible. Indoors in escape_02 nothing changes (458 draws and about 28 fps either way), and testchmb_a_00 and a14 still don't load a sky (41 and 40 fps at spawn).
 
 pnpm check is clean and pnpm test passes 27 of 27, including the repository guard.
+
+8:40 PM. Change of plan from Gabriel: build a proper test harness first, modelled on Horizon's native client doc (docs/native-client.md in horizon-rust/horizon, the "Agent control" section about horizon-ctl), then use it for the chamber checks.
+
+What I took from horizon-ctl: one command per line in, one JSON line per command out, errors as JSON with a reason, a script mode that stops at the first error unless told to keep going, and the same exit codes (0 ok, 1 command failed, 2 usage, 3 couldn't start). What I left out: horizon-ctl attaches to a running game over a socket and has an MCP server. Here each run starts its own asset server on a free port and its own headless Chromium, and stops both at the end. That is simpler and enough for reproducing bugs; a long-running mode can come later if it's needed.
+
+The result is tools/portal-ctl.mjs, documented in docs/harness.md. Commands: map, pose, look, noclip, step N [keys], shoot, use, fire (entity input), set (renderer switches), render, screenshot, bench, diff, state, ents, errors, eval, sleep.
+
+Determinism took two tries. The first version paused the page's frame loop right after the map loaded, and two runs of the same script matched on testchmb_a_01. But comparing main against this branch over 30 views in the later chambers showed differences in a09, a10 and a11, maps the skybox can't touch. The cause was the page simulating and drawing a few real-time frames between "ready" and the harness pausing it, so doors and ball launchers had moved by a varying amount. Now the pause is set by an init script before any page code runs, Math.random is seeded, the game only advances on step (fixed 1/66 s ticks), and screenshots are taken from the canvas right after an explicit draw. With that, all 30 views are byte-identical between main (0d06ee2, served from a worktree) and this branch, which also confirms the skybox only changes the ending.
+
+checks/escape02-ending.ctl and checks/later-chambers.ctl hold the two scripts I used (map names, coordinates and commands only, nothing from the game). Screenshots go to /tmp/portal-checks/.
+
+bench numbers (frames drawn back to back with gl.finish, SwiftShader, 1024x640), p50 per frame at the 30 later-chamber views: 13.8 to 45 ms. Slowest are escape_02 (34.7 to 45 ms, 459 to 525 draws), a10 near the exit doors (42.9 ms, 386 draws) and escape_00 (31 to 41 ms). At the ending view, sky off 22.4 ms vs sky on 37.1 ms.
+
+Small findings from the harness's errors command:
+- Every map that has a portal gun makes one 404 for w_portalgun.vmt with the cdmaterials path doubled. That is the model loader probing cdmaterials + name before falling back to the plain name, which then works. It's noise, not a bug.
+- escape_01's rot_door_frame.mdl asks for a material named "debugempty", which isn't found because the real file is materials/debug/debugempty.vmt. I looked at the door and didn't see anything wrong, so I left it.
+- The dark lift pillars in a15 get an ambient cube of about 0.3 to 0.45 at their centre. They're dark, but that looks like the right answer for a dark metal model standing in the pit, not a lighting bug.

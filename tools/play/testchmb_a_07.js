@@ -34,6 +34,8 @@ lg('orange north', waitOrange([-192, 191], 30) + ' t ' + io.time.toFixed(1) + ' 
 for (let i = 0; i < 66 * 25 && !(cart.pos[1] < -240 && Math.abs(cart.speedNow || 0) < 1); i++) game.step(1/66, IN(0)); lg('ride', P() + ' cart ' + cart.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
 lg('to gun', AP.reach([-190, -340, game.pl.pos[2]], 20)); AP.wait(1); lg('gun', G.canFire + ' at ' + P());
 // exit: the switch behind the pedestal lifts a panel above the catcher; orange through it, blue on the north wall where the scaffold docks
+// the switch rides button_pedistal, which the gun pickup closes (rises 256 units at 100/s) 1 s later; wait for it
+{ const pd = E('button_pedistal'); for (let i = 0; i < 66 * 8 && (pd.t > 0 || pd.moving); i++) game.step(1/66, IN(0)); lg('pedestal', pd.pos.map(v => v | 0) + ' t ' + io.time.toFixed(1)); }
 lg('to switch', AP.reach([-192, -415, game.pl.pos[2]], 10)); AP.lookAt([-192, -464, 192]); AP.wait(0.2);
 { const eye = G.player.eye(); const b = E('button_exit_door_a07_pa'); G.tr.ignore = null; const tt = G.tr.trace(eye, [-192, -464, 192], [0,0,0], [0,0,0], 0xffffffff, G.playerEnt);
   lg('sw dbg', 'eye ' + eye.map(v=>v|0) + ' ang ' + G.player.ang.map(v=>v|0) + ' hit ' + (tt.ent ? tt.ent.cls + ':' + tt.ent.name : 'world') + ' f ' + tt.fraction.toFixed(2) + ' held ' + !!G.held + ' btn t ' + b.t + ' locked ' + b.locked); }
@@ -44,6 +46,9 @@ for (let i = 0; i < 66 * 40 && !(cart.pos[1] < -245 && Math.abs(cart.speedNow ||
 lg('board', AP.reach([-192, -260, game.pl.pos[2] + 7], 16)); lg('on', P());
 for (let i = 0; i < 66 * 30 && !(cart.pos[1] > 120); i++) game.step(1/66, IN(0)); lg('docked', P() + ' cart ' + cart.pos.map(v => v|0));
 { const n0 = tele(); for (let i = 0; i < 300 && tele() === n0; i++) { game.pl.ang = [0, 90, 0]; game.step(1/66, IN(1, i % 40 === 20)); } lg('tele', tele() - n0 + ' at ' + P()); idle(60); lg('exit room', P()); }
+// second half: the exit room's door opens onto a short elevator (07a_07b) up into the next chamber
+lg('to elevator', AP.reach(F('07a_07b_trigger_elevator_move'), 30));
+{ const el = E('07a_07b_elevator_body'); for (let i = 0; i < 66 * 40 && !(el.speedNow === 0 && io.time > 5 && el.pos[2] > 700); i++) game.step(1/66, IN(0)); lg('elevator', P() + ' body ' + el.pos.map(v => v | 0) + ' t ' + io.time.toFixed(1)); }
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.filter(l => !/try\d+ no path/.test(l)).slice(-10).join('\n'));
 out.push(io.log.filter(l => /teleport|picked|fizz|ball_trap|rail_cart|catch|gone|ball through|portal 1 failed|rail_cart|lift/.test(l)).slice(-30).join('\n'));

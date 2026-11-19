@@ -304,13 +304,15 @@ export class Game {
     const rr = norm(cross(n, up)); void right;
     let pos = ma(t.end, 0, n);
     const other = this.gunPortals[1 - which];
+    // the face a trace hit carries a no-portal material (or the NOPORTAL surface flag)
+    const noportal = (q: any) => { if (q.hit < 0) return false; const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
+      if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; return !!(ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal); } } return false; };
     const fits = (c: V3) => {
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
         const pt = add(add(c, scale(rr, a * (PW - 1))), scale(up, b * (PH - 1)));
         const s = ma(pt, 2, n), e2 = ma(pt, -2, n); const q = this.tr.trace(s, e2, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
         if (q.fraction >= 1 || q.startsolid || dot(q.normal, n) < 0.99 || (q.ent && q.ent !== t.ent) || (!q.ent && onCol)) return false;
-        if (q.hit >= 0) { const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
-          if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; if (ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal) return false; break; } } }
+        if (noportal(q)) return false;
         // must not be covered (e.g. by geometry right in front)
         const block = this.tr.trace(ma(pt, 3, n), ma(pt, 0.5, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt); if (block.startsolid) return false;
       }
@@ -325,7 +327,8 @@ export class Game {
       for (const [ax, sgn] of [[rr, 1], [rr, -1], [up, 1], [up, -1]] as [V3, number][]) {
         const ext = ax === rr ? PW : PH; const pt = add(pos, scale(ax, sgn * (ext - 1)));
         const q = this.tr.trace(ma(pt, 2, n), ma(pt, -2, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
-        if (q.fraction >= 1 || dot(q.normal, n) < 0.99 || q.startsolid) { pos = add(pos, scale(ax, -sgn * 4)); moved = true; }
+        // a no-portal surface counts as an edge too, so a shot near a metal strip slides onto the concrete beside it
+        if (q.fraction >= 1 || dot(q.normal, n) < 0.99 || q.startsolid || noportal(q)) { pos = add(pos, scale(ax, -sgn * 4)); moved = true; }
       }
       if (!moved) break; ok = fits(pos);
     }

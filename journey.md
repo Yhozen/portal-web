@@ -290,3 +290,24 @@ the fizzle: the harness's `step` doesn't yield to the page, so the viewmodel's m
 `record`. A `sleep 1` after the first step fixes that. That's a harness artifact, not a game bug.
 Turrets, from this morning's turret.ctl probe: deploy runs from cycle 0.2 to 1 in 36 ticks (0.8 × 0.667 s is 35),
 and retract from 0 to 1 in 44 ticks (0.667 s). Both match the model.
+
+**12:25 PM, a07 hung the serve session.** The a07 playthrough ran for more than 10 minutes and blocked every script queued
+behind it. The step watchdog never fired, because the time went into the autopilot's planner (portalSolve, then plan),
+which doesn't call game.step. ctl.mjs now also sets `window.__deadline`, and plan() checks it every 1,024 expansions,
+so a stuck route ends with a watchdog error and its log. I also tried a binary heap for the planner's open list. It
+didn't help (a03 took 192 s against 166 s, same route), so I dropped it: the time goes into the neighbour traces,
+not the min scan.
+
+**12:40 PM, portals slide off no-portal strips.** With the hang gone, the a07 log showed the real block. The pellet in the
+launcher room hits the south wall at x -638, z 320, and blue there always failed with "no fit". Tracing along the
+wall, the concrete runs to x -610, and a no-portal metal strip starts at about -605. A portal centred on -638 reaches
+-606, so one corner lands on the metal. The placement nudge only treated missing or bent surface as an edge, so it
+never moved the portal and the shot failed. In the game, a shot near a strip like that slides over until it fits. Now a
+no-portal face counts as an edge too: the portal lands at x -642 against the strip and still covers the pellet's
+line (checks/portal-nudge.ctl, portal-nudge-after.png). With that, a07's first half plays through: blue on the scorch
+mark, the pellet goes into the catcher at 39.9 s, the scaffold rides, and the second gun is picked up.
+
+The next stop was a script bug. The exit switch rides button_pedistal, which the gun pickup closes 1 s later (256 units at
+100/s), and the script pressed it 0.6 s after the pickup, while the switch was still under the floor. It now waits for
+the pedestal. Then the exit door, the 07a-07b elevator and the ride up all work (z 784 at 130.6 s). The second half of
+the map (chamber 12: box dropper, floor button, the piston wedge) has no route written yet, so a07 stops there.

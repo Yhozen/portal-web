@@ -25,6 +25,18 @@ lg('orange ball wall', o + ' ' + io.log.filter(l => /portal 1 failed/.test(l)).s
 const caught = () => io.log.some(l => /start_track_logic_lvl7/.test(l));
 for (let i = 0; i < 66 * 30 && !caught(); i++) game.step(1/66, IN(0));
 lg('caught', caught() + ' balls ' + G.balls.map(b => b.pos.map(v => v|0)).join(' '));
+// the catch starts func_tracktrain_lvl7, a high platform with the cube that shuttles along y -272 between x -58 and 423 and waits
+// 3 s at each end. Blue on the ceiling above the east stop, orange on the floor here; drop onto the platform while it waits.
+const tr = E('func_tracktrain_lvl7'); const cube = G.cubes.filter(c => c.alive)[0];
+{ const tk = []; for (let i = 0; i < 0; i++) { tk.push(io.time.toFixed(1) + ':' + tr.pos.map(v => v|0) + '/' + cube.pos.map(v => v|0) + '/' + (E('box_no_fall_off').pos||[]).map(v=>v|0)); for (let j = 0; j < 33; j++) game.step(1/66, IN(0)); } lg('ride', tk.join(' ')); }
+for (const t of [[423, -383, 230], [423, -383, 210], [400, -383, 220], [-58, -383, 220], [200, -383, 220], [100, -383, 220]]) lg('try ceil ' + t, shoot(0, t) + ' ' + io.log.filter(l => /portal 0 failed/.test(l)).slice(-1));
+lg('blue above east stop', shoot(0, [423, -272, 383]));
+lg('orange floor', shoot(1, [game.pl.pos[0] + 60, game.pl.pos[1] - 60, 0]));
+const Op = G.gunPortals[1].pos.slice();
+for (let i = 0; i < 66 * 30 && !(tr.pos[0] > 420 && Math.abs(tr.speedNow || 0) < 1); i++) game.step(1/66, IN(0));
+lg('train at east stop', tr.pos.map(v => v|0) + ' cube ' + cube.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
+lg('drop in', through(Op)); lg('on platform', P() + ' train ' + tr.pos.map(v => v|0));
+lg('pick cube', AP.pickUp(cube)); lg('held', !!G.held + ' cube ' + cube.pos.map(v => v|0));
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.slice(-6).join('\n'));
 return out.join('\n'); })()

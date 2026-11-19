@@ -677,6 +677,7 @@ export class Game {
           const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
           if (this.player.groundEnt === e || this.onTrain(e)) { this.player.pos = add(this.player.pos, mv); this.trainCarried = true; }
+          this.carryCubes(e, mv);
           if (d <= step) { e.curPath = path; io.fire(path, 'onpass', e); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
@@ -727,6 +728,7 @@ export class Game {
     for (const e of io.ents) if (e.col && e.pos && e.cls !== 'func_tracktrain' && !e.killed) {
       const lp = e.ridePos; e.ridePos = [...e.pos];
       if (!lp) continue; const d = sub(e.pos, lp); if (!d[0] && !d[1] && !d[2]) continue;
+      this.carryCubes(e, d);
       if (this.player.groundEnt === e) { if (!carried) this.player.pos = add(this.player.pos, d); continue; }
       if (d[2] > 0) { this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt);
         if (pt.startsolid && pt.ent === e) { const up: V3 = add(this.player.pos, [0, 0, d[2] + 0.1]); const q = this.tr.trace(up, up, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt); if (!q.startsolid) this.player.pos = up; } }
@@ -784,6 +786,19 @@ export class Game {
       if (c.held) c.viaPortal = c.viaPortal === p.linked ? null : p; break;
     }
     this.updateCubeBox(c);
+  }
+  /** cubes resting on a moving brush entity (a08's cube on its rail platform, a cube on a lift) move with it, as physics
+   *  objects on a pusher do in the engine; before this they stayed put while the platform slid out from under them */
+  carryCubes(e: Ent, d: V3) {
+    const Z: V3 = [0, 0, 0];
+    for (const c of this.cubes) { if (!c.alive || c.held) continue;
+      const h = halfExtent(c), lo: V3 = [-h[0] + 1, -h[1] + 1, -h[2]], hi: V3 = [h[0] - 1, h[1] - 1, h[2]];
+      if (Math.abs(c.pos[0] - e.pos[0]) > 512 || Math.abs(c.pos[1] - e.pos[1]) > 512 || Math.abs(c.pos[2] - e.pos[2]) > 512) continue;
+      c.ent.box.mins = [1e9, 1e9, 1e9]; c.ent.box.maxs = [1e9, 1e9, 1e9]; this.tr.ignore = null;
+      const t = this.tr.trace(c.pos, [c.pos[0], c.pos[1], c.pos[2] - 3 - Math.max(0, -d[2])], lo, hi, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
+      this.updateCubeBox(c);
+      if (t.ent !== e || t.fraction >= 1 || t.normal[2] < 0.7) continue;
+      c.pos = add(c.pos, d); }
   }
   /** something the cubes might rest on changed (a brush toggled, a door moved): let sleeping cubes re-check their support */
   wakeCubes(e?: Ent) {

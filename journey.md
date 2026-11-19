@@ -298,7 +298,7 @@ so a stuck route ends with a watchdog error and its log. I also tried a binary h
 didn't help (a03 took 192 s against 166 s, same route), so I dropped it: the time goes into the neighbour traces,
 not the min scan.
 
-**12:40 PM, portals slide off no-portal strips.** With the hang gone, the a07 log showed the real block. The pellet in the
+**12:38 PM, portals slide off no-portal strips.** With the hang gone, the a07 log showed the real block. The pellet in the
 launcher room hits the south wall at x -638, z 320, and blue there always failed with "no fit". Tracing along the
 wall, the concrete runs to x -610, and a no-portal metal strip starts at about -605. A portal centred on -638 reaches
 -606, so one corner lands on the metal. The placement nudge only treated missing or bent surface as an edge, so it
@@ -312,7 +312,7 @@ The next stop was a script bug. The exit switch rides button_pedistal, which the
 the pedestal. Then the exit door, the 07a-07b elevator and the ride up all work (z 784 at 130.6 s). The second half of
 the map (chamber 12: box dropper, floor button, the piston wedge) has no route written yet, so a07 stops there.
 
-**12:55 PM, riding the a10 lift threw the player up.** checks/lift-ride.ctl stands on the lowered platform and lets the
+**12:44 PM, riding the a10 lift threw the player up.** checks/lift-ride.ctl stands on the lowered platform and lets the
 ride trigger raise it. The first run had the player shot up by about 180 units again and again while the platform didn't
 move. The door's crush test moved the door to its spawn-frame position, found the player inside it, and pushed them up
 by the gap between that position and the door's real one, which for a door on a parent is the hierarchy's world

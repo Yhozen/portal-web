@@ -60,7 +60,7 @@ export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
 export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; texFrame?: number; ambient: [number, number, number]; tint?: [number, number, number];
   /** cached ambient cube and the lighting origin it was sampled at */ lightCube?: Cube | null; lightAt?: [number, number, number];
   seq?: number; cycle?: number; rate?: number; loop?: boolean; /** earlier sequences still cross-fading out (CSequenceTransitioner) */ fades?: { seq: number; cycle: number; rate: number; age: number; fade: number; weight: number }[]; /** pose parameter values, in their own units */ poses?: number[]; skinned?: Skinned | null; posed?: string; /** pending CPU skin to the latest pose, run when next drawn */ repose?: () => void; onDone?: () => void; restPose?: boolean;
-  /** animation event state (C_BaseAnimating::DoAnimationEvents): sequence and cycle events were last run for */ evSeq?: number; evPrev?: number; onEvent?: (ev: SeqEvent) => void; }
+  /** animation event state (C_BaseAnimating::DoAnimationEvents): sequence and cycle events were last run for */ evSeq?: number; evPrev?: number; onEvent?: (ev: SeqEvent) => void; /** model-space bones for attachWorld, by pose key */ boneCache?: { key: string; M: Float32Array }; }
 
 const ONE3 = new Float32Array([1, 1, 1]);
 const NOCLIP = new Float32Array([0, 0, 0, -1e9]);

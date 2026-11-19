@@ -156,3 +156,21 @@ by tick 18, fires 37 shots while thrashing, retracts at tick 190 and is dead at 
 first version of that check filmed from the player's spot, where the turret falls behind the pillar; it now films
 from the side with the viewmodel off. later-smoke.ctl (20 s from each later spawn): no page errors.
 Clips: /workspace/portal-web-shots/anim/turret-after.mp4, turret-tip-after.mp4 and their -sheet.png.
+
+**10:31 AM, attachments.** (A box restore at about 10:22 threw away the first version of this; redone from the notes.)
+Nothing handled SetParentAttachment, and the maps use it in two places that matter for animation:
+- escape_02's logic_auto hangs three cores and the dummy core on glados_body's ball_01..ball_04. They stayed where
+  the mapper dropped them, 69 to 160 units from the attachments, while her idle swings those attachments up to 50
+  units, so the cores floated in place next to a moving body.
+- every energy-ball catcher (a03 to a15) parents its caught ball and sprites to the housing's ball_attachment.
+
+New `attachWorld(prop, name)` gives an attachment's world matrix in the prop's current pose (sequence, cycle, fades,
+pose parameters; bones cached per pose). SetParentAttachment puts the child on it, origin and angles both;
+SetParentAttachmentMaintainOffset keeps the offset at the moment it's sent; SetParent and ClearParent drop it.
+
+That turned up a second bug: env_entity_maker revived only the unparented members of a catcher template, so the
+caught ball, and the catcher door with its two path_tracks, stayed dead. They're placed now too. With both fixes,
+checks/catcher.ctl shows the ball appear in the cradle the tick the trigger fires and stay on the attachment (0.00
+units) through "close" (2.0 s) into "closed"; before, the cradle stayed empty. checks/glados-cores.ctl: each core is
+0.00 units from its attachment for the whole 5 s loop while the attachments move up to 50 units.
+Clips: anim/catcher-compare.mp4, anim/glados-cores-compare.mp4 (before | after).

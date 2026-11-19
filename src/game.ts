@@ -1,7 +1,7 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel, type GLModel } from './models.ts';
-import { F, type Seq, type SeqEvent } from './anim.ts';
+import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
@@ -471,8 +471,13 @@ export class Game {
     const R = entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]);
     const place = (o: V3): V3 => add(maker.origin, xformDir(R, sub(o, t.origin)));
     for (const n of names) for (const e of this.io.byName.get(n) || []) {
-      if (e.cube || e.cls === 'func_tracktrain' || e.cls === 'path_track' || e.kv.parentname) continue;
-      const np = place(e.origin); const M = mul(R, entityMatrix([0, 0, 0], e.angles || [0, 0, 0])); M[12] = np[0]; M[13] = np[1]; M[14] = np[2];
+      if (e.cube) continue;
+      // parented members (the caught ball and its sprites) come back too and follow their parent through the hierarchy,
+      // which relates them by their spawn matrices, so they land in the same place on the placed parent
+      if (e.kv.parentname) { e.killed = false; if (e.prop) e.prop.visible = e.kv.startdisabled !== '1'; this.io.fire(e, 'onspawn', e); continue; }
+      // the catcher's door is a func_tracktrain between two of the template's path_tracks: move both; the train was put
+      // on its first path at load, so it is placed from there
+      const np = place(e.cls === 'func_tracktrain' ? e.pos : e.origin); const M = mul(R, entityMatrix([0, 0, 0], e.angles || [0, 0, 0])); M[12] = np[0]; M[13] = np[1]; M[14] = np[2];
       e.killed = false; e.origin = np; e.pos = [...np] as V3; e.ang = vectorAngles([M[0], M[1], M[2]], [M[8], M[9], M[10]]);
       if (e.model != null && typeof e.model === 'number') { const B = this.bsp.models[e.model]; const lo: V3 = [1e9, 1e9, 1e9], hi: V3 = [-1e9, -1e9, -1e9];
         for (let k = 0; k < 8; k++) { const c: V3 = [k & 1 ? B.maxs[0] : B.mins[0], k & 2 ? B.maxs[1] : B.mins[1], k & 4 ? B.maxs[2] : B.mins[2]]; const w = xformPoint(M, c); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], w[a]); hi[a] = Math.max(hi[a], w[a]); } }
@@ -540,6 +545,18 @@ export class Game {
   /** start a sequence by name on a prop entity (applied once the model has loaded) */
   /** current world matrix of an entity (brush, prop, mover or point) */
   entWorld(e: Ent): Float32Array { if (e.worldM && e.kv.parentname) return e.worldM; return entityMatrix(e.pos || e.origin, e.ang || e.angles); }
+  /** an attachment's world matrix on a prop in its current pose (sequence, cycle, fades and pose parameters): the
+   *  attachment's local matrix on its bone, then the prop's matrix. Bones are cached until the pose changes. */
+  attachWorld(pr: PropInst, name: string): Float32Array | null {
+    const m = pr.model; if (!m || pr.seq === undefined) return null; const n = name.toLowerCase();
+    const a = m.data.attachments.find(a => a.name.toLowerCase() === n); if (!a) return null;
+    const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses;
+    const key = pr.seq + ':' + (pr.cycle || 0) + (fades ? '|' + fades.map(f => f.seq + ':' + f.cycle + ':' + f.weight).join(',') : '') + (poses ? '|' + poses.join(',') : '');
+    if (pr.boneCache?.key !== key) pr.boneCache = { key, M: boneMatrices(m.skel, pr.seq, pr.cycle || 0, fades || poses ? { fades, poses: poses?.slice() } : undefined) };
+    const B = pr.boneCache.M, b = a.bone * 12, A = a.m, L = new Float32Array(16);
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 3; r++) L[c * 4 + r] = B[b + r * 4] * A[c] + B[b + r * 4 + 1] * A[4 + c] + B[b + r * 4 + 2] * A[8 + c] + (c === 3 ? B[b + r * 4 + 3] : 0);
+    L[15] = 1; return mul(pr.matrix, L);
+  }
   /** switch a prop to sequence si, cross-fading from the old one */
   startSeq(pr: PropInst, m: GLModel, si: number) {
     const nsq = m.skel.seqs[si];
@@ -669,6 +686,14 @@ export class Game {
     // hierarchy: child = parent(now) * inverse(parent at attach time) * child at attach time (full rotation + translation)
     for (let pass = 0; pass < 2; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
       const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos || par === e) continue;
+      // SetParentAttachment: the child sits on the attachment itself (its origin and angles become the attachment's) and
+      // follows it as the parent animates; SetParentAttachmentMaintainOffset keeps the offset it had when attached
+      if (e.parentAttach && par.prop) { const A = this.attachWorld(par.prop, e.parentAttach);
+        if (A) { if (e.attachKeep) { e.attachOff = mul(invertRigid(A), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)); e.attachKeep = false; }
+          const W = e.attachOff ? mul(A, e.attachOff) : A; e.worldM = W; e.attachTo = par; e.attachRel = null;
+          if (e.prop) e.prop.matrix = W;
+          if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
+          continue; } }
       const P = this.entWorld(par); if (!e.attachRel || e.attachTo !== par) { e.attachTo = par; const now = e.reparentNow; e.reparentNow = false;
         e.attachRel = now ? mul(invertRigid(P), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)) : mul(invertRigid(par.spawnM || P), e.spawnM || entityMatrix(e.origin, e.angles));
         e.attachAngInv = e.closedAng || e.cls === 'func_rotating' ? invertRigid(entityMatrix(e.origin, e.ang)) : null; }

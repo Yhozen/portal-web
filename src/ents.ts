@@ -52,8 +52,9 @@ export class IO {
   }
   deliver(e: Ent, input: string, param: string, act: Ent | null, caller: Ent) {
     if (this.log.length > 400) this.log.shift(); this.log.push(`${this.time.toFixed(2)} ${e.name || e.cls}.${input}(${param})`);
-    if (input === 'setparent') { e.kv.parentname = param; e.attachRel = null; e.reparentNow = true; return; }
-    if (input === 'clearparent') { if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
+    if (input === 'setparent') { e.kv.parentname = param; e.attachRel = null; e.reparentNow = true; e.parentAttach = null; e.attachOff = null; return; }
+    if (input === 'setparentattachment' || input === 'setparentattachmentmaintainoffset') { if (!e.kv.parentname) return; e.parentAttach = param.trim(); e.attachOff = null; e.attachKeep = input !== 'setparentattachment'; return; }
+    if (input === 'clearparent') { e.parentAttach = null; e.attachOff = null; if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
     if (input === 'kill') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     if (input === 'killhierarchy') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     // AddOutput (Valve Developer Wiki): "OnFoo target:input:param:delay:times" adds an output; "key value" sets a keyvalue

@@ -254,7 +254,9 @@ export class Game {
     const t = da / (da - db); const x = add(a, scale(sub(b, a), t)); const d = sub(x, p.pos);
     const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
   }
+  lastExit: { p: Portal; t: number } | null = null;
   teleportPlayer(a: Portal, b: Portal, centre = false) {
+    this.lastExit = { p: b, t: this.io.time };
     const M = throughPortal(a, b); const pl = this.player; const mid = centre ? pl.maxs()[2] / 2 : pl.viewOffset;
     const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
     pl.vel = xformDir(M, pl.vel);
@@ -782,6 +784,7 @@ export class Game {
     // into the hole counts as going through, with the speed from before the landing.
     if (!tp && this.player.onGround && !wasGround && prevVel[2] < -150) { const pl = this.player, mid = pl.maxs()[2] / 2;
       for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open || p.f[2] < 0.7 || Math.abs(pl.pos[2] - p.pos[2]) > 4) continue;
+        if (this.lastExit && this.lastExit.p === p && this.io.time - this.lastExit.t < 1.5) continue; // falling back onto the portal just left: land on it as before (a05's route relies on it)
         const d = sub(pl.pos, p.pos); if (Math.abs(dot(d, p.r)) > 32 - 8 || Math.abs(dot(d, p.u)) > 56 - 8) continue;
         pl.vel = prevVel; pl.pos = [pl.pos[0], pl.pos[1], p.pos[2] - mid - 1]; this.teleportPlayer(p, p.linked, true); break; } }
     this.tr.ignore = null;

@@ -463,3 +463,10 @@ Both attempts land at about (-83, -156), 115 units short of the platform at y -2
 **1:50 PM, wrap-up.** tools/run-checks.sh runs every checks/*.ctl in one serve session and counts only console and page
 errors as failures. All 29 pass. The sequential playthrough a00 to a07 was rerun on the final build. The highlight reel
 (tools/highlight-reel.py) is anim/highlights-2026-11-19.mp4, with a contact sheet next to it.
+
+**2:05 PM, the floor-fling rule broke a05.** The full sequential rerun caught it: in a05 the player goes up out of a floor
+portal, falls back onto it, and the new landing rule sent them straight back through, five times, and the cube was
+dropped on the way (a05 stopped at "box on button"). The landing rule now skips the portal the player came out of in
+the last 1.5 s, so falling back onto it lands as before. checks/floor-fling.ctl is unchanged (in at 600, out at 554
+upward, back up to z 306), and a00 to a07 play through in order again with the same game times as before. a08 runs
+to the cube platform's east stop and then misses the fling as described above.

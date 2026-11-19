@@ -7,7 +7,9 @@ export interface Seq { name: string; activity: string; looping: boolean; anim: n
   /** mstudioseqdesc_t fields used for blending: flags (STUDIO_*), the groupsize[0] x groupsize[1] grid of animation
    *  indices, the pose parameter on each grid axis with its local range, pose keys (when posekeyindex is set), and the
    *  cross-fade times */
-  flags: number; grid: number[]; groupsize: [number, number]; param: [number, number]; paramStart: [number, number]; paramEnd: [number, number]; poseKeys: number[] | null; fadein: number; fadeout: number; }
+  flags: number; grid: number[]; groupsize: [number, number]; param: [number, number]; paramStart: [number, number]; paramEnd: [number, number]; poseKeys: number[] | null; fadein: number; fadeout: number;
+  /** animation events (mstudioevent_t, 80 bytes): cycle, old-style number, and the name for new-style ones */ events: SeqEvent[]; }
+export interface SeqEvent { cycle: number; event: number; name: string; options: string; }
 export interface PoseParam { name: string; start: number; end: number; loop: number; }
 export interface AnimDesc { name: string; fps: number; frames: number; flags: number; ofs: number; index: number; sectionFrames: number; sectionOfs: number; animblock: number; }
 export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; staticProp: boolean; poseParams: PoseParam[]; autoplay: number[]; /** .ani file and its block table (start, end): long sequences stream their sections from there */ ani?: DataView; blocks: [number, number][]; }
@@ -37,7 +39,8 @@ export function parseSkeleton(buf: ArrayBuffer): Skeleton {
     const ai = grid[0]; const a = anims[ai], pk = i32(o + 160);
     seqs.push({ name: cstr(dv, o + i32(o + 4)).toLowerCase(), activity: cstr(dv, o + i32(o + 8)).toLowerCase(), looping: !!(i32(o + 12) & 1), anim: ai, fps: a?.fps || 30, frames: a?.frames || 1,
       flags: i32(o + 12), grid, groupsize: gs, param: [i32(o + 76), i32(o + 80)], paramStart: [f32(o + 84), f32(o + 88)], paramEnd: [f32(o + 92), f32(o + 96)],
-      poseKeys: pk ? Array.from({ length: gs[0] + gs[1] }, (_, k) => f32(o + pk + k * 4)) : null, fadein: f32(o + 104), fadeout: f32(o + 108) }); }
+      poseKeys: pk ? Array.from({ length: gs[0] + gs[1] }, (_, k) => f32(o + pk + k * 4)) : null, fadein: f32(o + 104), fadeout: f32(o + 108),
+      events: Array.from({ length: i32(o + 24) }, (_, k) => { const e = o + i32(o + 28) + k * 80; return { cycle: f32(e), event: i32(e + 4), name: i32(e + 8) & 1024 ? cstr(dv, e + i32(e + 76)) : '', options: cstr(dv, e + 12) }; }) }); }
   const poseParams: PoseParam[] = []; for (let i = 0, n = i32(300), b = i32(304); i < n; i++) { const o = b + i * 20; poseParams.push({ name: cstr(dv, o + i32(o)), start: f32(o + 8), end: f32(o + 12), loop: f32(o + 16) }); }
   const autoplay = seqs.map((q, i) => q.flags & F.AUTOPLAY ? i : -1).filter(i => i >= 0);
   const blocks: [number, number][] = []; for (let i = 0, n = i32(352), b = i32(356); i < n; i++) blocks.push([i32(b + i * 8), i32(b + i * 8 + 4)]);

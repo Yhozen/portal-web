@@ -1,7 +1,7 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel } from './models.ts';
-import { F } from './anim.ts';
+import { F, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
@@ -495,13 +495,33 @@ export class Game {
           if (fs && fs.frames > 1 && f.rate) { const c = f.cycle + dt * f.rate * (fs.fps || 30) / (fs.frames - 1); f.cycle = fs.looping ? c - Math.floor(c) : Math.min(1, c); }
           const s = 1 - f.age / f.fade; f.weight = s <= 0 ? 0 : s >= 1 ? 1 : 3 * s * s - 2 * s * s * s; /* C_AnimationLayer::GetFadeout's spline */ }
         pr.fades = pr.fades.filter(f => f.weight > 0); }
-      if (!pr.visible) continue;
+      if (!pr.visible) continue;   // C_BaseAnimating::DoAnimationEvents skips invisible entities too
+      if (sq.events.length) this.animEvents(pr, sq);
       const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses?.slice();
       const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3) + (fades ? '|' + fades.map(f => f.seq + ':' + f.cycle.toFixed(3) + ':' + f.weight.toFixed(3)).join(',') : '') + (poses ? '|' + poses.map(v => v.toFixed(2)).join(',') : '');
       // skinning is left to the renderer, which runs it once, only when the prop is actually drawn (it used to run
       // every 1/66 s tick even off screen: GLaDOS's 21k-vertex body cost about 0.57 ms per tick in escape_02)
       if (pr.posed !== key) { const seq = pr.seq, cyc = pr.cycle || 0, ex = fades || poses ? { fades, poses } : undefined; pr.posed = key; pr.repose = () => { pr.repose = undefined; pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, seq, cyc, ex); }; }
     }
+  }
+  /** client animation events, run as C_BaseAnimating::DoAnimationEvents does: a new sequence starts from just before
+   * cycle 0 so frame-0 events fire; events fire once as the cycle passes them; a wrap of more than half a cycle runs the
+   * rest of the old loop first. Only client events (new-style AE_CL_*, or old-style numbers from 5000) are run. */
+  animEvents(pr: PropInst, sq: Seq) {
+    let cur = pr.cycle || 0;
+    if (pr.evSeq !== pr.seq) { pr.evSeq = pr.seq; cur = 0; pr.evPrev = -0.01; }
+    let prev = pr.evPrev ?? -0.01; if (cur === prev) return;
+    const client = (e: SeqEvent) => e.name ? e.name.startsWith('AE_CL_') : e.event >= 5000;
+    if (cur <= prev) { if (prev - cur <= 0.5) return; for (const e of sq.events) if (client(e) && e.cycle > prev) this.animEvent(pr, sq, e); prev = cur - 0.001; }
+    for (const e of sq.events) if (client(e) && e.cycle > prev && e.cycle <= cur) this.animEvent(pr, sq, e);
+    pr.evPrev = cur;
+  }
+  /** fired animation events, newest last, for the harness */ animEventLog: { t: number; model: string; seq: string; cycle: number; ev: string; options: string }[] = [];
+  animEvent(pr: PropInst, sq: Seq, e: SeqEvent) {
+    const ev = e.name || String(e.event), log = this.animEventLog; log.push({ t: +this.r.time.toFixed(3), model: pr.model?.data.name || '', seq: sq.name, cycle: e.cycle, ev, options: e.options }); if (log.length > 200) log.shift();
+    const M = pr.matrix, at: V3 = [M[12], M[13], M[14]], sounds = (pr as any).evSounds ??= new Map<string, { stop(): void }>();
+    if (ev === 'AE_CL_PLAYSOUND' || ev === '5004') { const h = this.snd?.play(e.options, at); if (h) { sounds.get(e.options.toLowerCase())?.stop(); sounds.set(e.options.toLowerCase(), h); } }
+    else if (ev === 'AE_CL_STOPSOUND') { sounds.get(e.options.toLowerCase())?.stop(); sounds.delete(e.options.toLowerCase()); }
   }
   /** security cameras follow the player's eye while they can see it (see src/npc.ts) */
   updateCameras(dt: number) {

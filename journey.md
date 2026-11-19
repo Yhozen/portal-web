@@ -118,3 +118,12 @@ down and every direction has two poses (yaw, p) and (yaw±180, −p), so the pic
 flipped between them. Rest is (0, 120), looking straight out. 90°/s turn rate; sight test is a MASK_SHOT_PORTAL ray.
 New harness `lookat X Y Z` keeps the view on a point every tick. checks/camera-track.ctl: while the player strafes
 under cam1 in a00 the lens-to-eye error is median 4°, max 8° once it has turned to them (was: no camera).
+
+**10:08 AM, model animation events.** Nothing ran the events stored in the sequences, so the elevator doors and box
+dropper moved silently. Sequences now carry their mstudioevent_t list (new-style events by name), and props run
+client events the way SDK 2013's C_BaseAnimating::DoAnimationEvents does: a new sequence starts just before cycle 0
+so frame-0 events fire, each fires once as the cycle passes it, a wrap of over half a cycle runs the rest of the loop
+first, invisible props skip. AE_CL_PLAYSOUND plays the soundscript at the prop, AE_CL_STOPSOUND stops it (the
+engine uses the first attachment's position; the prop origin is within a few units for these). checks/anim-events.ctl:
+a01's elevator door open fires move_1 at 0.076 s, close_1 at 0.515 and 0.545, stop at 0.606, which is the first
+tick + cycle × 0.633 s for each. All four door/dropper soundscripts resolve to waves.

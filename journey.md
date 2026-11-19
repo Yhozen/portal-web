@@ -231,7 +231,7 @@ a00 174 s of game time (8 s real), a01 82 s (18 s), a02 149 s (10 s), a03 119 s 
 a05 46 s, a06 59 s. a07 stops in the launcher room, where the scorch mark isn't visible from the landing spot. It
 stops in the same place on 1af4970, before today's changes, so it isn't a regression.
 
-**11:58 AM, resumed; props started by map logic, checked against the model data.** The interrupted run left a
+**11:57 AM, resumed; props started by map logic, checked against the model data.** The interrupted run left a
 `poses` change (up axes recorded, so hinge rolls count as turns, and `reached_end_s` for one-shot sequences) and
 checks/props-anim2.ctl. Ran it in a serve session: every one-shot sequence reaches cycle 1 one tick after its
 (frames-1)/fps: round_elevator_doors open and close 0.636 s (model 0.633), bed_cover opening 0.970 (0.967),
@@ -240,13 +240,13 @@ per-tick turn, 10.2° at tick 8, is Scene_Root: idle_closed and open store that 
 fade slerps between them on a bell curve (1.5, 4.1, ... 10.2, ... 2.1). Root and both door leaves don't follow it
 (Root's world axes don't move at all), so it isn't visible; the leaves turn about 1.2° a tick, smoothly. No pops.
 
-**12:05 PM, floor buttons.** checks/button.ctl drops the a00 cube on the second button. floor_button_door_a00 is a
+**11:58 AM, floor buttons.** checks/button.ctl drops the a00 cube on the second button. floor_button_door_a00 is a
 func_door moving down (movedir 90 0 0) at 25 units/s with lip 0 on an 8-unit-deep brush, so 0.32 s, about 21 ticks.
 The probe has it moving from tick 12 to 33, the parented button_top following 1:1 (137.56 to 129.56), the exit doors
 opening, the indicator strip switching from blue to orange; taking the cube off brings it back up in 21 ticks.
 Linear constant-speed motion is what func_door does. Nothing to fix.
 
-**12:10 PM, energy balls.** checks/energy-ball.ctl films one a04 ball in flight: 200 units/s constant, life ticking
+**12:04 PM, energy balls.** checks/energy-ball.ctl films one a04 ball in flight: 200 units/s constant, life ticking
 down from 16 s. Two problems, both in how the ball model is drawn:
 - the in-flight ball never played combineball.mdl's looping idle (31 frames at 4 fps), the port spun it at a
   made-up 400°/s yaw instead. It now plays the idle, and the probe shows 1/7.5 cycles per second.
@@ -259,7 +259,7 @@ checks/energy-ball-views.ctl holds a ball and looks at it from three sides: befo
 after, a sphere from every side (energy-ball-views-compare.png, energy-ball-compare.mp4). The caught ball in the
 catchers is a plain prop_dynamic on an attachment and is left alone.
 
-**12:20 PM, a10's pillar lifts stopped halfway.** checks/lift.ctl opens both doors of the first pillar lift. Each pillar
+**12:09 PM, a10's pillar lifts stopped halfway.** checks/lift.ctl opens both doors of the first pillar lift. Each pillar
 is two stacked func_doors moving down at 15 units/s: lift_pillar_door_bottom_a (120 units), and
 lift_pillar_door_top_a (128 units), which is parented to the bottom one's brush, with the platform brush and
 lift_platform.mdl parented on top. The probe showed the top door's own t going 0 to 1 while its world z only followed
@@ -272,7 +272,7 @@ The model trailed its brush by up to 0.23 units while moving: the chain is four 
 door, platform brush, model) and the hierarchy ran two passes. It runs four passes now and the model stays exactly
 5.99 units under the brush. The 30 later-chamber views are byte-identical before and after.
 
-**12:40 PM, a06 broke with that fix, so it's narrower now.** The sequential run after f15d076 stopped in a06: the
+**12:14 PM, a06 broke with that fix, so it's narrower now.** The sequential run after f15d076 stopped in a06: the
 autopilot couldn't put blue on the fling pillars. Those are three start-open func_doors deep per pillar
 (bottom_bottom, bottom, top, flags 13), and a trigger_look closes the bottom_bottom ones when you look at them.
 With every door's own travel counted, the children start retracted too, so the pillar faces end up 384 units inside
@@ -281,3 +281,12 @@ did, the faces come out to x 520 and it works. I couldn't pin down from public m
 start-open door on a parent, so start-open parented doors keep the old rule, and only the others (a10's pillar lifts, the
 train rest doors in a03/a04/a07/a08/a14, a11's panel, a14's catcher door) slide in their parent's space.
 checks/fling-pillars.ctl gives the same probe as before the fix; checks/lift.ctl still reaches -250.
+
+**12:18 PM, viewmodel fizzle and turret timings.** checks/viewmodel-fizzle.ctl opens a blue portal from the a02
+spawn, then walks through the middle cleanser. The portals close at tick 34 (x 681) and v_portalgun plays fizzle
+with no cross-fade, which is right for a snap sequence. It ends 32 ticks later (the model says 16 frames at 30 fps,
+0.5 s), and idle fades in over the next 13 ticks (0.2 s fadeout). The first version filmed the draw animation, not
+the fizzle: the harness's `step` doesn't yield to the page, so the viewmodel's model only finished loading during
+`record`. A `sleep 1` after the first step fixes that. That's a harness artifact, not a game bug.
+Turrets, from this morning's turret.ctl probe: deploy runs from cycle 0.2 to 1 in 36 ticks (0.8 × 0.667 s is 35),
+and retract from 0 to 1 in 44 ticks (0.667 s). Both match the model.

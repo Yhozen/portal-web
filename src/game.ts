@@ -770,13 +770,20 @@ export class Game {
     }
     // player
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
-    const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3;
+    const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
     this.player.move(input, dt);
     const nowC: V3 = this.player.eye();
     let tp = false; for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); tp = true; break; }
     // floor portals: a shallow hole under the portal can stop the player before the eye crosses, so the hull centre counts there too
     if (!tp) { const hc = this.player.maxs()[2] / 2, pa: V3 = [prevPos[0], prevPos[1], prevPos[2] + hc], pb: V3 = [this.player.pos[0], this.player.pos[1], this.player.pos[2] + hc];
-      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb)) { this.teleportPlayer(p, p.linked, true); break; } }
+      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb)) { this.teleportPlayer(p, p.linked, true); tp = true; break; } }
+    // landing fast on a floor portal: the floor behind the hole stops the hull before its centre crosses, which used to
+    // zero the fall and let the player sink through slowly (a fling came out at 213 u/s after falling at 904). Falling
+    // into the hole counts as going through, with the speed from before the landing.
+    if (!tp && this.player.onGround && !wasGround && prevVel[2] < -150) { const pl = this.player, mid = pl.maxs()[2] / 2;
+      for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open || p.f[2] < 0.7 || Math.abs(pl.pos[2] - p.pos[2]) > 4) continue;
+        const d = sub(pl.pos, p.pos); if (Math.abs(dot(d, p.r)) > 32 - 8 || Math.abs(dot(d, p.u)) > 56 - 8) continue;
+        pl.vel = prevVel; pl.pos = [pl.pos[0], pl.pos[1], p.pos[2] - mid - 1]; this.teleportPlayer(p, p.linked, true); break; } }
     this.tr.ignore = null;
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);

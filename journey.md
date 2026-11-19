@@ -377,3 +377,18 @@ viewmodel isn't shaken. checks/shake.ctl: a00's exit-elevator shake (amplitude 4
 starts 5.47 s after the trigger and runs for exactly 40 frames at 20 fps (2.0 s). The largest offset is 1.86 units and
 the largest roll 0.34°, settling to 0 before it retires. a00, a01 and a04 still finish in the same game time. Clip:
 anim/shake-after.mp4.
+
+**1:25 PM, falling onto a floor portal lost the speed.** I tried an honest way onto a08's cube platform: a fall loop
+between the ceiling blue and an orange on the floor below it, then blue moved to the floor next to the platform. The
+fall reached 904 u/s and came out of blue at 213. A per-tick log showed the reason. The hull landed on the floor inside the
+orange hole (13 units off centre, well inside it), the floor behind the portal stopped it before the hull centre
+crossed the plane, the fall speed went to 0, and the player then sank through slowly. That breaks every fling. Now, when the
+player lands this tick on an open, linked floor portal with the hull inside the hole (8-unit margin) after falling
+faster than 150 u/s, it counts as going through, with the velocity from before the landing. checks/floor-fling.ctl
+drops the player 300 units onto a floor portal: in at 564 u/s, out at 636 u/s upward (it's still accelerating on the
+last tick), rising to the ceiling. In the a08 attempt the exit is now 913 u/s.
+
+The attempt still misses the platform. The lateral speed coming out of the exit is +74 in y, away from the platform, and
+air control can't undo that before the player comes back down, so it lands on the floor at y -193. The script for the
+attempt is kept outside the repository (portal-web-shots/testchmb_a_08-fling-attempt.js), and tools/play/testchmb_a_08.js
+still stops at the east stop.

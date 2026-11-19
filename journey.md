@@ -157,7 +157,7 @@ first version of that check filmed from the player's spot, where the turret fall
 from the side with the viewmodel off. later-smoke.ctl (20 s from each later spawn): no page errors.
 Clips: /workspace/portal-web-shots/anim/turret-after.mp4, turret-tip-after.mp4 and their -sheet.png.
 
-**10:31 AM, attachments.** (A box restore at about 10:22 threw away the first version of this; redone from the notes.)
+**10:38 AM, attachments.** (A box restore at about 10:22 threw away the first version of this; redone from the notes.)
 Nothing handled SetParentAttachment, and the maps use it in two places that matter for animation:
 - escape_02's logic_auto hangs three cores and the dummy core on glados_body's ball_01..ball_04. They stayed where
   the mapper dropped them, 69 to 160 units from the attachments, while her idle swings those attachments up to 50
@@ -174,3 +174,23 @@ checks/catcher.ctl shows the ball appear in the cradle the tick the trigger fire
 units) through "close" (2.0 s) into "closed"; before, the cradle stayed empty. checks/glados-cores.ctl: each core is
 0.00 units from its attachment for the whole 5 s loop while the attachments move up to 50 units.
 Clips: anim/catcher-compare.mp4, anim/glados-cores-compare.mp4 (before | after).
+
+**10:44 AM, props that animate on map logic.** checks/props-anim.ctl records two with a cycle probe. a00's box
+dropper cover plays "open" when logic_drop_box fires and reaches cycle 1.0 at 0.667 s (the model says 20 frames at
+30 fps, 0.633 s; the probe samples every 1/30 s), then "close" after the cube falls out, and the next cube drops in
+on the closed cover. a01's pedestal "open" is at cycle 0.42 after 1.0 s (71 frames, 2.33 s, so 0.43 expected). The
+other animated models the maps use decode cleanly with `mdl-info --continuity` (no frame jumps over 10× the median).
+Props without a DefaultAnim stay on frame 0 of sequence 0, which is what a prop_dynamic does when nothing starts a
+sequence, so the frozen catcher ball, signs and lifts are left as they are.
+
+**10:50 AM, $selfillum on models, the open question from Nov 18.** The answer is in the texture flags. Every
+material that went white in that experiment (lift_platform, light_rail_platform, and turret_01 too) has a DXT1 base
+texture without the ONEBITALPHA or EIGHTBITALPHA flag, and VertexLitGeneric clears $selfillum when the base texture
+isn't translucent, which only those flags make it. The DXT5 ones (GLaDOS, cubes, doors, buttons, catchers,
+launchers, signs) have real masks: mean alpha 0 to 36 out of 255, mostly zero, with the lit strips and eyes at full.
+Props now add base × $selfillumtint × base alpha to the lit colour when the flag is there, and nothing otherwise.
+checks/selfillum.ctl: GLaDOS's eye and panel lights come on; the a10 lift, a14 rail platform and a11 turret are
+unchanged; the cube and doors get their small glowing details. Over the 30 later-chamber views, 17 are unchanged and
+the rest change on under 0.32% of pixels, except a13's third view at 1.7%, where door_02's indicator strip now glows.
+World brushes are untouched (they still draw $selfillum faces unlit). Before | after:
+/workspace/portal-web-shots/selfillum-before-after.png.

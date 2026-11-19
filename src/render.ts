@@ -18,14 +18,15 @@ void main(){ vec4 w = uModel*vec4(aPos,1.); vW=w.xyz; vUV=aUV; vLM=aLM; vN=mat3(
   vAmb = uUseCube > .5 ? uAmbient * (n2.x * (n.x >= 0. ? uCube[0] : uCube[1]) + n2.y * (n.y >= 0. ? uCube[2] : uCube[3]) + n2.z * (n.z >= 0. ? uCube[4] : uCube[5]))
                        : uAmbient * (0.65 + 0.35*max(dot(n, normalize(vec3(.3,.2,.9))),0.)); }`;
 const WORLD_FS = `
-in vec2 vUV, vLM; in vec3 vW, vN, vAmb; in float vA; uniform sampler2D uTex, uLM; uniform vec4 uClip, uTint; uniform float uAlphaTest, uUnlit, uLMScale;
+in vec2 vUV, vLM; in vec3 vW, vN, vAmb; in float vA; uniform sampler2D uTex, uLM; uniform vec4 uClip, uTint; uniform float uAlphaTest, uUnlit, uLMScale, uSelfIllum; uniform vec3 uSelfTint;
 out vec4 o;
 void main(){
   if (dot(vW, uClip.xyz) < uClip.w) discard;
   vec4 t = texture(uTex, vUV) * uTint;
   if (uAlphaTest > 0. && t.a < uAlphaTest) discard;
   vec3 lm = uUnlit > .5 ? vec3(1.) : (uLMScale > 0. ? pow(texture(uLM, vLM).rgb, vec3(2.2)) * 4. : vAmb);
-  vec3 c = pow(t.rgb, vec3(2.2)) * lm;
+  // model $selfillum (VertexLitGeneric): the base texture's alpha masks a self-lit term, base × $selfillumtint, added to the lit colour
+  vec3 b = pow(t.rgb, vec3(2.2)), c = b * lm + (uSelfIllum > .5 ? b * uSelfTint * t.a : vec3(0.));
   o = vec4(pow(c, vec3(1./2.2)), t.a);
 }`;
 const OVAL_VS = `layout(location=0) in vec2 aP; uniform mat4 uVP, uModel; uniform float uScale, uFull, uMode; out vec2 vP; void main(){ vP=aP*uScale; gl_Position = uFull > .5 ? vec4(aP, -0.999, 1.) : uVP*uModel*vec4(0., -vP.x*32., vP.y*54., 1.); if (uFull > .5) vP = vec2(0.);
@@ -205,12 +206,12 @@ export class Renderer {
       for (const d of md.draws) {
         const m = skin[d.mat] || skin[0]; if (!m || m.translucent !== translucent) continue;
         gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, pr.texFrame)); const t = pr.tint || [1, 1, 1]; gl.uniform4f(P.u.uTint, m.tint[0] * t[0], m.tint[1] * t[1], m.tint[2] * t[2], m.tint[3]); gl.uniform1f(P.u.uAlphaTest, m.alphatest || (m.translucent ? 0 : 0));
-        gl.uniform1f(P.u.uUnlit, m.unlit ? 1 : 0);
+        gl.uniform1f(P.u.uUnlit, m.unlit ? 1 : 0); gl.uniform1f(P.u.uSelfIllum, m.selfillumMask ? 1 : 0); if (m.selfillumMask) gl.uniform3fv(P.u.uSelfTint, m.selfillumTint);
         if (translucent) gl.blendFunc(gl.SRC_ALPHA, m.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
         gl.drawElements(gl.TRIANGLES, d.count, gl.UNSIGNED_INT, d.start * 4); this.stats.draws++;
       }
     }
-    gl.uniform1f(P.u.uUseCube, 0); gl.bindVertexArray(null);
+    gl.uniform1f(P.u.uUseCube, 0); gl.uniform1f(P.u.uSelfIllum, 0); gl.bindVertexArray(null);
   }
   /** ambient cube at the prop's lighting origin (its bounding-box centre, as Source lights models), resampled when it moves */
   private propCube(pr: PropInst) {

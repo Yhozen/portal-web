@@ -64,5 +64,7 @@ export class IO {
     if (input.startsWith('fireuser')) { this.fire(e, 'onuser' + input.slice(8), act); return; }
     const h = this.handlers.get(e.cls); if (h && h(e, input, param, act, caller)) return;
     if (input === 'enable') e.enabled = true; else if (input === 'disable') e.enabled = false; else if (input === 'toggle') e.enabled = !e.enabled;
+    else { const k = e.cls + '.' + input; this.unhandled.set(k, (this.unhandled.get(k) || 0) + 1); } // for the harness: inputs nothing acted on
   }
+  unhandled = new Map<string, number>();
 }

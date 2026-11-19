@@ -345,14 +345,14 @@ Still open in a08: getting the cube off the platform, then cube and player onto 
 metal, so I haven't found the route yet. tools/play/testchmb_a_08.js plays up to the platform reaching its east stop
 (24.5 s).
 
-**1:06 PM, inputs nothing acted on.** IO now keeps a count of inputs that fell through to the default handler
+**1:05 PM, inputs nothing acted on.** IO now keeps a count of inputs that fell through to the default handler
 (`io.unhandled`). I ran it over the a00 to a08 playthroughs and 20 s from every later spawn. Apart from tonemap and
 autosave inputs, which are expected without HDR and saves, the list is short: `light.turnon/turnoff` on the elevator
 shaft lights, `env_shake.startshake`, `prop_dynamic.enable/disablecollision`, `env_sprite.showsprite`,
 `env_citadel_energy_core`, `env_beam` colour and width, `point_spotlight`, `weapon_portalgun.chargeportal*` and a02's
 `func_noportal_volume.deactivate`.
 
-**1:10 PM, named lights.** Every elevator shaft has a pair of named lights on their own light style (32 to 34), flagged
+**1:12 PM, named lights.** Every elevator shaft has a pair of named lights on their own light style (32 to 34), flagged
 initially dark. The elevator's path_tracks turn them on as the car passes and off at the top. The renderer only baked
 style 0, so they never lit. The atlas bake now sums every style a face has in linear light (each style's block follows
 the last, four blocks per style on bump-lit faces) before the same tone curve. A switchable style starts on unless its light
@@ -363,5 +363,5 @@ that starts on, and none of those views show it. Before | after: /workspace/port
 I also filmed a ride from inside the a00 car, and it showed no change: what you see from in there is the car model, which
 is lit by the leaf ambient cubes, not the shaft's lightmaps. So I didn't keep that clip.
 
-**1:14 PM, func_noportal_volume** takes Activate, Deactivate and Toggle now (a02's trigger_portal_spawn_a2_rm3a
+**1:13 PM, func_noportal_volume** takes Activate, Deactivate and Toggle now (a02's trigger_portal_spawn_a2_rm3a
 deactivates noportal_door_rm3a). a02 still plays the same (149.3 s).

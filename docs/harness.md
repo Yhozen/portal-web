@@ -42,7 +42,7 @@ with semicolons belongs in a script file.
 | `shoot blue\|orange` | fire the portal gun along the view, as the mouse does |
 | `use` | press E |
 | `fire ENTITY INPUT [PARAM]` | queue an entity input; it is delivered on the next `step` |
-| `set KEY VALUE` | renderer switch: `showSky usePVS useCubes useLightmap showOverlays noPortalRender maxDepth` |
+| `set KEY VALUE` | renderer switch: `showSky usePVS useCubes useLightmap showOverlays noPortalRender maxDepth animFades` |
 | `render` | draw one frame: draws, views, culled and `frame_ms` (CPU plus GPU, measured with `gl.finish`) |
 | `screenshot PATH` | draw one frame and save the canvas as PNG |
 | `bench N` | draw N frames back to back with the simulation still: avg, p50, p95, max ms and fps |
@@ -52,6 +52,12 @@ with semicolons belongs in a script file.
 | `errors` | console errors and warnings, page errors and failed requests (with paths) since the last call |
 | `eval JS` | evaluate JS in the page (`window.game` is the engine) and reply its JSON value |
 | `sleep S` | wait S seconds of wall time |
+| `lookat X Y Z\|off` | keep the view aimed at a point on every tick of `step`, `record` and `poses` |
+| `record PATH FRAMES [FPS] [KEYS]` | step the game 66/FPS ticks per frame (holding KEYS) and pipe every frame to ffmpeg: `.mp4` (x264) or `.webm` (VP9). Each frame is labelled `frame / t / tick` (`--no-label` drops it). If `window.__probe` is a function, its value per frame goes to `PATH.probe.jsonl`. A frame that throws keeps the video so far and fails with the frame and tick |
+| `sheet VIDEO OUT [CxR] [W] [A-B]` | contact sheet: C×R frames spread evenly over the video (or frames A–B), each W px wide |
+| `frames VIDEO DIR [A-B]` | dump frames as PNGs |
+| `anim [REGEX]` | animated props: entity, class, model, sequence, cycle, rate, looping, frames, fps, duration, active fades, pose parameters |
+| `poses OUT TICKS [REGEX] [EVERY] [KEYS]` | step TICKS and write every bone's position and forward axis to JSONL; replies sequence spans, cycles per second and the largest per-tick bone move and turn (with the median), which is how pops are found |
 
 Example output:
 
@@ -62,8 +68,14 @@ Example output:
 ```
 
 Scripts used for checks live in `checks/`: `escape02-ending.ctl` (skybox), `later-chambers.ctl` (30 views in a08 to
-escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop). They hold only map names, coordinates and commands, never game data;
+escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop), `glados-hit.ctl` and `glados-destruction.ctl` (sequence cross-fades and the 54 s `.ani`-streamed ending, recorded), `camera-track.ctl` (a security camera following the player, with a lens-error probe). They hold only map names, coordinates and commands, never game data;
 screenshots should be written outside the repository (the `.gitignore` also drops `*.png`).
+
+`node tools/mdl-info.ts models/props/glados.mdl` (paths inside the game, `--game DIR` as above) prints a model's animation data straight from the file: sequences with flags,
+frames@fps, duration, blend grid, fades, events and autolayers, pose parameters, bone controllers, attachments and
+`.ani` blocks (`--json`, `--bones`, `--survey [REGEX]` over every model in the game). `--continuity` decodes every
+frame and reports the median and largest frame-to-frame bone move, and the gap from the last frame back to the first
+for looping sequences, so a decoding bug shows up as a jump.
 
 ## Numbers
 

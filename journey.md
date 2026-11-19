@@ -2,6 +2,66 @@
 
 A running log of work on the port. Times are America/New_York.
 
+## 2026-11-19 session summary (animation session, 9:25 AM to 2:25 PM)
+
+This session's goal was to stop judging animations from single screenshots. The harness can now record. `record`
+steps the fixed tick loop and encodes every frame to mp4, with the frame, time and tick burned in, and it logs
+`window.__probe()` per frame next to the video. `sheet` and `frames` make contact sheets and PNG strips, `anim` lists
+every animated prop with its sequence, cycle and rate, and `poses` dumps bone positions per tick and measures cycles per
+second. tools/mdl-info.ts reads sequence data straight from the model files, so every timing check below compares the
+port against the model's own numbers. `serve`/`--attach` keeps one browser running for many scripts, and
+tools/run-checks.sh runs the whole checks/ folder in one session. Before and after clips are in
+/workspace/portal-web-shots/anim/, outside the repository.
+
+The fixes, roughly in order. The animation pipeline now follows the SDK rules: blend grids over pose parameters, delta
+and autoplay layers, 0.2 s sequence cross-fades, long sequences read from .ani sections, and client animation events,
+so elevator doors and the box dropper play their sounds on the right frame. The first-person portal gun is drawn with
+its draw, fire, fizzle, pickup and release sequences. Floor turrets deploy, aim, fire, search and tip over, and
+security cameras track the player. GLaDOS's cores and the energy-ball catcher's ball ride their parent's attachment
+instead of floating in place. $selfillum no longer turns a10/a14's lift platforms and turrets white. Energy balls keep
+their modelled side to the viewer instead of showing a sliver. a10's telescoping lifts sink all the way instead of
+stopping 128 units over the pit, riding them no longer throws the player up, and a06's fling pillars start where Hammer
+put them. Portal shots slide off no-portal faces as well as edges. Cubes ride moving trains. Named lights switch their
+light styles, env_shake shakes the view, func_noportal_volume takes its inputs, and IO counts the inputs nothing
+handles. Falling onto a floor portal keeps the fall speed. Before that fix the floor behind the hole stopped the
+player and every fling came out slow.
+
+Playthrough reach: the scripted autopilot plays a00 to a07 in order, including the 07a to 07b elevator, and a08 up to the
+cube platform reaching its east stop. The fling onto the platform still misses: the exit comes out drifting away from
+the platform in y, and air control can't correct it before the player lands. At the end of the session the build passes
+and the 29 checks in checks/ all pass with no page errors (tools/run-checks.sh). The highlight reel is
+anim/highlights-2026-11-19.mp4, with anim/highlights-2026-11-19-sheet.png.
+
+### What's left to be done
+
+In priority order, for a complete playthrough and then polish:
+
+1. a08: land the fling on the cube platform. The approach into the fall loop has to give the exit a velocity toward
+   the platform. Then get the cube off, put the cube and the player on buttons b and c, and take the exit elevator.
+2. a09 through a19 and escape_00 to escape_02 as scripted playthroughs. Today they are only covered by spawn smoke
+   checks and the 30 later-chamber views. Each will turn up its own map-logic gaps, as a07 and a08 did.
+3. The remaining inputs that nothing handles (from io.unhandled): prop_dynamic Enable/DisableCollision, env_sprite
+   ShowSprite, env_beam colour and width, point_spotlight, env_citadel_energy_core and weapon_portalgun ChargePortal*.
+4. Fling physics against the real game: compare exit speeds and air control with recorded runs of the original, not
+   just with the SDK formulas.
+5. Rocket turrets (npc_rocket_turret has no code yet) and the escape-map GLaDOS fight, checked on video the way the
+   floor turrets were.
+6. Polish: the viewmodel still requests v_hands.vtf and gets a 404 (find out where the material really lives), HDR and tonemap inputs,
+   save and load, sound mixing, and performance on the large escape maps.
+7. Turn checks into assertions. Today a check passes when every command succeeds and the page logs no errors. The
+   numbers in the probe logs are compared by hand.
+
+### Out of scope
+
+- Anything that needs leaked Source engine code. Only the public Source SDK 2013 is used as a reference, so features
+  that exist only in the leaked engine (exact engine-side portal rendering, VPhysics internals) are reimplemented from
+  observed behaviour or left approximate.
+- Public hosting of Valve's game files. Assets are read from an owned Steam install or the private owner-only bucket.
+  None go into git, test fixtures or committed screenshots, and the clips stay in /workspace/portal-web-shots.
+- Pushing, deploying or touching R2 from these sessions. Gabriel pushes and deploys himself from his Mac.
+- Portal 2 content, multiplayer, Steam integration (achievements, cloud saves) and mod or workshop support. None of
+  them are planned.
+
 ## 2026-11-18, evening session (about 8:20 to 9:20 PM)
 
 Gabriel asked for an hour on the port, starting from a fresh Linux depot of Portal pulled with steamcmd from his own account.

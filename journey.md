@@ -128,7 +128,7 @@ engine uses the first attachment's position; the prop origin is within a few uni
 a01's elevator door open fires move_1 at 0.076 s, close_1 at 0.515 and 0.545, stop at 0.606, which is the first
 tick + cycle × 0.633 s for each. All four door/dropper soundscripts resolve to waves.
 
-**10:14 AM, first-person portal gun.** There was no viewmodel at all. v_portalgun.mdl is now drawn last, over a
+**10:04 AM, first-person portal gun.** There was no viewmodel at all. v_portalgun.mdl is now drawn last, over a
 cleared depth buffer, at the eye, with Source's viewmodel_fov 54 (a horizontal angle at 4:3, so 41.8° vertical at any
 window shape). Sequences by activity: ACT_VM_DRAW when the gun is first held, PRIMARYATTACK per shot, FIZZLE when a
 cleanser takes the portals, PICKUP while carrying (held on its last frame), RELEASE on drop, IDLE otherwise, with the

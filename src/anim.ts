@@ -3,10 +3,17 @@
 // mstudiobone_t, mstudioanimdesc_t, mstudioanim_t, mstudioanimvalue_t, mstudioseqdesc_t, Quaternion48/64,
 // Vector48) and the Valve Developer Wiki "MDL" page. No engine code was used.
 export interface Bone { name: string; parent: number; pos: number[]; quat: number[]; rot: number[]; posscale: number[]; rotscale: number[]; poseToBone: Float32Array /* 3x4 row-major */; }
-export interface Seq { name: string; activity: string; looping: boolean; anim: number; fps: number; frames: number; }
-export interface AnimDesc { name: string; fps: number; frames: number; flags: number; ofs: number; sectionFrames: number; sectionOfs: number; animblock: number; }
-export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; staticProp: boolean; /** .ani file and its block table (start, end): long sequences stream their sections from there */ ani?: DataView; blocks: [number, number][]; }
+export interface Seq { name: string; activity: string; looping: boolean; anim: number; fps: number; frames: number;
+  /** mstudioseqdesc_t fields used for blending: flags (STUDIO_*), the groupsize[0] x groupsize[1] grid of animation
+   *  indices, the pose parameter on each grid axis with its local range, pose keys (when posekeyindex is set), and the
+   *  cross-fade times */
+  flags: number; grid: number[]; groupsize: [number, number]; param: [number, number]; paramStart: [number, number]; paramEnd: [number, number]; poseKeys: number[] | null; fadein: number; fadeout: number; }
+export interface PoseParam { name: string; start: number; end: number; loop: number; }
+export interface AnimDesc { name: string; fps: number; frames: number; flags: number; ofs: number; index: number; sectionFrames: number; sectionOfs: number; animblock: number; }
+export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; staticProp: boolean; poseParams: PoseParam[]; autoplay: number[]; /** .ani file and its block table (start, end): long sequences stream their sections from there */ ani?: DataView; blocks: [number, number][]; }
 
+/** mstudioseqdesc_t / mstudioanimdesc_t flags (public/studio.h) */
+export const F = { LOOPING: 1, SNAP: 2, DELTA: 4, AUTOPLAY: 8, POST: 0x10, ALLZEROS: 0x20, CYCLEPOSE: 0x80, REALTIME: 0x100, LOCAL: 0x200, WORLD: 0x4000 };
 const cstr = (dv: DataView, o: number) => { let s = ''; for (let p = o; p < dv.byteLength; p++) { const c = dv.getUint8(p); if (!c) break; s += String.fromCharCode(c); } return s; };
 function half(h: number) { const s = h >> 15 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023; if (e === 0) return s * f * 2 ** -24; if (e === 31) return f ? NaN : s * Infinity; return s * (1 + f / 1024) * 2 ** (e - 15); }
 export function eulerQuat(x: number, y: number, z: number) { // RadianEuler (roll x, pitch y, yaw z) -> quaternion
@@ -23,13 +30,18 @@ export function parseSkeleton(buf: ArrayBuffer): Skeleton {
     bones.push({ name: cstr(dv, o + i32(o)), parent: i32(o + 4), pos: v(o + 32, 3), quat: v(o + 44, 4), rot: v(o + 60, 3), posscale: v(o + 72, 3), rotscale: v(o + 84, 3), poseToBone: p2b }); }
   const anims: AnimDesc[] = [];
   for (let i = 0, n = i32(180), b = i32(184); i < n; i++) { const o = b + i * 100;
-    anims.push({ name: cstr(dv, o + i32(o + 4)), fps: f32(o + 8), flags: i32(o + 12), frames: i32(o + 16), animblock: i32(o + 52), ofs: o + i32(o + 56), sectionOfs: o + i32(o + 80), sectionFrames: i32(o + 84) }); }
+    anims.push({ name: cstr(dv, o + i32(o + 4)), fps: f32(o + 8), flags: i32(o + 12), frames: i32(o + 16), animblock: i32(o + 52), ofs: o + i32(o + 56), index: i32(o + 56), sectionOfs: o + i32(o + 80), sectionFrames: i32(o + 84) }); }
   const seqs: Seq[] = [];
   for (let i = 0, n = i32(188), b = i32(192); i < n; i++) { const o = b + i * 212;
-    const ai = dv.getInt16(o + i32(o + 60), true); const a = anims[ai];
-    seqs.push({ name: cstr(dv, o + i32(o + 4)).toLowerCase(), activity: cstr(dv, o + i32(o + 8)).toLowerCase(), looping: !!(i32(o + 12) & 1), anim: ai, fps: a?.fps || 30, frames: a?.frames || 1 }); }
+    const gs: [number, number] = [Math.max(1, i32(o + 68)), Math.max(1, i32(o + 72))], grid = Array.from({ length: gs[0] * gs[1] }, (_, k) => dv.getInt16(o + i32(o + 60) + k * 2, true));
+    const ai = grid[0]; const a = anims[ai], pk = i32(o + 160);
+    seqs.push({ name: cstr(dv, o + i32(o + 4)).toLowerCase(), activity: cstr(dv, o + i32(o + 8)).toLowerCase(), looping: !!(i32(o + 12) & 1), anim: ai, fps: a?.fps || 30, frames: a?.frames || 1,
+      flags: i32(o + 12), grid, groupsize: gs, param: [i32(o + 76), i32(o + 80)], paramStart: [f32(o + 84), f32(o + 88)], paramEnd: [f32(o + 92), f32(o + 96)],
+      poseKeys: pk ? Array.from({ length: gs[0] + gs[1] }, (_, k) => f32(o + pk + k * 4)) : null, fadein: f32(o + 104), fadeout: f32(o + 108) }); }
+  const poseParams: PoseParam[] = []; for (let i = 0, n = i32(300), b = i32(304); i < n; i++) { const o = b + i * 20; poseParams.push({ name: cstr(dv, o + i32(o)), start: f32(o + 8), end: f32(o + 12), loop: f32(o + 16) }); }
+  const autoplay = seqs.map((q, i) => q.flags & F.AUTOPLAY ? i : -1).filter(i => i >= 0);
   const blocks: [number, number][] = []; for (let i = 0, n = i32(352), b = i32(356); i < n; i++) blocks.push([i32(b + i * 8), i32(b + i * 8 + 4)]);
-  return { bones, seqs, anims, dv, staticProp: !!(i32(152) & 0x10) /* studiohdr_t.flags & STUDIOHDR_FLAGS_STATIC_PROP */, blocks };
+  return { bones, seqs, anims, dv, staticProp: !!(i32(152) & 0x10) /* studiohdr_t.flags & STUDIOHDR_FLAGS_STATIC_PROP */, blocks, poseParams, autoplay };
 }
 
 // mstudioanimvalue_t run-length decode
@@ -46,6 +58,7 @@ function animValue(dv: DataView, p: number, frame: number) {
 // section with animblock > 0 lives in the model's .ani file at that block's start + animindex.
 function sampleFrame(sk: Skeleton, a: AnimDesc, frame: number, pos: number[][], quat: number[][]) {
   let dv = sk.dv, p = a.ofs, f = frame;
+  if (a.animblock > 0 && !(a.sectionFrames > 0)) { const b = sk.blocks[a.animblock]; if (!sk.ani || !b) return new Uint8Array(sk.bones.length); dv = sk.ani; p = b[0] + a.index; }
   if (a.sectionFrames > 0) { let sec: number;
     if (a.frames > a.sectionFrames && frame === a.frames - 1) { sec = Math.floor(a.frames / a.sectionFrames) + 1; f = 0; } else { sec = Math.floor(frame / a.sectionFrames); f = frame - sec * a.sectionFrames; }
     const so = a.sectionOfs + sec * 8, block = dv.getInt32(so, true), index = dv.getInt32(so + 4, true);
@@ -86,40 +99,101 @@ const slerp = (a: number[], b: number[], t: number) => {
 };
 
 /** skinning matrices (3x4 row-major per bone, bone pose * poseToBone) for sequence seq at cycle 0..1 */
-export function poseMatrices(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
+export function poseMatrices(sk: Skeleton, seqIdx: number, cycle: number, ex?: PoseExtra): Float32Array {
   // Compiled animation tracks carry studiomdl's 90-degree root rotation. For models compiled as static props
   // the VVD bind pose already has it baked in, so normalise those so sequence 0, frame 0 is the bind pose.
   // Other models (door halves, buttons) must use the raw pose: their VVD verts are in the unrotated pose space
   // (their hull, in model space, is the rotated one).
-  if (!sk.staticProp) return rawPose(sk, seqIdx, cycle);
+  if (!sk.staticProp) return rawPose(sk, seqIdx, cycle, ex);
   let C = fixCache.get(sk); if (!C) { const m0 = rawPose(sk, 0, 0); C = invert34(Array.from(m0.slice(0, 12))); fixCache.set(sk, C); }
-  const raw = rawPose(sk, seqIdx, cycle), out = new Float32Array(raw.length);
+  const raw = rawPose(sk, seqIdx, cycle, ex), out = new Float32Array(raw.length);
   for (let i = 0; i < raw.length / 12; i++) out.set(mul34(C, 0, raw, i * 12), i * 12);
   return out;
 }
-function rawPose(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
-  const nb = sk.bones.length, out = new Float32Array(nb * 12), world = rawBones(sk, seqIdx, cycle);
+function rawPose(sk: Skeleton, seqIdx: number, cycle: number, ex?: PoseExtra): Float32Array {
+  const nb = sk.bones.length, out = new Float32Array(nb * 12), world = rawBones(sk, seqIdx, cycle, ex);
   for (let i = 0; i < nb; i++) out.set(mul34(world, i * 12, sk.bones[i].poseToBone, 0), i * 12);
   return out;
 }
 /** model-space bone matrices (3x4 row-major per bone) for sequence seq at cycle 0..1, with the same static-prop
  *  normalisation as poseMatrices; for pose dumps and attachments */
-export function boneMatrices(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
-  const world = rawBones(sk, seqIdx, cycle); if (!sk.staticProp) return world;
+export function boneMatrices(sk: Skeleton, seqIdx: number, cycle: number, ex?: PoseExtra): Float32Array {
+  const world = rawBones(sk, seqIdx, cycle, ex); if (!sk.staticProp) return world;
   poseMatrices(sk, 0, 0); const C = fixCache.get(sk)!, out = new Float32Array(world.length);
   for (let i = 0; i < world.length / 12; i++) out.set(mul34(C, 0, world, i * 12), i * 12);
   return out;
 }
-function rawBones(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
-  const nb = sk.bones.length;
-  const pos = sk.bones.map(b => b.pos.slice()), quat = sk.bones.map(b => b.quat.slice());
-  const s = sk.seqs[seqIdx], a = s ? sk.anims[s.anim] : null;
-  if (a && a.animblock === 0) {
-    const fr = Math.max(0, Math.min(1, cycle)) * Math.max(0, a.frames - 1), f0 = Math.floor(fr), f1 = Math.min(a.frames - 1, f0 + 1), t = fr - f0;
-    const p0 = pos.map(x => x.slice()), q0 = quat.map(x => x.slice()); sampleFrame(sk, a, f0, p0, q0);
-    if (t > 1e-3 && f1 !== f0) { const p1 = pos.map(x => x.slice()), q1 = quat.map(x => x.slice()); sampleFrame(sk, a, f1, p1, q1); for (let i = 0; i < nb; i++) { pos[i] = p0[i].map((v, k) => v + (p1[i][k] - v) * t); quat[i] = slerp(q0[i], q1[i], t); } }
-    else { for (let i = 0; i < nb; i++) { pos[i] = p0[i]; quat[i] = q0[i]; } }
+/** what a prop's pose is made of, beyond its main sequence and cycle: pose parameter values (in the parameter's own
+ *  units, 0 when unset, as CBaseAnimating::InitBoneControllers does) and earlier sequences still fading out */
+export interface PoseExtra { poses?: ArrayLike<number>; fades?: { seq: number; cycle: number; weight: number }[]; }
+type Pose = { pos: number[][]; quat: number[][] };
+const qalign = (p: number[], q: number[]) => { let a = 0, b = 0; for (let k = 0; k < 4; k++) { a += (p[k] - q[k]) ** 2; b += (p[k] + q[k]) ** 2; } return a > b ? q.map(v => -v) : q; };
+const qnorm = (q: number[]) => { const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1; return q.map(v => v / l); };
+/** aligned linear blend, renormalised (QuaternionBlend): 0 gives p, 1 gives q */
+const qblend = (p: number[], q: number[], t: number) => { const r = qalign(p, q); return qnorm([0, 1, 2, 3].map(k => p[k] * (1 - t) + r[k] * t)); };
+/** true slerp (QuaternionSlerp), for weighting whole sequences */
+function qslerp(p: number[], q0: number[], t: number) { const q = qalign(p, q0); let c = p[0] * q[0] + p[1] * q[1] + p[2] * q[2] + p[3] * q[3];
+  let sp = 1 - t, sq = t; if (1 - c > 1e-6) { const om = Math.acos(Math.min(1, c)), so = Math.sin(om); sp = Math.sin((1 - t) * om) / so; sq = Math.sin(t * om) / so; }
+  return [0, 1, 2, 3].map(k => sp * p[k] + sq * q[k]); }
+/** scale a rotation's angle by t (QuaternionScale) */
+function qscale(p: number[], t: number) { const sinom = Math.min(1, Math.hypot(p[0], p[1], p[2])), ss = Math.sin(Math.asin(sinom) * t), k = ss / (sinom + 1.1920929e-7);
+  const w = Math.sqrt(Math.max(0, 1 - ss * ss)); return [p[0] * k, p[1] * k, p[2] * k, p[3] < 0 ? -w : w]; }
+
+/** one animation at a cycle; delta animations start from zero offsets, others from the bind pose (CalcAnimation) */
+function calcAnim(sk: Skeleton, ai: number, cycle: number): Pose {
+  const a = sk.anims[ai], delta = !!(a && a.flags & F.DELTA);
+  const init = () => ({ pos: sk.bones.map(b => delta ? [0, 0, 0] : b.pos.slice()), quat: sk.bones.map(b => delta ? [0, 0, 0, 1] : b.quat.slice()) });
+  const P = init(); if (!a) return P;
+  const fr = Math.max(0, Math.min(1, cycle)) * Math.max(0, a.frames - 1), f0 = Math.floor(fr), f1 = Math.min(a.frames - 1, f0 + 1), t = fr - f0;
+  sampleFrame(sk, a, f0, P.pos, P.quat);
+  if (t > 1e-3 && f1 !== f0) { const Q = init(); sampleFrame(sk, a, f1, Q.pos, Q.quat);
+    for (let i = 0; i < P.pos.length; i++) { P.pos[i] = P.pos[i].map((v, k) => v + (Q.pos[i][k] - v) * t); P.quat[i] = slerp(P.quat[i], Q.quat[i], t); } }
+  return P;
+}
+/** Studio_LocalPoseParameter: where the pose parameter on grid axis `axis` sits, as [index, fraction] */
+function localParam(sk: Skeleton, s: Seq, axis: 0 | 1, poses?: ArrayLike<number>): [number, number] {
+  const pi = s.param[axis], P = sk.poseParams[pi]; if (pi < 0 || !P || s.groupsize[axis] < 2) return [0, 0];
+  let v = poses?.[pi] ?? 0;
+  if (P.loop) { const wrap = (P.start + P.end) / 2 + P.loop / 2, shift = P.loop - wrap; v -= P.loop * Math.floor((v + shift) / P.loop); }
+  const n = s.groupsize[axis];
+  if (!s.poseKeys) { const ls = (s.paramStart[axis] - P.start) / (P.end - P.start), le = (s.paramEnd[axis] - P.start) / (P.end - P.start);
+    let f = Math.max(0, Math.min(1, ((v - P.start) / (P.end - P.start) - ls) / (le - ls))), idx = 0;
+    if (n > 2) { idx = Math.floor(f * (n - 1)); if (idx === n - 1) idx = n - 2; f = f * (n - 1) - idx; } return [idx, f]; }
+  const key = (k: number) => s.poseKeys![(axis ? s.groupsize[0] : 0) + k]; let idx = 0, f = 0;
+  for (;;) { f = (v - key(idx)) / (key(idx + 1) - key(idx)); if (idx < n - 2 && f > 1) { idx++; continue; } break; }
+  return [idx, Math.max(0, Math.min(1, f))];
+}
+function blendBones(A: Pose, B: Pose, t: number) { for (let i = 0; i < A.pos.length; i++) { A.quat[i] = qblend(A.quat[i], B.quat[i], t); A.pos[i] = A.pos[i].map((v, k) => v * (1 - t) + B.pos[i][k] * t); } }
+/** CalcPoseSingle: a sequence's pose at a cycle, bilinearly blended over its animation grid by the pose parameters */
+function calcPoseSingle(sk: Skeleton, si: number, cycle: number, poses?: ArrayLike<number>): Pose {
+  const s = sk.seqs[si];
+  if (s.flags & F.LOOPING) { cycle -= Math.floor(cycle); } else cycle = Math.max(0, Math.min(1, cycle));
+  const [i0, s0] = localParam(sk, s, 0, poses), [i1, s1] = localParam(sk, s, 1, poses);
+  const at = (x: number, y: number) => calcAnim(sk, s.grid[Math.min(y, s.groupsize[1] - 1) * s.groupsize[0] + Math.min(x, s.groupsize[0] - 1)], cycle);
+  const row = (y: number) => { if (s0 < 0.001) return at(i0, y); if (s0 > 0.999) return at(i0 + 1, y); const A = at(i0, y); blendBones(A, at(i0 + 1, y), s0); return A; };
+  if (s1 < 0.001) return row(i1); if (s1 > 0.999) return row(i1 + 1);
+  const A = row(i1); blendBones(A, row(i1 + 1), s1); return A;
+}
+/** SlerpBones: lay pose B over A with weight w; delta sequences add their rotation (after the base for STUDIO_POST) */
+function slerpBones(A: Pose, B: Pose, flags: number, w: number) {
+  if (w <= 0) return; w = Math.min(1, w);
+  for (let i = 0; i < A.pos.length; i++) {
+    if (flags & F.DELTA) { const d = qscale(B.quat[i], w); A.quat[i] = qnorm(flags & F.POST ? qmul(A.quat[i], d) : qmul(d, A.quat[i])); A.pos[i] = A.pos[i].map((v, k) => v + B.pos[i][k] * w); }
+    else { A.quat[i] = qslerp(B.quat[i], A.quat[i], 1 - w); A.pos[i] = A.pos[i].map((v, k) => v * (1 - w) + B.pos[i][k] * w); }
   }
+}
+/** local bone pose: main sequence, then sequences fading out (newest first, as MaintainSequenceTransitions), then the
+ *  model's autoplay sequences (CalcAutoplaySequences; the camera and turret aim layers are these) */
+export function localPose(sk: Skeleton, seqIdx: number, cycle: number, ex?: PoseExtra): Pose {
+  const P: Pose = { pos: sk.bones.map(b => b.pos.slice()), quat: sk.bones.map(b => b.quat.slice()) };
+  const acc = (si: number, c: number, w: number) => { const s = sk.seqs[si]; if (!s) return; slerpBones(P, calcPoseSingle(sk, si, c, ex?.poses), s.flags, w); };
+  acc(seqIdx, cycle, 1);
+  if (ex?.fades) for (let i = ex.fades.length - 1; i >= 0; i--) acc(ex.fades[i].seq, ex.fades[i].cycle, ex.fades[i].weight);
+  for (const si of sk.autoplay) acc(si, 0, 1);
+  return P;
+}
+function rawBones(sk: Skeleton, seqIdx: number, cycle: number, ex?: PoseExtra): Float32Array {
+  const nb = sk.bones.length, { pos, quat } = localPose(sk, seqIdx, cycle, ex);
   const world = new Float32Array(nb * 12);
   for (let i = 0; i < nb; i++) {
     const [x, y, z, w] = quat[i], p = pos[i];

@@ -1,6 +1,7 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel } from './models.ts';
+import { F } from './anim.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -469,20 +470,34 @@ export class Game {
   playAnim(e: Ent, name: string, isDefault: boolean) {
     const pr = e.prop; if (!pr || !name) return;
     const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
-      pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = m.skel.seqs[si].looping;
+      // the sequence being left keeps playing and fades out over min(its fadeout, the new one's fadein), 0.2 s by
+      // default, unless the new sequence is STUDIO_SNAP (CSequenceTransitioner::CheckForSequenceChange in the SDK)
+      const nsq = m.skel.seqs[si];
+      if ((nsq.flags & F.SNAP) || this.r.animFades === false) pr.fades = [];
+      else if (pr.seq !== undefined && m.skel.seqs[pr.seq]) { const fade = Math.min(m.skel.seqs[pr.seq].fadeout, nsq.fadein);
+        if (fade > 0) (pr.fades ??= []).push({ seq: pr.seq, cycle: pr.cycle || 0, rate: pr.rate || 0, age: 0, fade, weight: 1 }); }
+      pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = nsq.looping;
       pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim !== undefined ? e.defaultAnim : e.kv.defaultanim; /* SetDefaultAnimation with an empty value clears it */ if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
     if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
   }
   animateProps(dt: number) {
-    for (const pr of this.r.props) { const m = pr.model; if (!m || pr.seq === undefined || !pr.visible) continue;
-      const sq = m.skel.seqs[pr.seq]; if (!sq) continue;
+    for (const pr of this.r.props) { const m = pr.model; if (!m || pr.seq === undefined) continue;
+      // hidden props keep animating, as the server's frame advance does for EF_NODRAW entities; only skinning waits
+      const sk = m.skel, sq = sk.seqs[pr.seq]; if (!sq) continue;
       const dur = Math.max(1, sq.frames - 1) / (sq.fps || 30);
       if (sq.frames > 1 && pr.rate) { let c = (pr.cycle || 0) + dt * pr.rate / dur;
-        if (c >= 1) { if (pr.loop) c %= 1; else { c = 1; if (pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } } } pr.cycle = c; }
-      const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3);
+        if (c >= 1) { if (pr.loop) c %= 1; else c = 1; } pr.cycle = c; /* before onDone, which may start the next sequence at cycle 0 */
+        if (c >= 1 && !pr.loop && pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } }
+      if (pr.fades?.length) { for (const f of pr.fades) { const fs = sk.seqs[f.seq]; f.age += dt;
+          if (fs && fs.frames > 1 && f.rate) { const c = f.cycle + dt * f.rate * (fs.fps || 30) / (fs.frames - 1); f.cycle = fs.looping ? c - Math.floor(c) : Math.min(1, c); }
+          const s = 1 - f.age / f.fade; f.weight = s <= 0 ? 0 : s >= 1 ? 1 : 3 * s * s - 2 * s * s * s; /* C_AnimationLayer::GetFadeout's spline */ }
+        pr.fades = pr.fades.filter(f => f.weight > 0); }
+      if (!pr.visible) continue;
+      const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses?.slice();
+      const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3) + (fades ? '|' + fades.map(f => f.seq + ':' + f.cycle.toFixed(3) + ':' + f.weight.toFixed(3)).join(',') : '') + (poses ? '|' + poses.map(v => v.toFixed(2)).join(',') : '');
       // skinning is left to the renderer, which runs it once, only when the prop is actually drawn (it used to run
       // every 1/66 s tick even off screen: GLaDOS's 21k-vertex body cost about 0.57 ms per tick in escape_02)
-      if (pr.posed !== key && pr.seq !== undefined) { const seq = pr.seq, cyc = pr.cycle || 0; pr.posed = key; pr.repose = () => { pr.repose = undefined; pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, seq, cyc); }; }
+      if (pr.posed !== key) { const seq = pr.seq, cyc = pr.cycle || 0, ex = fades || poses ? { fades, poses } : undefined; pr.posed = key; pr.repose = () => { pr.repose = undefined; pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, seq, cyc, ex); }; }
     }
   }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {

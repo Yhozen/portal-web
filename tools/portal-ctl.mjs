@@ -28,7 +28,7 @@ commands:
   shoot blue|orange           fire the portal gun along the current view (as the mouse does)
   use                         press E (pick up / drop)
   fire ENTITY INPUT [PARAM]   send an entity input through the I/O system, e.g. fire relay_start Trigger
-  set KEY VALUE               renderer switch: showSky usePVS useCubes useLightmap showOverlays noPortalRender maxDepth
+  set KEY VALUE               renderer switch: showSky usePVS useCubes useLightmap showOverlays noPortalRender maxDepth animFades
   render                      draw one frame; replies draws, views, culled and the frame's CPU+GPU time
   screenshot PATH             draw one frame and save the canvas as PNG (no HUD text)
   bench N                     draw N frames back to back (simulation still), reply ms per frame avg p50 p95 max and fps
@@ -137,7 +137,7 @@ const handlers = {
   async use() { need(); return page.evaluate(() => { const g = window.game.game; g.use(); return { held: !!g.held }; }); },
   async fire(w) { need(); if (!w[2]) throw Object.assign(new Error('fire ENTITY INPUT [PARAM]'), { usage: true });
     return page.evaluate(([t, i, p]) => { window.game.io.send(t, i, p ?? ''); return { queued: t, input: i, note: 'delivered on the next step' }; }, [w[1], w[2], w[3]]); },
-  async set(w) { need(); const k = w[1], ok = ['showSky', 'usePVS', 'useCubes', 'useLightmap', 'showOverlays', 'noPortalRender', 'maxDepth'];
+  async set(w) { need(); const k = w[1], ok = ['showSky', 'usePVS', 'useCubes', 'useLightmap', 'showOverlays', 'noPortalRender', 'maxDepth', 'animFades'];
     if (!ok.includes(k)) throw Object.assign(new Error('set KEY VALUE, KEY one of ' + ok.join(' ')), { usage: true });
     const v = k === 'maxDepth' ? num(w[2], k) : /^(1|true|on)$/i.test(w[2] || ''); return page.evaluate(([k, v]) => { window.game.r[k] = v; return { [k]: window.game.r[k] }; }, [k, v]); },
   async render() { need(); return page.evaluate(RENDER); },
@@ -201,7 +201,7 @@ const handlers = {
     await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', v, '-vf', `select=between(n\\,${a}\\,${b})`, '-vsync', 'vfr', '-start_number', String(a), join(dir, 'f%05d.png')]); return { dir: resolve(dir) }; },
   async anim(w) { need(); const re = w[1] || '.'; return page.evaluate(src => { const R = new RegExp(src, 'i'), g = window.game, byProp = new Map(); for (const e of g.io.ents) if (e.prop) byProp.set(e.prop, e);
     const out = []; for (const pr of g.r.props) { const m = pr.model; if (!m || pr.seq === undefined) continue; const name = m.data.name || ''; const e = byProp.get(pr); const label = (e?.name || '') + ' ' + name + ' ' + (e?.kv?.model || ''); if (!R.test(label)) continue;
-      const sq = m.skel.seqs[pr.seq]; out.push({ ent: e?.name || null, cls: e?.cls || null, model: e?.kv?.model || name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(4), rate: pr.rate ?? null, loop: !!pr.loop, frames: sq?.frames, fps: sq?.fps, duration_s: sq ? +(Math.max(1, sq.frames - 1) / sq.fps).toFixed(3) : null, ...(window.__animExtra ? window.__animExtra(pr) : {}) }); }
+      const sq = m.skel.seqs[pr.seq]; out.push({ ent: e?.name || null, cls: e?.cls || null, model: e?.kv?.model || name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(4), rate: pr.rate ?? null, loop: !!pr.loop, frames: sq?.frames, fps: sq?.fps, duration_s: sq ? +(Math.max(1, sq.frames - 1) / sq.fps).toFixed(3) : null, ...(pr.fades?.length ? { fades: pr.fades.map(f => ({ seq: m.skel.seqs[f.seq]?.name, cycle: +f.cycle.toFixed(4), weight: +f.weight.toFixed(4) })) } : {}), ...(pr.poses ? { poses: pr.poses } : {}) }); }
     return { count: out.length, props: out.slice(0, 200) }; }, re); },
   async poses(w) { need(); const f = w[1], n = Math.floor(num(w[2] ?? 0, 'TICKS')); if (!f || n < 1) throw Object.assign(new Error('poses OUT.jsonl TICKS [MODEL_REGEX] [EVERY] [KEYS]'), { usage: true });
     const re = w[3] || '.', every = Math.max(1, +(w[4] || 1)), inp = keyInput(w[5] || ''); mkdirSync(dirname(resolve(f)), { recursive: true });
@@ -209,13 +209,20 @@ const handlers = {
       const T = 1 / 66, out = [], r3 = v => +v.toFixed(3);
       const sample = tick => { for (const pr of g.r.props) { const m = pr.model; if (!m || pr.seq === undefined) continue; const e = byProp.get(pr), label = (e?.name || '') + ' ' + (e?.kv?.model || m.data.name || ''); if (!R.test(label)) continue;
         const sk = m.skel, M = g.anim.boneMatrices(sk, pr.seq, pr.cycle || 0, pr), sq = sk.seqs[pr.seq];
-        out.push({ tick, t: r3(tick * T), ent: e?.name || null, model: e?.kv?.model || m.data.name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(5), ...(window.__animExtra ? window.__animExtra(pr) : {}),
+        out.push({ tick, t: r3(tick * T), ent: e?.name || null, model: e?.kv?.model || m.data.name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(5), ...(pr.fades?.length ? { fades: pr.fades.map(f => ({ seq: sk.seqs[f.seq]?.name, cycle: +f.cycle.toFixed(4), weight: +f.weight.toFixed(4) })) } : {}), ...(pr.poses ? { poses: pr.poses.slice() } : {}),
           bones: sk.bones.map((b, i) => ({ name: b.name, pos: [M[i * 12 + 3], M[i * 12 + 7], M[i * 12 + 11]].map(r3), fwd: [M[i * 12], M[i * 12 + 4], M[i * 12 + 8]].map(r3) })) }); } };
       sample(0); for (let k = 1; k <= n; k++) { g.step(T, inp); if (k % every === 0) sample(k); } return out; }, [n, re, every, inp]);
     writeFileSync(f, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
     // summary per prop: sequences seen with first/last tick, and the measured cycle rate against fps/(frames-1)
     const sum = {}; for (const l of lines) { const k = (l.ent || '') + ' ' + l.model; const s = sum[k] ??= { samples: 0, seqs: [] }; s.samples++; const last = s.seqs[s.seqs.length - 1];
       if (!last || last.seq !== l.seq) s.seqs.push({ seq: l.seq, from_tick: l.tick, to_tick: l.tick, c0: l.cycle, c1: l.cycle, wraps: 0, _prev: l.cycle }); else { if (l.cycle + 1e-6 < last._prev) last.wraps++; last.to_tick = l.tick; last.c1 = l.cycle; last._prev = l.cycle; } }
+    // pop detector: the biggest bone move between consecutive samples of each prop, with the tick it happened at
+    const lastBy = {}; for (const l of lines) { const k = (l.ent || '') + ' ' + l.model, prev = lastBy[k]; lastBy[k] = l; if (!prev || prev.bones.length !== l.bones.length) continue; const s = sum[k];
+      let mx = 0, ma = 0; for (let i = 0; i < l.bones.length; i++) { const a = l.bones[i], b = prev.bones[i]; mx = Math.max(mx, Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]));
+        const d = a.fwd[0] * b.fwd[0] + a.fwd[1] * b.fwd[1] + a.fwd[2] * b.fwd[2], n = Math.hypot(...a.fwd) * Math.hypot(...b.fwd) || 1; ma = Math.max(ma, Math.acos(Math.max(-1, Math.min(1, d / n))) * 180 / Math.PI); }
+      (s.steps ??= []).push({ tick: l.tick, move: mx, turn: ma }); }
+    for (const s of Object.values(sum)) { if (!s.steps) continue; const by = k => s.steps.reduce((a, b) => b[k] > a[k] ? b : a); const mv = by('move'), tr = by('turn'), med = k => [...s.steps].sort((a, b) => a[k] - b[k])[s.steps.length >> 1][k];
+      s.max_move = { units: +mv.move.toFixed(3), at_tick: mv.tick, median: +med('move').toFixed(3) }; s.max_turn = { deg: +tr.turn.toFixed(2), at_tick: tr.tick, median: +med('turn').toFixed(2) }; delete s.steps; }
     for (const s of Object.values(sum)) for (const q of s.seqs) { const dt = (q.to_tick - q.from_tick) / 66; q.cycles_per_s = dt > 0 ? +(((q.c1 - q.c0) + q.wraps) / dt).toFixed(4) : null; delete q._prev; }
     return { path: resolve(f), samples: lines.length, props: sum }; },
   async sleep(w) { await new Promise(r => setTimeout(r, num(w[1] ?? 1, 'S') * 1000)); return { slept: +w[1] }; },

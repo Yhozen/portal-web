@@ -58,7 +58,7 @@ export interface Instance { model: number; matrix: M4; visible: boolean; alpha?:
 export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
 export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; texFrame?: number; ambient: [number, number, number]; tint?: [number, number, number];
   /** cached ambient cube and the lighting origin it was sampled at */ lightCube?: Cube | null; lightAt?: [number, number, number];
-  seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; /** pending CPU skin to the latest pose, run when next drawn */ repose?: () => void; onDone?: () => void; restPose?: boolean; }
+  seq?: number; cycle?: number; rate?: number; loop?: boolean; /** earlier sequences still cross-fading out (CSequenceTransitioner) */ fades?: { seq: number; cycle: number; rate: number; age: number; fade: number; weight: number }[]; /** pose parameter values, in their own units */ poses?: number[]; skinned?: Skinned | null; posed?: string; /** pending CPU skin to the latest pose, run when next drawn */ repose?: () => void; onDone?: () => void; restPose?: boolean; }
 
 const ONE3 = new Float32Array([1, 1, 1]);
 const NOCLIP = new Float32Array([0, 0, 0, -1e9]);
@@ -69,7 +69,7 @@ export function throughPortal(a: Portal, b: Portal) { return mul(portalMatrix(b)
 
 export class Renderer {
   gl: WebGL2RenderingContext; mats: MaterialCache; world!: { vao: WebGLVertexArrayObject; mesh: WorldMesh; lm: WebGLTexture; mats: GLMat[] };
-  prog = { world: null as any, oval: null as any, sky: null as any }; ovalVao: WebGLVertexArrayObject; instances: Instance[] = []; time = 0; overlayState = new Map<number, { texFrame?: number; hidden?: boolean }>(); showOverlays = true; portals: Portal[] = []; extra: MeshDraw[] = []; props: PropInst[] = [];
+  prog = { world: null as any, oval: null as any, sky: null as any }; ovalVao: WebGLVertexArrayObject; instances: Instance[] = []; time = 0; overlayState = new Map<number, { texFrame?: number; hidden?: boolean }>(); /** sequence cross-fades on prop_dynamics (harness switch, for before/after checks) */ animFades = true; showOverlays = true; portals: Portal[] = []; extra: MeshDraw[] = []; props: PropInst[] = [];
   cubes: LightCubes | null = null; useCubes = true;
   /** 2D skybox (six faces of worldspawn skyname) and the 3D skybox (sky_camera), only for maps with sky faces */
   sky: { vs: Float32Array; faces: GLMat[]; skyClusters: Uint8Array; cam: V3 | null; camScale: number } | null = null; showSky = true;

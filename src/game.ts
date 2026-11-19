@@ -663,7 +663,10 @@ export class Game {
         const dist = len(sub(e.openPos, e.closedPos)) || 1; const step = e.speed * dt / dist; const tgt = e.state;
         const before = e.t; e.t = tgt ? Math.min(1, e.t + step) : Math.max(0, e.t - step);
         // don't crush: if the door would move into the player, stop for this tick
-        const np = add(e.closedPos, scale(sub(e.openPos, e.closedPos), e.t)); const old = e.pos.slice(); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2];
+        // a door riding a parent (e.g. a10's pillar lifts) has its world position from the hierarchy pass; step that by
+        // this tick's travel, or the crush test below compares a spawn-frame position with a world one and throws the player
+        const riding = !!(e.kv.parentname && e.worldM && !(+e.kv.spawnflags & 1));
+        const np = riding ? add(e.pos, scale(sub(e.openPos, e.closedPos), e.t - before)) : add(e.closedPos, scale(sub(e.openPos, e.closedPos), e.t)); const old = e.pos.slice(); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2];
         this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0xffffffff, this.playerEnt);
         if (pt.startsolid && pt.ent === e) { const d = sub(np, old as V3); if (d[2] > 0 && Math.abs(d[2]) > Math.abs(d[0]) + Math.abs(d[1])) { this.player.pos = add(this.player.pos, d); } else { e.pos[0] = old[0]; e.pos[1] = old[1]; e.pos[2] = old[2]; e.t = before; } }
         if (e.t === tgt) { e.moving = false; io.fire(e, tgt ? 'onfullyopen' : 'onfullyclosed', null); }

@@ -311,3 +311,12 @@ The next stop was a script bug. The exit switch rides button_pedistal, which the
 100/s), and the script pressed it 0.6 s after the pickup, while the switch was still under the floor. It now waits for
 the pedestal. Then the exit door, the 07a-07b elevator and the ride up all work (z 784 at 130.6 s). The second half of
 the map (chamber 12: box dropper, floor button, the piston wedge) has no route written yet, so a07 stops there.
+
+**12:55 PM, riding the a10 lift threw the player up.** checks/lift-ride.ctl stands on the lowered platform and lets the
+ride trigger raise it. The first run had the player shot up by about 180 units again and again while the platform didn't
+move. The door's crush test moved the door to its spawn-frame position, found the player inside it, and pushed them up
+by the gap between that position and the door's real one, which for a door on a parent is the hierarchy's world
+position. A door on a parent now steps from its world position by this tick's travel. Now the player rides from
+-250 to -2 standing on it the whole way, 2 units above the brush origin, at 30 and then 15 units/s. (The check walks
+into the room's entry trigger first. Teleporting straight onto the lift fires the lift's trigger and the room's
+"open all lifts" trigger on the same tick, and the second one wins.)

@@ -204,7 +204,7 @@ export class Renderer {
       const cube = this.useCubes ? this.propCube(pr) : null; gl.uniform1f(P.u.uUseCube, cube ? 1 : 0);
       if (cube) { gl.uniform3fv(P.u.uCube, cube); gl.uniform3fv(P.u.uAmbient, ONE3); } else gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
       for (const d of md.draws) {
-        const m = skin[d.mat] || skin[0]; if (!m || m.translucent !== translucent) continue;
+        const m = skin[d.mat] || skin[0]; if (!m || m.nodraw || m.translucent !== translucent) continue;
         gl.bindTexture(gl.TEXTURE_2D, this.texOf(m, pr.texFrame)); const t = pr.tint || [1, 1, 1]; gl.uniform4f(P.u.uTint, m.tint[0] * t[0], m.tint[1] * t[1], m.tint[2] * t[2], m.tint[3]); gl.uniform1f(P.u.uAlphaTest, m.alphatest || (m.translucent ? 0 : 0));
         gl.uniform1f(P.u.uUnlit, m.unlit ? 1 : 0); gl.uniform1f(P.u.uSelfIllum, m.selfillumMask ? 1 : 0); if (m.selfillumMask) gl.uniform3fv(P.u.uSelfTint, m.selfillumTint);
         if (translucent) gl.blendFunc(gl.SRC_ALPHA, m.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);

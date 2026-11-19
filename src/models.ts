@@ -44,7 +44,12 @@ export class ModelCache {
     gl.bindVertexArray(null);
     const cds: string[] = (d.materials as any).cds || [''];
     const resolve = async (t: string) => {
-      for (const cd of cds) { const p = (cd + t).replace(/^\/+/, ''); if (await this.assets.read('materials/' + p + '.vmt')) return this.mats.get(p); }
+      // "debugempty" is the engine's draw-nothing material (debug/debugempty); escape_01's rot_door_frame names it bare
+      if (/^(debug\/)?debugempty$/i.test(t)) return this.mats.get('debug/debugempty');
+      for (const cd of cds) { const p = (cd + t).replace(/^\/+/, '');
+        // a texture name that already carries its directory (w_portalgun) would only probe a doubled path that can't exist
+        if (cd && t.toLowerCase().startsWith(cd.toLowerCase().replace(/^\/+/, ''))) continue;
+        if (await this.assets.read('materials/' + p + '.vmt')) return this.mats.get(p); }
       return this.mats.get(t);
     };
     const skins = await Promise.all(d.materials.map(row => Promise.all(row.map(resolve))));

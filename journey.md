@@ -194,3 +194,10 @@ unchanged; the cube and doors get their small glowing details. Over the 30 later
 the rest change on under 0.32% of pixels, except a13's third view at 1.7%, where door_02's indicator strip now glows.
 World brushes are untouched (they still draw $selfillum faces unlit). Before | after:
 /workspace/portal-web-shots/selfillum-before-after.png.
+
+**10:52 AM, missing-file noise.** The three 404s left on a clean run are gone. w_portalgun's texture name already
+includes its cdmaterials directory, so the first probe asked for a doubled path that can't exist; probes that would
+double the directory are skipped. escape_01's rot_door_frame names "debugempty" for a 4-triangle piece; that's the
+engine's draw-nothing material (debug/debugempty), which isn't in the game files, so it's now built in and not drawn,
+instead of two 404s and the magenta fallback. Model draws skip nodraw materials. Every map from a00 to escape_02 now
+loads and runs 2 s with 0 errors, warnings or failed requests, and the 30 later-chamber views are byte-identical.

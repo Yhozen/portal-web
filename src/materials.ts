@@ -52,6 +52,7 @@ export class MaterialCache {
     let p = this.mats.get(name); if (!p) { p = this.load(name); this.mats.set(name, p); } return p;
   }
   private async load(name: string): Promise<GLMat> {
+    if (name === 'debug/debugempty') return { name, vmt: null, tex: this.white, w: 1, h: 1, translucent: false, additive: false, alphatest: 0, unlit: true, tint: [1, 1, 1, 1], nodraw: true, noportal: false, selfillum: false };
     const vmt = await loadVMT(name, p => this.assets.text(p));
     const P = vmt?.params || {}; const sh = vmt?.shader || '';
     const flag = (k: string) => P[k] !== undefined && P[k] !== '0';

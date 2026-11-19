@@ -5,7 +5,7 @@
 export interface Bone { name: string; parent: number; pos: number[]; quat: number[]; rot: number[]; posscale: number[]; rotscale: number[]; poseToBone: Float32Array /* 3x4 row-major */; }
 export interface Seq { name: string; activity: string; looping: boolean; anim: number; fps: number; frames: number; }
 export interface AnimDesc { name: string; fps: number; frames: number; flags: number; ofs: number; sectionFrames: number; sectionOfs: number; animblock: number; }
-export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; staticProp: boolean; }
+export interface Skeleton { bones: Bone[]; seqs: Seq[]; anims: AnimDesc[]; dv: DataView; staticProp: boolean; /** .ani file and its block table (start, end): long sequences stream their sections from there */ ani?: DataView; blocks: [number, number][]; }
 
 const cstr = (dv: DataView, o: number) => { let s = ''; for (let p = o; p < dv.byteLength; p++) { const c = dv.getUint8(p); if (!c) break; s += String.fromCharCode(c); } return s; };
 function half(h: number) { const s = h >> 15 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023; if (e === 0) return s * f * 2 ** -24; if (e === 31) return f ? NaN : s * Infinity; return s * (1 + f / 1024) * 2 ** (e - 15); }
@@ -28,7 +28,8 @@ export function parseSkeleton(buf: ArrayBuffer): Skeleton {
   for (let i = 0, n = i32(188), b = i32(192); i < n; i++) { const o = b + i * 212;
     const ai = dv.getInt16(o + i32(o + 60), true); const a = anims[ai];
     seqs.push({ name: cstr(dv, o + i32(o + 4)).toLowerCase(), activity: cstr(dv, o + i32(o + 8)).toLowerCase(), looping: !!(i32(o + 12) & 1), anim: ai, fps: a?.fps || 30, frames: a?.frames || 1 }); }
-  return { bones, seqs, anims, dv, staticProp: !!(i32(152) & 0x10) /* studiohdr_t.flags & STUDIOHDR_FLAGS_STATIC_PROP */ };
+  const blocks: [number, number][] = []; for (let i = 0, n = i32(352), b = i32(356); i < n; i++) blocks.push([i32(b + i * 8), i32(b + i * 8 + 4)]);
+  return { bones, seqs, anims, dv, staticProp: !!(i32(152) & 0x10) /* studiohdr_t.flags & STUDIOHDR_FLAGS_STATIC_PROP */, blocks };
 }
 
 // mstudioanimvalue_t run-length decode
@@ -40,9 +41,16 @@ function animValue(dv: DataView, p: number, frame: number) {
 }
 
 /** per-bone local position + quaternion for an anim at an integer frame */
+// Sections and blocks follow mstudioanimdesc_t::pAnim in the public SDK's studio.cpp: a long animation is split into
+// sections of sectionframes frames, the last frame of a long animation is stored on its own in an extra section, and a
+// section with animblock > 0 lives in the model's .ani file at that block's start + animindex.
 function sampleFrame(sk: Skeleton, a: AnimDesc, frame: number, pos: number[][], quat: number[][]) {
-  const dv = sk.dv; let p = a.ofs, f = frame;
-  if (a.sectionFrames > 0) { const sec = Math.floor(frame / a.sectionFrames); const so = a.sectionOfs + sec * 8; p = descBase(sk, a) + dv.getInt32(so + 4, true); f = frame - sec * a.sectionFrames; }
+  let dv = sk.dv, p = a.ofs, f = frame;
+  if (a.sectionFrames > 0) { let sec: number;
+    if (a.frames > a.sectionFrames && frame === a.frames - 1) { sec = Math.floor(a.frames / a.sectionFrames) + 1; f = 0; } else { sec = Math.floor(frame / a.sectionFrames); f = frame - sec * a.sectionFrames; }
+    const so = a.sectionOfs + sec * 8, block = dv.getInt32(so, true), index = dv.getInt32(so + 4, true);
+    if (block === 0) p = descBase(sk, a) + index;
+    else { const b = sk.blocks[block]; if (!sk.ani || !b) return new Uint8Array(sk.bones.length); dv = sk.ani; p = b[0] + index; } }
   const seen = new Uint8Array(sk.bones.length);
   for (let guard = 0; guard < 256 && p > 0 && p < dv.byteLength; guard++) {
     const bi = dv.getUint8(p), flags = dv.getUint8(p + 1), next = dv.getInt16(p + 2, true);

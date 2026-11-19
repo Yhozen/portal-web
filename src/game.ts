@@ -470,7 +470,7 @@ export class Game {
     const pr = e.prop; if (!pr || !name) return;
     const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
       pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = m.skel.seqs[si].looping;
-      pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim || e.kv.defaultanim; if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
+      pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim !== undefined ? e.defaultAnim : e.kv.defaultanim; /* SetDefaultAnimation with an empty value clears it */ if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
     if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
   }
   animateProps(dt: number) {

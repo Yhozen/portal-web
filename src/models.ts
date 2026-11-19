@@ -48,6 +48,8 @@ export class ModelCache {
       return this.mats.get(t);
     };
     const skins = await Promise.all(d.materials.map(row => Promise.all(row.map(resolve))));
-    return { data: d, vao, draws, skins, skel: parseSkeleton(a), base: vb, ib };
+    const skel = parseSkeleton(a);
+    if (skel.blocks.length > 1) { const ani = await this.assets.read(base + '.ani'); if (ani) skel.ani = new DataView(ani); else console.warn('missing animation blocks', base + '.ani'); }
+    return { data: d, vao, draws, skins, skel, base: vb, ib };
   }
 }

@@ -6,7 +6,8 @@
 //   node tools/mdl-info.ts [--game DIR] --survey [REGEX]    one line per animated model found in the VPKs
 import { portalFS } from '../src/vpk.ts';
 import { parseArgs } from 'node:util';
-const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: { game: { type: 'string' }, json: { type: 'boolean' }, bones: { type: 'boolean' }, survey: { type: 'boolean' } } });
+import { parseSkeleton, boneMatrices } from '../src/anim.ts';
+const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: { game: { type: 'string' }, json: { type: 'boolean' }, bones: { type: 'boolean' }, survey: { type: 'boolean' }, continuity: { type: 'boolean' }, seq: { type: 'string' } } });
 const g = portalFS(opt.game || process.env.PORTAL_DIR || '/home/box/steam-games/portal-linux');
 const SEQF: [number, string][] = [[1, 'looping'], [2, 'snap'], [4, 'delta'], [8, 'autoplay'], [0x10, 'post'], [0x20, 'allzeros'], [0x80, 'cyclepose'], [0x100, 'realtime'], [0x200, 'local'], [0x400, 'hidden'], [0x800, 'override'], [0x4000, 'world']];
 const flagNames = (f: number) => SEQF.filter(([b]) => f & b).map(([, n]) => n);
@@ -43,6 +44,23 @@ if (opt.survey) {
       m.poses.length ? 'poses ' + m.poses.map(p => p.name).join(',') : '', m.controllers.length ? 'ctrl ' + m.controllers.length : '',
       'blends ' + m.seqs.filter(s => s.anims.length > 1).length, 'events ' + m.seqs.reduce((a, s) => a + s.events.length, 0), 'autolayers ' + m.seqs.reduce((a, s) => a + s.autolayers.length, 0), m.staticProp ? 'staticprop' : ''].filter(Boolean).join(' '));
   }
+} else if (opt.continuity) {
+  // biggest rotation between two bone matrices, degrees (from the trace of R1^T R2)
+  function angBetween(A: Float32Array, B: Float32Array, b: number) { const o = b * 12; let tr = 0; for (let c = 0; c < 3; c++) { let n1 = 0, n2 = 0, d = 0; for (let r = 0; r < 3; r++) { n1 += A[o + r * 4 + c] ** 2; n2 += B[o + r * 4 + c] ** 2; d += A[o + r * 4 + c] * B[o + r * 4 + c]; } tr += d / Math.sqrt(n1 * n2 || 1); } return Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2))) * 180 / Math.PI; }
+  for (const n of positionals) {
+  // decode every frame of every sequence (or --seq NAME) and report the biggest frame-to-frame bone jump: garbage
+  // decoding (wrong section, missing .ani block) shows up as jumps far bigger than the animation's normal motion
+  const base = n.replace(/\.mdl$/, ''), b = g.read(base + '.mdl')!; const sk = parseSkeleton(b.buffer.slice(b.byteOffset, b.byteOffset + b.length) as ArrayBuffer);
+  if (sk.blocks.length > 1) { const a = g.read(base + '.ani'); if (a) sk.ani = new DataView(a.buffer, a.byteOffset, a.length); }
+  sk.seqs.forEach((s, si) => { if (opt.seq && s.name !== opt.seq.toLowerCase()) return; if (s.frames < 2) return; const jumps: number[] = [], angs: number[] = []; let prev: Float32Array | null = null, nan = 0;
+    for (let f = 0; f < s.frames; f++) { const M = boneMatrices(sk, si, f / (s.frames - 1)); let mx = 0; for (let i = 0; i < M.length; i++) if (!Number.isFinite(M[i])) nan++;
+      let ma = 0; if (prev) for (let bi = 0; bi < sk.bones.length; bi++) { const d = Math.hypot(M[bi * 12 + 3] - prev[bi * 12 + 3], M[bi * 12 + 7] - prev[bi * 12 + 7], M[bi * 12 + 11] - prev[bi * 12 + 11]); if (d > mx) mx = d; ma = Math.max(ma, angBetween(M, prev, bi)); }
+      if (prev) { jumps.push(mx); angs.push(ma); } prev = M; }
+    const as = [...angs].sort((a, b) => a - b), amed = as[as.length >> 1] || 0, aworst = angs.indexOf(as[as.length - 1]);
+    let wrap = ''; if (s.looping) { const A = boneMatrices(sk, si, 0), B = boneMatrices(sk, si, 1); let mx = 0; for (let bi = 0; bi < sk.bones.length; bi++) mx = Math.max(mx, Math.hypot(A[bi * 12 + 3] - B[bi * 12 + 3], A[bi * 12 + 7] - B[bi * 12 + 7], A[bi * 12 + 11] - B[bi * 12 + 11])); wrap = `, looping: last-to-first frame gap ${mx.toFixed(3)}`; }
+    const sorted = [...jumps].sort((a, b) => a - b), med = sorted[sorted.length >> 1] || 0, worst = jumps.indexOf(sorted[sorted.length - 1]);
+    console.log(`${n} ${s.name}: ${s.frames}f, median jump ${med.toFixed(3)}, max ${(sorted[sorted.length - 1] || 0).toFixed(3)} at frame ${worst}->${worst + 1}${nan ? ', NaN values ' + nan : ''}, frames with jump > 10x median: ${jumps.filter(j => j > Math.max(1, med * 10)).length}; rotation median ${amed.toFixed(2)} deg, max ${(as[as.length - 1] || 0).toFixed(2)} at ${aworst}->${aworst + 1}${wrap}`); });
+}
 } else for (const n of positionals) {
   const b = g.read(n.endsWith('.mdl') ? n : n + '.mdl'); if (!b) { console.log(n, 'not found'); continue; }
   const m = mdlInfo(b);

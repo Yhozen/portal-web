@@ -9,17 +9,21 @@ import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
-import { createServer } from 'node:net';
+import { createServer, connect } from 'node:net';
 import { parseArgs } from 'node:util';
 import { homedir } from 'node:os';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const HELP = `portal-ctl [options] script FILE|-     run one command per line (# comments), stop at the first error
 portal-ctl [options] run 'CMD; CMD; ...' run commands given inline
+portal-ctl [options] serve SOCKET         keep one server and browser running and take scripts on a unix socket
+portal-ctl --attach SOCKET script FILE|- / run '...'   send commands to a running serve (no browser start-up)
 options: --game DIR (Portal install; default $PORTAL_DIR or the Steam path) --size WxH (default 1024x640)
          --port N (asset server port; default a free one) --base URL (use a server that is already running)
          --keep-going (do not stop at the first error) --no-build (skip ./build.sh) --seed N (Math.random seed, default 1)
 commands:
+  build                       run ./build.sh and clear the browser cache, so the next map loads the new code (serve)
+  quit                        stop a serve session after this script
   map NAME [QUERY]            load a map (nochange=1 is always set); replies load time, requests, MB, warnings
   pose X Y Z PITCH YAW        noclip, intro fade off, feet at X Y Z (eye is 64 above), view angles in degrees
   look PITCH YAW              change only the view angles
@@ -50,7 +54,7 @@ exit status: 0 ok, 1 a command failed, 2 usage error, 3 the server or browser co
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   game: { type: 'string' }, size: { type: 'string', default: '1024x640' }, port: { type: 'string' }, base: { type: 'string' },
-  'keep-going': { type: 'boolean', default: false }, 'no-build': { type: 'boolean', default: false }, 'no-label': { type: 'boolean', default: false }, seed: { type: 'string', default: '1' }, help: { type: 'boolean', default: false } } });
+  attach: { type: 'string' }, 'keep-going': { type: 'boolean', default: false }, 'no-build': { type: 'boolean', default: false }, 'no-label': { type: 'boolean', default: false }, seed: { type: 'string', default: '1' }, help: { type: 'boolean', default: false } } });
 const [verb, arg] = positionals;
 if (opt.help || verb === 'help' || !verb) { console.log(HELP); process.exit(verb || opt.help ? 0 : 2); }
 
@@ -63,13 +67,25 @@ function words(line) { const out = []; let cur = '', q = null, any = false;
     if (/\s/.test(c)) { if (cur || any) out.push(cur); cur = ''; any = false; continue; }
     cur += c; }
   if (cur || any) out.push(cur); return out; }
-let lines;
+let lines = [];
 if (verb === 'script') { if (!arg) { console.log(HELP); process.exit(2); } lines = readFileSync(arg === '-' ? 0 : arg, 'utf8').split('\n'); }
 else if (verb === 'run') { if (!arg) { console.log(HELP); process.exit(2); } lines = arg.split(/;\s*/); }
+else if (verb === 'serve') { if (!arg) { console.log(HELP); process.exit(2); } }
 else { console.error('unknown verb ' + verb); console.log(HELP); process.exit(2); }
-const cmds = lines.map((l, i) => ({ n: i + 1, w: words(l.trim()), raw: l.trim() })).filter(c => c.w.length);
+const parse = ls => ls.map((l, i) => ({ n: i + 1, w: words(l.trim()), raw: l.trim() })).filter(c => c.w.length);
 
-const out = o => process.stdout.write(JSON.stringify(o) + '\n');
+// --attach: hand the lines to a running `serve` and print its replies; the exit status is the session's
+if (opt.attach) {
+  if (verb === 'serve') { console.error('--attach takes script or run'); process.exit(2); }
+  const sock = connect(opt.attach); let buf = '', status = 3;
+  sock.on('error', e => { process.stdout.write(JSON.stringify({ error: 'cannot reach serve at ' + opt.attach + ': ' + e.message, kind: 'launch' }) + '\n'); process.exit(3); });
+  sock.on('connect', () => sock.write(JSON.stringify({ lines, keepGoing: opt['keep-going'] }) + '\n'));
+  sock.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); const j = JSON.parse(l); if (j.done) status = j.status; else process.stdout.write(l + '\n'); } });
+  await new Promise(r => sock.on('close', r)); process.exit(status);
+}
+
+let emit = o => process.stdout.write(JSON.stringify(o) + '\n');
+const out = o => emit(o);
 const freePort = () => new Promise(r => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 
 let server = null, browser = null;
@@ -231,19 +247,46 @@ const handlers = {
     for (const s of Object.values(sum)) for (const q of s.seqs) { const dt = (q.to_tick - q.from_tick) / 66; q.cycles_per_s = dt > 0 ? +(((q.c1 - q.c0) + q.wraps) / dt).toFixed(4) : null; delete q._prev; }
     return { path: resolve(f), samples: lines.length, props: sum }; },
   async sleep(w) { await new Promise(r => setTimeout(r, num(w[1] ?? 1, 'S') * 1000)); return { slept: +w[1] }; },
+  async build() { const b = spawn(join(ROOT, 'build.sh'), [], { stdio: ['ignore', 'ignore', 'pipe'] }); let err = ''; b.stderr.on('data', d => err += d);
+    const code = await new Promise(r => b.on('exit', r)); if (code) throw new Error('build failed: ' + err.slice(-400));
+    const p = page || await ctx.newPage(), cdp = await ctx.newCDPSession(p); await cdp.send('Network.clearBrowserCache'); await cdp.detach(); if (!page) await p.close();
+    return { built: true, note: 'takes effect on the next map' }; },
+  async quit() { quitting = true; return { quitting: true }; },
 };
-
-let status = 0;
-for (const c of cmds) {
-  const name = c.w[0], h = handlers[name];
-  const t0 = Date.now();
-  try {
-    if (!h) throw Object.assign(new Error('unknown command: ' + name), { usage: true });
-    const r = await h(c.w, c.raw); out({ line: c.n, cmd: name, ok: true, ms: Date.now() - t0, ...r });
-  } catch (e) {
-    out({ line: c.n, cmd: name, ok: false, error: String(e.message || e).split('\n')[0], kind: e.usage ? 'usage' : 'error' });
-    status = Math.max(status, e.usage ? 2 : 1); if (!opt['keep-going']) break;
+let quitting = false;
+async function exec(cmds, keepGoing) {
+  let status = 0;
+  for (const c of cmds) {
+    const name = c.w[0], h = handlers[name];
+    const t0 = Date.now();
+    try {
+      if (!h) throw Object.assign(new Error('unknown command: ' + name), { usage: true });
+      const r = await h(c.w, c.raw); out({ line: c.n, cmd: name, ok: true, ms: Date.now() - t0, ...r });
+    } catch (e) {
+      out({ line: c.n, cmd: name, ok: false, error: String(e.message || e).split('\n')[0], kind: e.usage ? 'usage' : 'error' });
+      status = Math.max(status, e.usage ? 2 : 1); if (!keepGoing) break;
+    }
   }
+  return status;
 }
+
+// serve: one asset server and browser for many scripts. Each connection sends {lines, keepGoing} as one JSON line and
+// gets the usual reply lines, then {"done":true,"status":N}. Scripts run one at a time, in arrival order; the page
+// and its state (map, position, lookat) carry over from one script to the next.
+if (verb === 'serve') {
+  const { unlinkSync } = await import('node:fs'); try { unlinkSync(arg); } catch {}
+  let queue = Promise.resolve();
+  const srv = createServer(conn => { let buf = '';
+    conn.on('data', d => { buf += d; const i = buf.indexOf('\n'); if (i < 0) return; const msg = JSON.parse(buf.slice(0, i)); buf = '';
+      queue = queue.then(async () => { emit = o => conn.write(JSON.stringify(o) + '\n');
+        const st = await exec(parse(msg.lines || []), !!msg.keepGoing); conn.end(JSON.stringify({ done: true, status: st }) + '\n');
+        emit = o => process.stdout.write(JSON.stringify(o) + '\n');
+        if (quitting) { srv.close(); try { unlinkSync(arg); } catch {} await cleanup(); process.exit(0); } }); }); });
+  srv.listen(arg, () => process.stdout.write(JSON.stringify({ serving: arg, base }) + '\n'));
+  process.on('SIGTERM', async () => { try { unlinkSync(arg); } catch {} await cleanup(); process.exit(0); });
+  await new Promise(() => {});
+}
+
+const status = await exec(parse(lines), opt['keep-going']);
 await cleanup();
 process.exit(status);

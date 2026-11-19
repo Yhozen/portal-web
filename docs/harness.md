@@ -26,6 +26,21 @@ node tools/portal-ctl.mjs --game ~/path/to/Portal run 'map testchmb_a_00; pose 0
 node tools/portal-ctl.mjs help
 ```
 
+For many short runs against one map, keep a session open instead of paying the server, browser and map start-up each
+time:
+
+```sh
+node tools/portal-ctl.mjs --game ~/path/to/Portal serve /tmp/pctl.sock &      # prints {"serving": ...}
+node tools/portal-ctl.mjs --attach /tmp/pctl.sock run 'map testchmb_a_00; pose -830 -1200 150 0 90; screenshot /tmp/a.png'
+node tools/portal-ctl.mjs --attach /tmp/pctl.sock run 'step 66; screenshot /tmp/b.png'   # same page, about 0.4 s
+node tools/portal-ctl.mjs --attach /tmp/pctl.sock run 'build; map testchmb_a_00'        # rebuild, reload with the new code
+node tools/portal-ctl.mjs --attach /tmp/pctl.sock run quit
+```
+
+Scripts sent to a session run one at a time in arrival order, and the page's state (map, position, `lookat`, probes)
+carries over between them, so a script that needs a clean start should begin with `map`. Replies and exit codes are
+the same as a normal run; 3 means the socket couldn't be reached.
+
 Options: `--game DIR` (default `$PORTAL_DIR`, then the Steam path), `--size WxH` (default 1024x640), `--port N`,
 `--base URL` (use a server that is already running), `--keep-going`, `--no-build` (skip `./build.sh`), `--seed N`.
 `script -` reads the script from stdin. Lines are split like a shell (quotes group words) and `#` starts a comment,
@@ -34,6 +49,8 @@ with semicolons belongs in a script file.
 
 | command | what it does |
 | --- | --- |
+| `build` | run `./build.sh` and clear the browser cache; the next `map` loads the new code (for `serve` sessions) |
+| `quit` | end a `serve` session after the current script |
 | `map NAME [QUERY]` | load a map (`nochange=1` always); replies load time, requests, MB, warning and error counts |
 | `pose X Y Z PITCH YAW` | noclip, intro fade off, feet at X Y Z (eye 64 above), view angles in degrees |
 | `look PITCH YAW` | change only the view angles |

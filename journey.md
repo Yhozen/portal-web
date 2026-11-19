@@ -201,3 +201,9 @@ double the directory are skipped. escape_01's rot_door_frame names "debugempty" 
 engine's draw-nothing material (debug/debugempty), which isn't in the game files, so it's now built in and not drawn,
 instead of two 404s and the magenta fallback. Model draws skip nodraw materials. Every map from a00 to escape_02 now
 loads and runs 2 s with 0 errors, warnings or failed requests, and the 30 later-chamber views are byte-identical.
+
+**10:54 AM, persistent harness mode.** `portal-ctl serve SOCKET` keeps the asset server and browser up and takes
+scripts on a unix socket; `--attach SOCKET run/script` sends one and prints the replies with the usual exit codes.
+A follow-up script on a loaded map (pose, screenshot, state) takes 0.4 s end to end instead of about 3 s, and a map
+change costs only the map load. `build` rebuilds and clears the browser cache, `quit` ends the session. docs/harness.md
+has the details.

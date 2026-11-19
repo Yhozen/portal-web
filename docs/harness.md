@@ -42,7 +42,7 @@ with semicolons belongs in a script file.
 | `shoot blue\|orange` | fire the portal gun along the view, as the mouse does |
 | `use` | press E |
 | `fire ENTITY INPUT [PARAM]` | queue an entity input; it is delivered on the next `step` |
-| `set KEY VALUE` | renderer switch: `showSky usePVS useCubes useLightmap showOverlays noPortalRender maxDepth animFades` |
+| `set KEY VALUE` | renderer switch: `showSky usePVS useCubes useLightmap showOverlays noPortalRender maxDepth animFades showViewModel` |
 | `render` | draw one frame: draws, views, culled and `frame_ms` (CPU plus GPU, measured with `gl.finish`) |
 | `screenshot PATH` | draw one frame and save the canvas as PNG |
 | `bench N` | draw N frames back to back with the simulation still: avg, p50, p95, max ms and fps |

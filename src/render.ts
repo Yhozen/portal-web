@@ -1,7 +1,7 @@
 import { program } from './gl.ts';
 import { STRIDE, type WorldMesh } from './world.ts';
 import { MaterialCache, type GLMat } from './materials.ts';
-import { mul, type M4, type V3, basisMatrix, invertRigid, dot, cross, parseV3 } from './math.ts';
+import { mul, perspective, type M4, type V3, basisMatrix, invertRigid, dot, cross, parseV3 } from './math.ts';
 import { SURF } from './bsp.ts';
 import type { BSP } from './bsp.ts';
 import type { GLModel, Skinned } from './models.ts';
@@ -291,10 +291,24 @@ export class Renderer {
     this.drawTranslucent(vp, clip, visAt);
     void cross;
   }
+  /** first-person weapon model (its matrix is the eye's), drawn last over a cleared depth buffer with its own field of
+   * view, as Source's viewmodel pass does: viewmodel_fov 54 is a horizontal angle at 4:3, so the vertical one is
+   * 2·atan(tan 27° · 3/4) ≈ 41.8°, whatever the window's shape */
+  viewModel: PropInst | null = null; showViewModel = true; vmFov = 54;
+  private drawViewModel(view: M4, aspect: number) {
+    const vm = this.viewModel, gl = this.gl; if (!vm || !vm.visible || !vm.model || !this.showViewModel) return;
+    const proj = perspective(2 * Math.atan(Math.tan(this.vmFov * Math.PI / 360) * 0.75), aspect, 1, 1024), vp = mul(proj, view);
+    const saved = [this.instances, this.props, this.visBits, this.visCluster] as const;
+    this.instances = []; this.props = [vm]; this.visBits = null; this.visCluster = -2;
+    gl.disable(gl.STENCIL_TEST); gl.clear(gl.DEPTH_BUFFER_BIT);
+    this.drawModels(vp, NOCLIP, false); gl.enable(gl.BLEND); gl.depthMask(false); this.drawModels(vp, NOCLIP, true); gl.depthMask(true); gl.disable(gl.BLEND);
+    gl.enable(gl.STENCIL_TEST); [this.instances, this.props, this.visBits, this.visCluster] = saved;
+  }
   frame(proj: M4, view: M4, eye: V3) {
     const gl = this.gl; this.stats.draws = 0; this.stats.views = 0; this.stats.culled = 0;
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.STENCIL_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CW);
     gl.clearColor(0.05, 0.05, 0.06, 1); gl.clearStencil(0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     this.renderView(proj, view, eye, new Float32Array([0, 0, 0, -1e9]), 0, null);
+    this.drawViewModel(view, proj[5] / proj[0]);
   }
 }

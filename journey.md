@@ -127,3 +127,12 @@ first, invisible props skip. AE_CL_PLAYSOUND plays the soundscript at the prop, 
 engine uses the first attachment's position; the prop origin is within a few units for these). checks/anim-events.ctl:
 a01's elevator door open fires move_1 at 0.076 s, close_1 at 0.515 and 0.545, stop at 0.606, which is the first
 tick + cycle × 0.633 s for each. All four door/dropper soundscripts resolve to waves.
+
+**10:14 AM, first-person portal gun.** There was no viewmodel at all. v_portalgun.mdl is now drawn last, over a
+cleared depth buffer, at the eye, with Source's viewmodel_fov 54 (a horizontal angle at 4:3, so 41.8° vertical at any
+window shape). Sequences by activity: ACT_VM_DRAW when the gun is first held, PRIMARYATTACK per shot, FIZZLE when a
+cleanser takes the portals, PICKUP while carrying (held on its last frame), RELEASE on drop, IDLE otherwise, with the
+same cross-fades as props. checks/viewmodel.ctl records it with a per-frame probe: draw → idle at tick 66–68 (1.0 s,
+31 frames @30), fire1 → idle at 34 (0.5 s), release → idle at 46 (0.667 s); sampled every 2 ticks. `set
+showViewModel off` for comparisons. The 30 later-chamber views: 27 identical to the session-start build, 3 differ by
+under 0.07% of pixels, all the newly spawned security cameras (a10, a14).

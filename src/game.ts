@@ -1,6 +1,6 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
-import { findSeq, skinModel } from './models.ts';
+import { findSeq, skinModel, type GLModel } from './models.ts';
 import { F, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
@@ -219,6 +219,7 @@ export class Game {
   /** src: fire from somewhere else (the a01 pedestal gun's FirePortal1 input) */
   shootPortal(which: 0 | 1, src?: { eye: V3; f: V3 }) {
     if (!src && (!this.hasGun || !this.canFire[which])) return;
+    if (!src) this.vmPlay('act_vm_primaryattack');
     const eye = src ? src.eye : this.player.eye(); const f = src ? src.f : angleVectors(this.player.ang).f;
     this.tr.ignore = null;
     const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
@@ -470,23 +471,43 @@ export class Game {
   /** start a sequence by name on a prop entity (applied once the model has loaded) */
   /** current world matrix of an entity (brush, prop, mover or point) */
   entWorld(e: Ent): Float32Array { if (e.worldM && e.kv.parentname) return e.worldM; return entityMatrix(e.pos || e.origin, e.ang || e.angles); }
+  /** switch a prop to sequence si, cross-fading from the old one */
+  startSeq(pr: PropInst, m: GLModel, si: number) {
+    const nsq = m.skel.seqs[si];
+    if ((nsq.flags & F.SNAP) || this.r.animFades === false) pr.fades = [];
+    else if (pr.seq !== undefined && m.skel.seqs[pr.seq]) { const fade = Math.min(m.skel.seqs[pr.seq].fadeout, nsq.fadein);
+      if (fade > 0) (pr.fades ??= []).push({ seq: pr.seq, cycle: pr.cycle || 0, rate: pr.rate || 0, age: 0, fade, weight: 1 }); }
+    pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = nsq.looping;
+  }
+  /** the first-person portal gun (v_portalgun.mdl): drawn by the renderer's viewmodel pass, matrix set to the eye each
+   * frame. Sequences by activity: ACT_VM_DRAW when the gun is first held, PRIMARYATTACK per shot, FIZZLE when a
+   * cleanser takes the portals, PICKUP / RELEASE around carrying an object (held on PICKUP's last frame meanwhile),
+   * IDLE otherwise. */
+  vm: PropInst | null = null; private vmHeld = false;
+  vmPlay(act: string, then: string | null = 'act_vm_idle') {
+    const pr = this.vm, m = pr?.model; if (!pr || !m) return; const si = findSeq(m, act); if (si < 0) return;
+    this.startSeq(pr, m, si); pr.onDone = then ? () => this.vmPlay(then, null) : undefined;
+  }
+  updateViewModel() {
+    if (this.hasGun && !this.vm) { const pr: PropInst = this.vm = { model: null, matrix: m4(), visible: true, skin: 0, ambient: [1, 1, 1] }; this.r.viewModel = pr;
+      this.models.get('models/weapons/v_portalgun.mdl').then(m => { pr.model = m; this.vmPlay('act_vm_draw'); }); }
+    const pr = this.vm; if (!pr) return; pr.visible = this.hasGun;
+    const held = !!this.held; if (held !== this.vmHeld) { this.vmHeld = held; if (held) this.vmPlay('act_vm_pickup', null); else this.vmPlay('act_vm_release'); }
+  }
   playAnim(e: Ent, name: string, isDefault: boolean) {
     const pr = e.prop; if (!pr || !name) return;
     const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
       // the sequence being left keeps playing and fades out over min(its fadeout, the new one's fadein), 0.2 s by
       // default, unless the new sequence is STUDIO_SNAP (CSequenceTransitioner::CheckForSequenceChange in the SDK)
-      const nsq = m.skel.seqs[si];
-      if ((nsq.flags & F.SNAP) || this.r.animFades === false) pr.fades = [];
-      else if (pr.seq !== undefined && m.skel.seqs[pr.seq]) { const fade = Math.min(m.skel.seqs[pr.seq].fadeout, nsq.fadein);
-        if (fade > 0) (pr.fades ??= []).push({ seq: pr.seq, cycle: pr.cycle || 0, rate: pr.rate || 0, age: 0, fade, weight: 1 }); }
-      pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = nsq.looping;
+      this.startSeq(pr, m, si);
       pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim !== undefined ? e.defaultAnim : e.kv.defaultanim; /* SetDefaultAnimation with an empty value clears it */ if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
     if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
   }
-  animateProps(dt: number) {
-    for (const pr of this.r.props) { const m = pr.model; if (!m || pr.seq === undefined) continue;
+  animateProps(dt: number) { for (const pr of this.r.props) this.animateProp(pr, dt); if (this.vm) this.animateProp(this.vm, dt); }
+  animateProp(pr: PropInst, dt: number) {
+    { const m = pr.model; if (!m || pr.seq === undefined) return;
       // hidden props keep animating, as the server's frame advance does for EF_NODRAW entities; only skinning waits
-      const sk = m.skel, sq = sk.seqs[pr.seq]; if (!sq) continue;
+      const sk = m.skel, sq = sk.seqs[pr.seq]; if (!sq) return;
       const dur = Math.max(1, sq.frames - 1) / (sq.fps || 30);
       if (sq.frames > 1 && pr.rate) { let c = (pr.cycle || 0) + dt * pr.rate / dur;
         if (c >= 1) { if (pr.loop) c %= 1; else c = 1; } pr.cycle = c; /* before onDone, which may start the next sequence at cycle 0 */
@@ -495,7 +516,7 @@ export class Game {
           if (fs && fs.frames > 1 && f.rate) { const c = f.cycle + dt * f.rate * (fs.fps || 30) / (fs.frames - 1); f.cycle = fs.looping ? c - Math.floor(c) : Math.min(1, c); }
           const s = 1 - f.age / f.fade; f.weight = s <= 0 ? 0 : s >= 1 ? 1 : 3 * s * s - 2 * s * s * s; /* C_AnimationLayer::GetFadeout's spline */ }
         pr.fades = pr.fades.filter(f => f.weight > 0); }
-      if (!pr.visible) continue;   // C_BaseAnimating::DoAnimationEvents skips invisible entities too
+      if (!pr.visible) return;   // C_BaseAnimating::DoAnimationEvents skips invisible entities too
       if (sq.events.length) this.animEvents(pr, sq);
       const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses?.slice();
       const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3) + (fades ? '|' + fades.map(f => f.seq + ':' + f.cycle.toFixed(3) + ':' + f.weight.toFixed(3)).join(',') : '') + (poses ? '|' + poses.map(v => v.toFixed(2)).join(',') : '');
@@ -536,7 +557,7 @@ export class Game {
       const P = pr.poses ??= [0, 0]; P[0] = approach(P[0], goal[0], TURN); P[1] = approach(P[1], goal[1], TURN); e.camSees = goal !== t.rest; }
   }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.updateCameras(dt); this.animateProps(dt); this.r.time += dt;
+    this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;
@@ -708,7 +729,7 @@ export class Game {
         if (e.cls === 'trigger_once') { io.fire(e, 'ontrigger', a); e.killed = true; }
         else if (e.cls === 'trigger_multiple') { if (!e.waitUntil || io.time >= e.waitUntil) { io.fire(e, 'ontrigger', a); e.waitUntil = io.time + Math.max(0.1, +(e.kv.wait ?? 0.2)); } }
         else if (e.cls === 'trigger_teleport') { const d = io.find(e.kv.target, null, e)[0]; if (d && a === this.playerEnt) { pl.pos = [...d.origin] as V3; pl.vel = [0, 0, 0]; pl.ang = [0, d.angles[1], 0]; } }
-        else if (e.cls === 'trigger_portal_cleanser') { if (a === this.playerEnt) { if (this.gunPortals.some(p => p.open)) io.fire(e, 'onfizzle', a); this.fizzleGunPortals(); } else if (a.cube) { io.fire(e, 'ondissolvebox', a); io.fire(e, 'ondissolve', a); a.killed = true; a.onKill?.(); } }
+        else if (e.cls === 'trigger_portal_cleanser') { if (a === this.playerEnt) { if (this.gunPortals.some(p => p.open)) { io.fire(e, 'onfizzle', a); this.vmPlay('act_vm_fizzle'); } this.fizzleGunPortals(); } else if (a.cube) { io.fire(e, 'ondissolvebox', a); io.fire(e, 'ondissolve', a); a.killed = true; a.onKill?.(); } }
         else if (e.cls === 'trigger_changelevel' && !(sf & 2) && a === this.playerEnt) this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase());
       }
       for (const a of [...e.touching]) if (!now.has(a)) { e.touching.delete(a); io.fire(e, 'onendtouch', a); if (!e.touching.size) io.fire(e, 'onendtouchall', a); }

@@ -10,7 +10,7 @@ import { MaterialCache } from './materials.ts';
 import { Renderer } from './render.ts';
 import { ModelCache } from './models.ts';
 import { Game } from './game.ts';
-import { angleVectors, perspective, viewFrom, parseV3, type V3, sub, add } from './math.ts';
+import { angleVectors, perspective, viewFrom, parseV3, type V3, sub, add, entityMatrix } from './math.ts';
 
 declare global { interface Window { game: any; } }
 const log = (...a: any[]) => { console.log(...a); const el = document.getElementById('log'); if (el) el.textContent = a.join(' ') + '\n' + el.textContent!.slice(0, 2000); };
@@ -93,6 +93,7 @@ async function main() {
     gl.viewport(0, 0, canvas.width, canvas.height);
     const proj = perspective(75 * Math.PI / 180 * 0.82, canvas.width / canvas.height, 1, 16384);
     const eye = pl.eye(); const { f, r: rt, u } = angleVectors(pl.ang);
+    game.updateViewModel(); if (game.vm) game.vm.matrix = entityMatrix(eye, pl.ang);
     r.frame(proj, viewFrom(eye, f, rt, u), eye); stats.frames++; stats.draws = r.stats.draws;
     if (hint) hint.textContent = game.hud.hint ? localize(game.hud.hint) : '';
     if (fade) fade.style.opacity = String(game.hud.fade);

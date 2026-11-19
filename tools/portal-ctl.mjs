@@ -142,7 +142,7 @@ const handlers = {
   async use() { need(); return page.evaluate(() => { const g = window.game.game; g.use(); return { held: !!g.held }; }); },
   async fire(w) { need(); if (!w[2]) throw Object.assign(new Error('fire ENTITY INPUT [PARAM]'), { usage: true });
     return page.evaluate(([t, i, p]) => { window.game.io.send(t, i, p ?? ''); return { queued: t, input: i, note: 'delivered on the next step' }; }, [w[1], w[2], w[3]]); },
-  async set(w) { need(); const k = w[1], ok = ['showSky', 'usePVS', 'useCubes', 'useLightmap', 'showOverlays', 'noPortalRender', 'maxDepth', 'animFades'];
+  async set(w) { need(); const k = w[1], ok = ['showSky', 'usePVS', 'useCubes', 'useLightmap', 'showOverlays', 'noPortalRender', 'maxDepth', 'animFades', 'showViewModel'];
     if (!ok.includes(k)) throw Object.assign(new Error('set KEY VALUE, KEY one of ' + ok.join(' ')), { usage: true });
     const v = k === 'maxDepth' ? num(w[2], k) : /^(1|true|on)$/i.test(w[2] || ''); return page.evaluate(([k, v]) => { window.game.r[k] = v; return { [k]: window.game.r[k] }; }, [k, v]); },
   async render() { need(); return page.evaluate(RENDER); },

@@ -258,3 +258,16 @@ down from 16 s. Two problems, both in how the ball model is drawn:
 checks/energy-ball-views.ctl holds a ball and looks at it from three sides: before, one sphere and two slivers;
 after, a sphere from every side (energy-ball-views-compare.png, energy-ball-compare.mp4). The caught ball in the
 catchers is a plain prop_dynamic on an attachment and is left alone.
+
+**12:20 PM, a10's pillar lifts stopped halfway.** checks/lift.ctl opens both doors of the first pillar lift. Each pillar
+is two stacked func_doors moving down at 15 units/s: lift_pillar_door_bottom_a (120 units), and
+lift_pillar_door_top_a (128 units), which is parented to the bottom one's brush, with the platform brush and
+lift_platform.mdl parented on top. The probe showed the top door's own t going 0 to 1 while its world z only followed
+its parent: the hierarchy pass rebuilt every child from its parent and the offset at spawn, which threw away a
+parented door's own travel. So the platform stopped at z -122, hovering 128 units over the pit, instead of reaching
+-250. A parented func_door now slides in its parent's space. The platform goes down 248 units, at 30 units/s
+for 8 s and 15 for the last 0.53 s, and ends flush with the floor (lift-compare.mp4, lift-compare-sheet.png).
+
+The model trailed its brush by up to 0.23 units while moving: the chain is four deep (bottom door, its brush, top
+door, platform brush, model) and the hierarchy ran two passes. It runs four passes now and the model stays exactly
+5.99 units under the brush. The 30 later-chamber views are byte-identical before and after.

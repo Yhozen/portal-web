@@ -691,7 +691,7 @@ export class Game {
       const d = sub(pp, e.trigBase.p); e.bmins = add(e.trigBase.lo, d); e.bmaxs = add(e.trigBase.hi, d);
     }
     // hierarchy: child = parent(now) * inverse(parent at attach time) * child at attach time (full rotation + translation)
-    for (let pass = 0; pass < 2; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
+    for (let pass = 0; pass < 4; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
       const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos || par === e) continue;
       // SetParentAttachment: the child sits on the attachment itself (its origin and angles become the attachment's) and
       // follows it as the parent animates; SetParentAttachmentMaintainOffset keeps the offset it had when attached
@@ -705,7 +705,11 @@ export class Game {
         e.attachRel = now ? mul(invertRigid(P), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)) : mul(invertRigid(par.spawnM || P), e.spawnM || entityMatrix(e.origin, e.angles));
         e.attachAngInv = e.closedAng || e.cls === 'func_rotating' ? invertRigid(entityMatrix(e.origin, e.ang)) : null; }
       // a child that also rotates on its own (rotating door / func_rotating on a moving parent): apply its local spin about its own origin
-      const W = e.attachAngInv ? mul(P, mul(e.attachRel, mul(e.attachAngInv, entityMatrix(e.origin, e.ang)))) : mul(P, e.attachRel); e.worldM = W;
+      // a func_door on a moving parent (a10's telescoping lift pillars: the top door rides the bottom one's brush) slides
+      // in its parent's space, so its own travel adds to the parent's instead of being overwritten by it
+      let L = e.attachRel; if (e.cls === 'func_door' && e.closedPos && e.t) { const d = scale(sub(e.openPos, e.closedPos), e.t), R = e.spawnM || entityMatrix(e.origin, e.angles);
+        L = mul(L, entityMatrix([R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[4] * d[0] + R[5] * d[1] + R[6] * d[2], R[8] * d[0] + R[9] * d[1] + R[10] * d[2]], [0, 0, 0])); }
+      const W = e.attachAngInv ? mul(P, mul(L, mul(e.attachAngInv, entityMatrix(e.origin, e.ang)))) : mul(P, L); e.worldM = W;
       if (e.prop) e.prop.matrix = W;
       if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
     }

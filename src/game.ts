@@ -410,6 +410,20 @@ export class Game {
       const on = i === 'turnon' ? 1 : i === 'turnoff' ? 0 : i === 'toggle' ? (e.lightOn ?? !(+(e.kv.spawnflags || 0) & 1) ? 0 : 1) : -1; if (on < 0) return false;
       e.lightOn = !!on; const n = this.r.setLightStyle(st, on); io.log.push(`${io.time.toFixed(2)} light style ${st} ${on ? 'on' : 'off'} (${n} faces)`); return true; };
     H.set('light', lightIn); H.set('light_spot', lightIn);
+    // env_shake (SDK 2013 EnvShake.cpp + UTIL_ScreenShake): amplitude capped at 16, falls off linearly to the radius (0 or
+    // flag 1 = everyone at full), only players on the ground unless flag 4; flag 0x20 is no view shake
+    H.set('env_shake', (e, i) => { const sf = +(e.kv.spawnflags || 0);
+      if (i === 'stopshake') { this.shakes = []; return true; }
+      if (i !== 'startshake' && i !== 'amplitude' && i !== 'frequency') return false;
+      const rad = sf & 1 ? 0 : +(e.kv.radius || 0); let amp = Math.min(16, +(e.kv.amplitude || 0));
+      if (i === 'startshake' && !(sf & 4) && !this.player.onGround) return true;
+      if (rad > 0) { const c = add(this.player.pos, [0, 0, 36]), d = len(sub(c, e.origin)); if (d > rad) return true; amp *= 1 - d / rad; }
+      if (amp <= 0) return true;
+      const longest = () => this.shakes.reduce((a: any, b: any) => !a || b.duration > a.duration ? b : a, null);
+      if (i === 'startshake') { if (!(sf & 0x20) && this.shakes.length < 32) this.shakes.push({ amplitude: amp, frequency: +(e.kv.frequency || 0), duration: +(e.kv.duration || 0), next: 0, end: io.time + +(e.kv.duration || 0), offset: [0, 0, 0], angle: 0 }); }
+      else if (i === 'amplitude') { const l = longest(); if (l) l.amplitude = amp; }
+      else { const l = longest(); if (l) l.frequency = +(e.kv.frequency || 0); }
+      return true; });
     H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; this.wakeCubes(e); if (e.inst) e.inst.visible = e.enabled; return true; });
     const propVis = (e: Ent, i: string, param: string) => { if (e.cube && (i === 'wake' || i === 'enablemotion')) { e.cube.asleep = false; e.cube.sleep = 0; return true; } if (e.cube && (i === 'sleep' || i === 'disablemotion')) { e.cube.asleep = true; return true; } if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') { this.playAnim(e, param, false); }
       else if (i === 'setdefaultanimation') { e.defaultAnim = param; }
@@ -658,8 +672,23 @@ export class Game {
       if (dist < 2048 && local[0] > -0.2 && this.tr.ray(lens, eye, MASK_SHOT_PORTAL).fraction > 0.98) goal = aimFor(t, local as V3, e.prop.poses);
       const P = pr.poses ??= [0, 0]; P[0] = approach(P[0], goal[0], TURN); P[1] = approach(P[1], goal[1], TURN); e.camSees = goal !== t.rest; }
   }
+  shakes: { amplitude: number; frequency: number; duration: number; next: number; end: number; offset: V3; angle: number }[] = [];
+  shakeOffset: V3 = [0, 0, 0]; shakeRoll = 0;
+  /** CViewEffects::CalcShake (SDK 2013 view_effects.cpp): each shake re-picks a random offset and roll 'frequency' times a
+   *  second, scaled by a sine whose frequency rises as the shake runs out and by the squared remaining fraction */
+  updateShake(dt: number) {
+    const now = this.io.time; const off: V3 = [0, 0, 0]; let roll = 0;
+    this.shakes = this.shakes.filter(s => !(now > s.end || s.duration <= 0 || s.amplitude <= 0 || s.frequency <= 0));
+    for (const s of this.shakes) {
+      if (now > s.next) { s.next = now + 1 / s.frequency; for (let k = 0; k < 3; k++) s.offset[k] = (Math.random() * 2 - 1) * s.amplitude; s.angle = (Math.random() * 2 - 1) * s.amplitude * 0.25; }
+      let fr = (s.end - now) / s.duration; const freq = fr ? s.frequency / fr : 0; fr *= fr; fr *= Math.sin(Math.min(1e8, now * freq));
+      off[0] += s.offset[0] * fr; off[1] += s.offset[1] * fr; off[2] += s.offset[2] * fr; roll += s.angle * fr;
+      s.amplitude -= s.amplitude * (dt / (s.duration * s.frequency));
+    }
+    this.shakeOffset = off; this.shakeRoll = roll;
+  }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.r.time += dt;
+    this.updateShake(dt); this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;

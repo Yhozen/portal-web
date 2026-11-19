@@ -94,7 +94,10 @@ async function main() {
     const proj = perspective(75 * Math.PI / 180 * 0.82, canvas.width / canvas.height, 1, 16384);
     const eye = pl.eye(); const { f, r: rt, u } = angleVectors(pl.ang);
     game.updateViewModel(); if (game.vm) game.vm.matrix = entityMatrix(eye, pl.ang);
-    r.frame(proj, viewFrom(eye, f, rt, u), eye); stats.frames++; stats.draws = r.stats.draws;
+    // screen shake moves the view origin and adds roll (CViewEffects::ApplyShake); the viewmodel isn't shaken
+    const so = game.shakeOffset, sr = game.shakeRoll; let ve = eye, vf = f, vr = rt, vu = u;
+    if (so[0] || so[1] || so[2] || sr) { ve = add(eye, so); ({ f: vf, r: vr, u: vu } = angleVectors([pl.ang[0], pl.ang[1], (pl.ang[2] || 0) + sr])); }
+    r.frame(proj, viewFrom(ve, vf, vr, vu), ve); stats.frames++; stats.draws = r.stats.draws;
     if (hint) hint.textContent = game.hud.hint ? localize(game.hud.hint) : '';
     if (fade) fade.style.opacity = String(game.hud.fade);
   };

@@ -136,3 +136,23 @@ same cross-fades as props. checks/viewmodel.ctl records it with a per-frame prob
 31 frames @30), fire1 → idle at 34 (0.5 s), release → idle at 46 (0.667 s); sampled every 2 ticks. `set
 showViewModel off` for comparisons. The 30 later-chamber views: 27 identical to the session-start build, 3 differ by
 under 0.07% of pixels, all the newly spawned security cameras (a10, a14).
+
+**10:18 AM, floor turrets.** The run was interrupted at about 10:10 with the turret work uncommitted; I picked it up,
+rebuilt and re-ran both checks before committing. npc_portal_turret_floor had no model or behaviour. It now spawns
+turret_01.mdl as a physics box sized from the model's hull (16×16×32 half-extents, standing on its origin, so the
+rigid body code learned non-cubic boxes: corners, AABB and moment of inertia from the three half-extents; cubes
+are unchanged). Behaviour follows HL2's npc_turret_floor.cpp from the public SDK, since Portal's own turret code
+isn't public: closed until the player is in a 60° ground cone, in range and visible from the "eyes" attachment;
+deploy, then aim by moving the aim_yaw/aim_pitch poses toward the goal measured in the muzzle's own frame (at most
+18° per think, a third held back), fire when within 10°, search ±60° for 5 s when the player is lost, retire.
+Up·z under 0.5 counts as tipped: alarm, thrash and fire for 2–2.5 s, close, die, OnTipped/OnDeath fire.
+env_physexplosion now pushes physics bodies (magnitude minus 0.4 per unit, applied at the blast point so it spins),
+which is what a11's knock-over demonstration uses.
+
+checks/turret.ctl (player in the training turret's cone, strafing, then behind it): deploy → idlealert at frame 20,
+active from frame 22, 46 shots; while active the muzzle-to-player error has median 0°; once the player is behind it,
+search for 5 s, retract and back to idle. checks/turret-tip.ctl: the explosion pushes it at 189 in/s, it is tipped
+by tick 18, fires 37 shots while thrashing, retracts at tick 190 and is dead at 238, lying on its side at z 16. The
+first version of that check filmed from the player's spot, where the turret falls behind the pillar; it now films
+from the side with the viewmodel off. later-smoke.ctl (20 s from each later spawn): no page errors.
+Clips: /workspace/portal-web-shots/anim/turret-after.mp4, turret-tip-after.mp4 and their -sheet.png.

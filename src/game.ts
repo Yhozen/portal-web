@@ -2,7 +2,7 @@ import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
 import { findSeq, skinModel, type GLModel } from './models.ts';
 import { F, type Seq, type SeqEvent } from './anim.ts';
-import { aimTable, aimFor, approach } from './npc.ts';
+import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -15,7 +15,9 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
 
-interface Cube extends Body { ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
+interface Cube extends Body { /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
+
+interface Turret { state: TurretState; next: number; shot: number; lastSight: number; thrash: number; eyes: number; shots: number; seen: boolean; }
 
 export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
@@ -99,6 +101,7 @@ export class Game {
       const p: Portal = { pos: e.origin, f, r, u, color: kv.portaltwo === '1' ? ORANGE : BLUE, open: false, linked: null, name: e.name }; e.portal = p; this.portals.push(p);
       if (kv.activated === '1') this.activatePortal(e, true);
     }
+    if (c === 'npc_portal_turret_floor') this.spawnTurret(e);
     if (c === 'npc_security_camera') { kv.model ||= 'models/props/security_camera.mdl'; e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); e.prop.poses = [0, 0]; this.cameras.push(e); }
     if (c === 'weapon_portalgun' && !/spawn/.test(e.name)) { e.prop = this.addProp('models/weapons/w_portalgun.mdl', e.origin, e.angles); e.onKill = () => { if (e.prop) e.prop.visible = false; }; }
     if (c === 'func_portal_bumper') this.bumpers.push(e);
@@ -120,7 +123,63 @@ export class Game {
     e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
     this.updateCubeBox(cube); if (e.killed) e.onKill();
   }
-  updateCubeBox(c: Cube) { const b = c.ent.box, x = halfExtent(c).map(v => Math.min(v, c.ext * 1.3)); b.mins = [c.pos[0] - x[0], c.pos[1] - x[1], c.pos[2] - x[2]]; b.maxs = [c.pos[0] + x[0], c.pos[1] + x[1], c.pos[2] + x[2]]; }
+  /** floor turret: a physics box sized from the model's hull, standing on its origin; behaviour in updateTurret */
+  spawnTurret(e: Ent) {
+    const kv = e.kv; kv.model ||= 'models/props/turret_01.mdl';
+    const prop = e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); prop.poses = [0, 0];
+    this.models.get(kv.model).then(m => { if (!m) return; const d = m.data, he = [0, 1, 2].map(k => (d.hullMaxs[k] - d.hullMins[k]) / 2) as V3, off = [0, 1, 2].map(k => (d.hullMaxs[k] + d.hullMins[k]) / 2) as V3;
+      const R = entityMatrix([0, 0, 0], e.angles), pos = add(e.origin, xformDir(R, off)), ext = Math.min(...he);
+      const cube: Cube = { ent: e, pos, vel: [0, 0, 0], held: false, prop, ext, h: ext, he, off, onGround: false, spawn: [...pos] as V3, alive: true, tunnel: null, R, w: [0, 0, 0], sleep: 0, asleep: true,
+        turret: { state: 'idle', next: 0, shot: 0, lastSight: 0, thrash: 0, eyes: d.attachments.findIndex(a => a.name.toLowerCase() === 'eyes'), shots: 0, seen: false } };
+      e.cube = cube; this.cubes.push(cube); this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
+      e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
+      this.updateCubeBox(cube); if (e.killed) e.onKill(); });
+  }
+  turretSay(c: Cube, what: string) { this.snd?.play('npc_floorturret.' + what, c.pos); }
+  turretAct(c: Cube, seq: string) { const pr = c.prop, m = pr.model; if (!m) return; const si = findSeq(m, seq); if (si >= 0 && pr.seq !== si) { this.startSeq(pr, m, si); pr.onDone = undefined; } }
+  /** a turret think, at the SDK's think rates (0.05 s, 0.1 s while active) */
+  updateTurret(c: Cube) {
+    const T = c.turret!, now = this.io.time, pr = c.prop, m = pr.model; if (!m || T.state === 'dead' || T.eyes < 0 || now < T.next) return;
+    const P = pr.poses ??= [0, 0], R = c.R, up = R[10], seqName = () => m.skel.seqs[pr.seq ?? 0]?.name;
+    const finished = () => !pr.loop && (pr.cycle ?? 0) >= 1;
+    // model-space goal from world angles relative to the turret
+    const W = pr.matrix, Wi = invertRigid(W), toModel = (v: V3) => xformDir(Wi, v);
+    const f = attachFrame(m, T.eyes, P), eye = xformPoint(W, f.pos), muzzle = norm(xformDir(W, f.x));
+    const target: V3 = add(this.player.pos, [0, 0, 36]), to = sub(target, eye), dist = len(to), dir = scale(to, 1 / (dist || 1));
+    const fwd: V3 = [R[0], R[1], 0], fl = Math.hypot(fwd[0], fwd[1]) || 1, d2 = Math.hypot(dir[0], dir[1]) || 1;
+    const inCone = (fwd[0] * dir[0] + fwd[1] * dir[1]) / (fl * d2) > TURRET.cone;
+    this.tr.ignore = null; const vis = dist < TURRET.range && inCone && this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, c.ent).fraction > 0.98; T.seen = vis;
+    const face = (goal: V3) => turretFace(m, T.eyes, P, toModel(goal), 0, 1);
+    const shoot = () => { this.turretAct(c, 'fire'); pr.cycle = 0; this.snd?.play('npc_floorturret.shotsounds', eye); T.shots++; };
+    T.next = now + TURRET.think;
+    if (c.held) { if (T.state !== 'tipped') { /* carried: keeps its state but doesn't shoot */ } }
+    if (T.state !== 'tipped' && !c.held && up < 0.5) { T.state = 'tipped'; T.thrash = now + 2 + Math.random() * 0.5; this.snd?.play('npc_floorturret.alarm', eye); this.turretSay(c, 'talktipped'); this.io.fire(c.ent, 'ontipped', c.ent); return; }
+    switch (T.state) {
+      case 'idle': if (vis && !c.held) { T.state = 'deploy'; this.turretAct(c, 'deploy'); this.snd?.play('npc_floorturret.deploy', eye); this.turretSay(c, 'talkdeploy'); this.io.fire(c.ent, 'ondeploy', c.ent); } break;
+      case 'deploy': if (finished()) { this.turretAct(c, 'idlealert'); T.shot = now + 1; T.state = 'search'; T.lastSight = now + TURRET.maxWait; } break;
+      case 'search':
+        if (vis && !c.held) { T.state = 'active'; T.shot = now + 0.5; this.snd?.play('npc_floorturret.activate', eye); this.turretSay(c, 'talkactive'); break; }
+        if (now > T.lastSight) { T.state = 'retire'; break; }
+        { const a = Math.atan2(R[1], R[0]) * 180 / Math.PI, ang: V3 = [Math.sin(now) * 15, a + Math.sin(now * 2) * 60, 0]; face(angleVectors(ang).f); }
+        if (seqName() === 'fire' && finished()) this.turretAct(c, 'idlealert'); break;
+      case 'active':
+        T.next = now + TURRET.thinkActive;
+        if (!vis || c.held) { T.state = 'search'; T.lastSight = now + TURRET.maxWait; this.turretSay(c, 'talksearch'); break; }
+        if (T.shot < now && dot(dir, muzzle) >= TURRET.aimDot) shoot(); else if (seqName() === 'fire' && finished()) this.turretAct(c, 'idlealert');
+        face(dir); break;
+      case 'retire':
+        if (seqName() !== 'retract') { this.turretAct(c, 'idlealert'); if (!face(xformDir(W, [1, 0, 0]))) { this.turretAct(c, 'retract'); this.snd?.play('npc_floorturret.retire', eye); this.turretSay(c, 'talkretire'); this.io.fire(c.ent, 'onretire', c.ent); } }
+        else if (finished()) { T.state = 'idle'; this.turretAct(c, 'idle'); }
+        break;
+      case 'tipped':
+        if (up >= 0.5 && !c.held) { T.state = 'search'; T.lastSight = now + TURRET.maxWait; break; }   // ReturnToLife
+        if (now < T.thrash) { if (T.shot < now) { shoot(); T.shot = now + 0.05; } const a = Math.atan2(R[1], R[0]) * 180 / Math.PI; face(angleVectors([(Math.random() * 2 - 1) * 60, a + (Math.random() * 2 - 1) * 60, 0]).f); }
+        else if (seqName() !== 'retract') { this.turretAct(c, 'idlealert'); if (!face(xformDir(W, [1, 0, 0]))) { this.snd?.play('npc_floorturret.die', eye); this.turretAct(c, 'retract'); this.snd?.play('npc_floorturret.retract', eye); } }
+        else if (finished()) { T.state = 'dead'; this.io.fire(c.ent, 'ondeath', c.ent); }
+        break;
+    }
+  }
+  updateCubeBox(c: Cube) { const cap = (c.he ? Math.max(...c.he) : c.ext) * 1.3, b = c.ent.box, x = halfExtent(c).map(v => Math.min(v, cap)); b.mins = [c.pos[0] - x[0], c.pos[1] - x[1], c.pos[2] - x[2]]; b.maxs = [c.pos[0] + x[0], c.pos[1] + x[1], c.pos[2] + x[2]]; }
   // ---------- portals ----------
   activatePortal(e: Ent, on: boolean) {
     const p: Portal = e.portal; if (!p) return;
@@ -383,6 +442,16 @@ export class Game {
     H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
     H.set('env_fade', (e, i) => { if (i !== 'fade') return true; const from = +e.kv.spawnflags & 1; const dur = +(e.kv.duration || 1), hold = +(e.kv.holdtime || 0);
       if (from) { this.hud.fade = 1; this.hud.fadeTarget = 0; this.hud.fadeRate = 1 / Math.max(0.01, dur); this.hud.fadeHoldUntil = io.time + hold; } else { this.hud.fadeTarget = 1; this.hud.fadeRate = 1 / Math.max(0.01, dur); } return true; });
+    // env_physexplosion (SDK 2013 physobj.cpp, CPhysExplosion::Explode): every physics body named by targetentityname, or
+    // within radius (0: any distance), is pushed away from the explosion with damage magnitude − 0.4 × distance (at least
+    // 1), applied at the explosion point so it also spins. There is no mass model here: 8 in/s per damage point is tuned so
+    // a11's magnitude-30 kicks tip the 64-unit turret over, as they are placed to.
+    H.set('env_physexplosion', (e, i) => { if (i !== 'explode') return false; const o = e.pos || e.origin, rad = +(e.kv.radius || 0), tgt = (e.kv.targetentityname || '').toLowerCase(), mag = +(e.kv.magnitude || 0);
+      for (const c of this.cubes) { if (!c.alive || c.held || (tgt && c.ent.name !== tgt)) continue; const spot = [...c.pos] as V3, from = [...o] as V3; if (+(e.kv.spawnflags || 0) & 4) from[2] = spot[2];
+        const d = sub(spot, from), dist = len(d); if (rad && dist > rad) continue; const dmg = Math.max(1, mag - dist * 0.4), j = scale(d, 8 * dmg / (dist || 1));
+        const r = sub(o, c.pos), he = c.he, invI = he ? 9 / (2 * (he[0] ** 2 + he[1] ** 2 + he[2] ** 2)) : 6 / ((2 * c.h) ** 2);
+        c.vel = add(c.vel, j); c.w = add(c.w, scale(cross(r, j), invI)); c.asleep = false; c.sleep = 0; this.io.log.push(`${this.io.time.toFixed(2)} ${e.name} pushed ${c.ent.name} ${len(j).toFixed(0)} in/s`); }
+      return true; });
     H.set('trigger_portal_cleanser', (e, i) => { if (i === 'fizzleTouchingPortals'.toLowerCase()) this.fizzleGunPortals(); return false; });
     H.set('ambient_generic', (e, i, p) => { const sn = this.snd; const fl = +(e.kv.spawnflags || 0);
       const start = () => { e.sndH?.stop(); if (!sn) return; const msg = e.kv.message || ''; e.sndH = sn.play(msg, e.pos || e.origin, { vol: Math.min(1, +(e.kv.health ?? 10) / 10), everywhere: !!(fl & 1), loop: fl & 32 ? false : undefined, music: /^portal\.song|music\//i.test(msg) }); this.io.log.push(`${io.time.toFixed(2)} sound ${msg}`); };
@@ -639,7 +708,8 @@ export class Game {
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
     // held-cube prop matrix
-    for (const c of this.cubes) { const m = new Float32Array(c.R); m[12] = c.pos[0]; m[13] = c.pos[1]; m[14] = c.pos[2]; m[15] = 1; c.prop.matrix = m; }
+    for (const c of this.cubes) { const m = new Float32Array(c.R), o = c.off ? sub(c.pos, xformDir(c.R, c.off)) : c.pos; m[12] = o[0]; m[13] = o[1]; m[14] = o[2]; m[15] = 1; c.prop.matrix = m; }
+    for (const c of this.cubes) if (c.turret && c.alive) this.updateTurret(c);
   }
   onTrain(e: Ent) { const p = this.player.pos; const lo = e.platform ? e.platMins : this.bsp.models[e.model].mins, hi = e.platform ? e.platMaxs : this.bsp.models[e.model].maxs; return p[0] > e.pos[0] + lo[0] - 16 && p[0] < e.pos[0] + hi[0] + 16 && p[1] > e.pos[1] + lo[1] - 16 && p[1] < e.pos[1] + hi[1] + 16 && Math.abs(p[2] - (e.pos[2] + hi[2])) < 4; }
   updateCube(c: Cube, dt: number) {

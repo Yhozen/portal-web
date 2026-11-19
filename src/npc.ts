@@ -40,3 +40,33 @@ export function aimFor(t: AimTable, d: V3, cur?: [number, number]): [number, num
 }
 /** move a pose parameter toward a goal at a limited rate, the short way round */
 export const approach = (cur: number, goal: number, maxStep: number) => cur + Math.max(-maxStep, Math.min(maxStep, goal - cur));
+
+/** an attachment's frame (axes and origin) in model space for a set of pose parameters */
+export function attachFrame(m: GLModel, att: number, poses: number[]): { x: V3; y: V3; z: V3; pos: V3 } {
+  const a = m.data.attachments[att], M = boneMatrices(m.skel, 0, 0, { poses }), b = a.bone * 12, A = a.m;
+  const col = (c: number): V3 => [0, 1, 2].map(r => M[b + r * 4] * A[c] + M[b + r * 4 + 1] * A[4 + c] + M[b + r * 4 + 2] * A[8 + c] + (c === 3 ? M[b + r * 4 + 3] : 0)) as V3;
+  return { x: col(0), y: col(1), z: col(2), pos: col(3) };
+}
+
+// Floor turrets (npc_portal_turret_floor). Portal's turret code isn't public; the state machine follows HL2's
+// npc_turret_floor.cpp from the public SDK 2013, which Portal's turret is built on: closed and auto-searching until the
+// player is in a 60° cone (dot 0.4 on the ground plane), in range and visible from the eyes; deploy (0.667 s), then
+// active — aim with UpdateFacing (goal angles in the muzzle's frame, each think moves at most 0.05 s × 360°/s and
+// applies a third less, diff / 1.5) and fire whenever the muzzle is within 10° of the target, one shot per 0.1 s
+// think; lose the player and search for 5 s sweeping ±60° yaw / ±15° pitch, then retire. Up · z < 0.5 is tipped:
+// thrash and fire for 2–2.5 s, then close and die.
+export const TURRET = { range: 1200, cone: 0.4, maxWait: 5, thinkActive: 0.1, think: 0.05, turnPerThink: 0.05 * 360, aimDot: 0.9848 };
+export type TurretState = 'idle' | 'deploy' | 'search' | 'active' | 'retire' | 'tipped' | 'dead';
+const DEG = 180 / Math.PI;
+/** Source VectorAngles for a direction: [pitch (down positive), yaw] in degrees */
+export const dirAngles = (d: V3): [number, number] => [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * DEG, Math.atan2(d[1], d[0]) * DEG];
+const angNorm = (a: number) => ((a + 180) % 360 + 360) % 360 - 180;
+/** CNPC_FloorTurret::UpdateFacing: goalDir is in model space; poses [yaw, pitch] are updated in place. Returns whether it moved. */
+export function turretFace(m: GLModel, eyes: number, poses: number[], goalDir: V3, yawI: number, pitchI: number): boolean {
+  const f = attachFrame(m, eyes, poses), d = goalDir, l: V3 = [d[0] * f.x[0] + d[1] * f.x[1] + d[2] * f.x[2], d[0] * f.y[0] + d[1] * f.y[1] + d[2] * f.y[2], d[0] * f.z[0] + d[1] * f.z[1] + d[2] * f.z[2]];
+  const [lp, ly] = dirAngles(l), step = TURRET.turnPerThink;
+  const dp = angNorm(Math.max(-step, Math.min(step, angNorm(lp)))), dy = angNorm(Math.max(-step, Math.min(step, angNorm(ly))));
+  const pp = m.skel.poseParams; const clamp = (i: number, v: number) => Math.max(pp[i].start, Math.min(pp[i].end, v));
+  poses[pitchI] = clamp(pitchI, poses[pitchI] + dp / 1.5); poses[yawI] = clamp(yawI, poses[yawI] + dy / 1.5);
+  return Math.abs(dp) > 0.1 || Math.abs(dy) > 0.1;
+}

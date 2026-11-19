@@ -7,7 +7,7 @@
 // Usage and the command list: docs/harness.md, or `node tools/portal-ctl.mjs help`.
 import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { createServer } from 'node:net';
 import { parseArgs } from 'node:util';
@@ -38,11 +38,18 @@ commands:
   errors                      console errors, warnings and page errors since the last call
   eval JS                     evaluate JS in the page (window.game is the engine); replies the JSON result
   sleep S                     wait S seconds of wall time
+  record PATH FRAMES [FPS] [KEYS]  step the fixed tick loop and encode every frame (mp4 or webm, default 33 fps, labelled
+                              with frame, time and tick unless --no-label); window.__probe() is logged per frame if set
+  sheet VIDEO OUT [CxR] [W] [A-B]  contact sheet of C*R evenly spaced frames (default 6x4, 320 px wide tiles)
+  frames VIDEO DIR [A-B]      extract frames as PNGs
+  anim [REGEX]                animated props: entity, model, sequence, cycle, rate, loop, frames, fps, duration
+  poses OUT TICKS [REGEX] [EVERY] [KEYS]  step TICKS and write each matching prop's bone positions per tick (JSONL);
+                              replies per-prop sequence spans and measured cycles per second
 exit status: 0 ok, 1 a command failed, 2 usage error, 3 the server or browser could not be started`;
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   game: { type: 'string' }, size: { type: 'string', default: '1024x640' }, port: { type: 'string' }, base: { type: 'string' },
-  'keep-going': { type: 'boolean', default: false }, 'no-build': { type: 'boolean', default: false }, seed: { type: 'string', default: '1' }, help: { type: 'boolean', default: false } } });
+  'keep-going': { type: 'boolean', default: false }, 'no-build': { type: 'boolean', default: false }, 'no-label': { type: 'boolean', default: false }, seed: { type: 'string', default: '1' }, help: { type: 'boolean', default: false } } });
 const [verb, arg] = positionals;
 if (opt.help || verb === 'help' || !verb) { console.log(HELP); process.exit(verb || opt.help ? 0 : 2); }
 
@@ -97,6 +104,9 @@ const attach = p => { p.on('console', m => { if ((m.type() === 'error' && !/^Fai
   p.on('response', r => { if (r.status() >= 400) logs.push({ type: 'http', text: r.status() + ' ' + decodeURIComponent(new URL(r.url()).pathname) }); });
   p.on('pageerror', e => logs.push({ type: 'pageerror', text: String(e.message).slice(0, 300) })); };
 
+const FONT = ['/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'].find(existsSync) || '';
+const run = (cmd, args) => new Promise((res, rej) => { const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = ''; p.stdout.on('data', d => o += d); p.stderr.on('data', d => e += d); p.on('exit', c => c ? rej(new Error(cmd + ' failed: ' + e.slice(-300))) : res(o)); });
+const keyInput = k => { k = k.toLowerCase(); return { fwd: (k.includes('w') ? 1 : 0) - (k.includes('s') && !k.includes('space') ? 1 : 0), side: (k.includes('d') && !k.includes('duck') ? 1 : 0) - (k.includes('a') && !k.includes('space') ? 1 : 0), jump: k.includes('space'), duck: k.includes('duck') }; };
 const need = () => { if (!page) throw new Error('no map loaded (use: map NAME)'); };
 const num = (s, what) => { const v = Number(s); if (!Number.isFinite(v)) throw Object.assign(new Error(`${what}: not a number: ${s}`), { usage: true }); return v; };
 // one frame drawn and finished on the GPU, timed
@@ -156,6 +166,56 @@ const handlers = {
     const m = window.game.bsp.entities.filter(e => R.test(e.classname)); return { count: m.length, ents: m.slice(0, n).map(e => ({ classname: e.classname, targetname: e.targetname, origin: e.origin })) }; }, [re, n]); },
   async errors() { const l = logs; logs = []; return { count: l.length, logs: l }; },
   async eval(w, raw) { need(); const js = raw.replace(/^eval\s+/, ''); /* the rest of the line as written, quotes included */ const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js); return { value: v }; },
+  // ---- animation checks: video, contact sheets, pose dumps ----
+  async record(w) { need(); const f = w[1], frames = Math.floor(num(w[2] ?? 0, 'FRAMES')); if (!f || frames < 1) throw Object.assign(new Error('record PATH FRAMES [FPS] [KEYS]'), { usage: true });
+    const fps = num(w[3] ?? 33, 'FPS'), keys = w[4] || '', inp = keyInput(keys); mkdirSync(dirname(resolve(f)), { recursive: true });
+    const { w: cw, h: ch } = await page.evaluate(() => { const c = document.getElementById('c'); return { w: c.width, h: c.height }; });
+    const vf = ['vflip'];
+    if (!opt['no-label']) vf.push(`drawtext=fontfile=${FONT}:text='%{eif\\:n\\:d\\:4}  t=%{eif\\:t*1000\\:d}ms  tick %{eif\\:floor(n*66/${fps}+1e-6)\\:d}':x=8:y=8:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=4`);
+    const webm = /\.webm$/i.test(f);
+    const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb0', '-s', `${cw}x${ch}`, '-r', String(fps), '-i', '-', '-vf', vf.join(','),
+      ...(webm ? ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-row-mt', '1', '-deadline', 'realtime', '-cpu-used', '8'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']), f], { stdio: ['pipe', 'ignore', 'pipe'] });
+    let fferr = ''; ff.stderr.on('data', d => fferr += d); const done = new Promise(r => ff.on('exit', r));
+    let ticks = 0, sim = 0, draw = 0; const per = [];
+    for (let i = 0; i < frames; i++) { const want = Math.round(i * 66 / fps) - ticks;   // tick at which frame i is shown (frame 0 = now)
+      const r = await page.evaluate(([n, inp, src]) => { const g = window.game, T = 1 / 66; const t = performance.now(); for (let k = 0; k < n; k++) g.step(T, inp); const sim = performance.now() - t;
+        const st = (0, eval)(src)(); const gl = document.getElementById('c').getContext('webgl2'), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        let s = ''; for (let o = 0; o < px.length; o += 0x8000) s += String.fromCharCode.apply(null, px.subarray(o, o + 0x8000)); return { sim, frame_ms: st.frame_ms, b64: btoa(s), probe: window.__probe ? window.__probe() : undefined }; }, [want, inp, `(${RENDER})`]);
+      ticks += want; sim += r.sim; draw += r.frame_ms; if (r.probe !== undefined) per.push({ frame: i, tick: ticks, probe: r.probe });
+      if (!ff.stdin.write(Buffer.from(r.b64, 'base64'))) await new Promise(r => ff.stdin.once('drain', r)); }
+    ff.stdin.end(); const code = await done; if (code) throw new Error('ffmpeg failed: ' + fferr.slice(-300));
+    if (per.length) writeFileSync(f.replace(/\.\w+$/, '') + '.probe.jsonl', per.map(x => JSON.stringify(x)).join('\n') + '\n');
+    return { path: resolve(f), frames, fps, ticks, seconds: +(ticks / 66).toFixed(3), size: [cw, ch], sim_ms: +sim.toFixed(1), draw_ms: +draw.toFixed(1), bytes: statSync(f).size }; },
+  async sheet(w) { const v = w[1], o = w[2]; if (!v || !o) throw Object.assign(new Error('sheet VIDEO OUT.png [COLSxROWS] [WIDTH] [FIRST-LAST]'), { usage: true });
+    const [cols, rows] = (w[3] || '6x4').split('x').map(Number), tw = +(w[4] || 320);
+    const probe = JSON.parse(await run('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'json', v])).streams[0].nb_read_frames | 0;
+    const [a, b] = (w[5] || `0-${probe - 1}`).split('-').map(Number), n = cols * rows, pick = [];
+    for (let i = 0; i < n; i++) pick.push(Math.round(a + (b - a) * (n === 1 ? 0 : i / (n - 1))));
+    const sel = 'select=' + [...new Set(pick)].map(k => `eq(n\\,${k})`).join('+');
+    await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', v, '-vf', `${sel},scale=${tw}:-2,tile=${cols}x${rows}:padding=2:color=gray`, '-vsync', 'vfr', '-frames:v', '1', o]);
+    return { path: resolve(o), video_frames: probe, frames: [...new Set(pick)] }; },
+  async frames(w) { const v = w[1], dir = w[2]; if (!v || !dir) throw Object.assign(new Error('frames VIDEO DIR [FIRST-LAST]'), { usage: true }); mkdirSync(dir, { recursive: true });
+    const [a, b] = (w[3] || '0-99999').split('-').map(Number);
+    await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', v, '-vf', `select=between(n\\,${a}\\,${b})`, '-vsync', 'vfr', '-start_number', String(a), join(dir, 'f%05d.png')]); return { dir: resolve(dir) }; },
+  async anim(w) { need(); const re = w[1] || '.'; return page.evaluate(src => { const R = new RegExp(src, 'i'), g = window.game, byProp = new Map(); for (const e of g.io.ents) if (e.prop) byProp.set(e.prop, e);
+    const out = []; for (const pr of g.r.props) { const m = pr.model; if (!m || pr.seq === undefined) continue; const name = m.data.name || ''; const e = byProp.get(pr); const label = (e?.name || '') + ' ' + name + ' ' + (e?.kv?.model || ''); if (!R.test(label)) continue;
+      const sq = m.skel.seqs[pr.seq]; out.push({ ent: e?.name || null, cls: e?.cls || null, model: e?.kv?.model || name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(4), rate: pr.rate ?? null, loop: !!pr.loop, frames: sq?.frames, fps: sq?.fps, duration_s: sq ? +(Math.max(1, sq.frames - 1) / sq.fps).toFixed(3) : null, ...(window.__animExtra ? window.__animExtra(pr) : {}) }); }
+    return { count: out.length, props: out.slice(0, 200) }; }, re); },
+  async poses(w) { need(); const f = w[1], n = Math.floor(num(w[2] ?? 0, 'TICKS')); if (!f || n < 1) throw Object.assign(new Error('poses OUT.jsonl TICKS [MODEL_REGEX] [EVERY] [KEYS]'), { usage: true });
+    const re = w[3] || '.', every = Math.max(1, +(w[4] || 1)), inp = keyInput(w[5] || ''); mkdirSync(dirname(resolve(f)), { recursive: true });
+    const lines = await page.evaluate(([n, re, every, inp]) => { const g = window.game, R = new RegExp(re, 'i'), byProp = new Map(); for (const e of g.io.ents) if (e.prop) byProp.set(e.prop, e);
+      const T = 1 / 66, out = [], r3 = v => +v.toFixed(3);
+      const sample = tick => { for (const pr of g.r.props) { const m = pr.model; if (!m || pr.seq === undefined) continue; const e = byProp.get(pr), label = (e?.name || '') + ' ' + (e?.kv?.model || m.data.name || ''); if (!R.test(label)) continue;
+        const sk = m.skel, M = g.anim.boneMatrices(sk, pr.seq, pr.cycle || 0, pr), sq = sk.seqs[pr.seq];
+        out.push({ tick, t: r3(tick * T), ent: e?.name || null, model: e?.kv?.model || m.data.name, visible: pr.visible, seq: sq?.name, cycle: +(pr.cycle || 0).toFixed(5), ...(window.__animExtra ? window.__animExtra(pr) : {}),
+          bones: sk.bones.map((b, i) => ({ name: b.name, pos: [M[i * 12 + 3], M[i * 12 + 7], M[i * 12 + 11]].map(r3), fwd: [M[i * 12], M[i * 12 + 4], M[i * 12 + 8]].map(r3) })) }); } };
+      sample(0); for (let k = 1; k <= n; k++) { g.step(T, inp); if (k % every === 0) sample(k); } return out; }, [n, re, every, inp]);
+    writeFileSync(f, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+    // summary per prop: sequences seen with first/last tick, and the measured cycle rate against fps/(frames-1)
+    const sum = {}; for (const l of lines) { const k = (l.ent || '') + ' ' + l.model; const s = sum[k] ??= { samples: 0, seqs: [] }; s.samples++; const last = s.seqs[s.seqs.length - 1];
+      if (!last || last.seq !== l.seq) s.seqs.push({ seq: l.seq, from_tick: l.tick, to_tick: l.tick, c0: l.cycle, c1: l.cycle, wraps: 0, _prev: l.cycle }); else { if (l.cycle + 1e-6 < last._prev) last.wraps++; last.to_tick = l.tick; last.c1 = l.cycle; last._prev = l.cycle; } }
+    for (const s of Object.values(sum)) for (const q of s.seqs) { const dt = (q.to_tick - q.from_tick) / 66; q.cycles_per_s = dt > 0 ? +(((q.c1 - q.c0) + q.wraps) / dt).toFixed(4) : null; delete q._prev; }
+    return { path: resolve(f), samples: lines.length, props: sum }; },
   async sleep(w) { await new Promise(r => setTimeout(r, num(w[1] ?? 1, 'S') * 1000)); return { slept: +w[1] }; },
 };
 

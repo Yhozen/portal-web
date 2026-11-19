@@ -90,12 +90,25 @@ export function poseMatrices(sk: Skeleton, seqIdx: number, cycle: number): Float
   return out;
 }
 function rawPose(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
-  const nb = sk.bones.length, out = new Float32Array(nb * 12);
+  const nb = sk.bones.length, out = new Float32Array(nb * 12), world = rawBones(sk, seqIdx, cycle);
+  for (let i = 0; i < nb; i++) out.set(mul34(world, i * 12, sk.bones[i].poseToBone, 0), i * 12);
+  return out;
+}
+/** model-space bone matrices (3x4 row-major per bone) for sequence seq at cycle 0..1, with the same static-prop
+ *  normalisation as poseMatrices; for pose dumps and attachments */
+export function boneMatrices(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
+  const world = rawBones(sk, seqIdx, cycle); if (!sk.staticProp) return world;
+  poseMatrices(sk, 0, 0); const C = fixCache.get(sk)!, out = new Float32Array(world.length);
+  for (let i = 0; i < world.length / 12; i++) out.set(mul34(C, 0, world, i * 12), i * 12);
+  return out;
+}
+function rawBones(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
+  const nb = sk.bones.length;
   const pos = sk.bones.map(b => b.pos.slice()), quat = sk.bones.map(b => b.quat.slice());
-  const s = sk.seqs[seqIdx], a = s ? sk.anims[s.anim] : null; let seen: Uint8Array | null = null;
+  const s = sk.seqs[seqIdx], a = s ? sk.anims[s.anim] : null;
   if (a && a.animblock === 0) {
     const fr = Math.max(0, Math.min(1, cycle)) * Math.max(0, a.frames - 1), f0 = Math.floor(fr), f1 = Math.min(a.frames - 1, f0 + 1), t = fr - f0;
-    const p0 = pos.map(x => x.slice()), q0 = quat.map(x => x.slice()); seen = sampleFrame(sk, a, f0, p0, q0);
+    const p0 = pos.map(x => x.slice()), q0 = quat.map(x => x.slice()); sampleFrame(sk, a, f0, p0, q0);
     if (t > 1e-3 && f1 !== f0) { const p1 = pos.map(x => x.slice()), q1 = quat.map(x => x.slice()); sampleFrame(sk, a, f1, p1, q1); for (let i = 0; i < nb; i++) { pos[i] = p0[i].map((v, k) => v + (p1[i][k] - v) * t); quat[i] = slerp(q0[i], q1[i], t); } }
     else { for (let i = 0; i < nb; i++) { pos[i] = p0[i]; quat[i] = q0[i]; } }
   }
@@ -104,9 +117,8 @@ function rawPose(sk: Skeleton, seqIdx: number, cycle: number): Float32Array {
     const [x, y, z, w] = quat[i], p = pos[i];
     const l = [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y), p[0], 2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x), p[1], 2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y), p[2]];
     const par = sk.bones[i].parent; const W = par >= 0 ? mul34(world, par * 12, l, 0) : l; world.set(W, i * 12);
-    out.set(mul34(world, i * 12, sk.bones[i].poseToBone, 0), i * 12);
   }
-  return out;
+  return world;
 }
 function mul34(A: ArrayLike<number>, ao: number, B: ArrayLike<number>, bo: number) {
   const o = new Array(12);

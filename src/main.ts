@@ -1,4 +1,5 @@
 import { Sound } from './audio.ts';
+import { boneMatrices } from './anim.ts';
 import { BSP } from './bsp.ts';
 import { Assets } from './assets.ts';
 import { openFileSource } from './files.ts';
@@ -95,7 +96,7 @@ async function main() {
     if (hint) hint.textContent = game.hud.hint ? localize(game.hud.hint) : '';
     if (fade) fade.style.opacity = String(game.hud.fade);
   };
-  window.game = { bsp, r, game, pl, stats, mats, assets, io: game.io, step, render,
+  window.game = { bsp, r, game, pl, stats, mats, assets, io: game.io, step, render, anim: { boneMatrices },
     sim(seconds: number, inp?: any) { for (let t = 0; t < seconds; t += TICK) step(TICK, inp); render(); },
     look(p: number, y: number) { pl.ang = [p, y, 0]; } };
   let last = performance.now(), acc = 0, cnt = 0, fms = 0;

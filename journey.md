@@ -207,3 +207,26 @@ scripts on a unix socket; `--attach SOCKET run/script` sends one and prints the 
 A follow-up script on a loaded map (pose, screenshot, state) takes 0.4 s end to end instead of about 3 s, and a map
 change costs only the map load. `build` rebuilds and clears the browser cache, `quit` ends the session. docs/harness.md
 has the details.
+
+**11:05 AM, resumed after the interruption.** tools/play/ctl.mjs was left untracked. It turns a chamber script into a
+portal-ctl script, so the autopilot plays inside the deterministic harness. That makes it work with the serve session
+from 10:54. It worked as written, so I kept it and added two things. The first is a watchdog around game.step: it throws after 400 s of game
+time or 300 s of real time (MAX_GAME_S, MAX_WALL_S). Without it, a route that gets stuck in the autopilot's planner
+keeps the serve session busy until it's killed, which is what the first a03 run did. The second is
+tools/play/seq.sh SOCKET [MAP...], which prints one line per chamber (next map, game time, wall time, page errors).
+
+**11:50 AM, a03's floor catcher stopped catching.** The first sequential run went a00, a01, a02 and then stuck in a03:
+the ball came out of the ceiling portal, fell onto the catcher and bounced back up at z -45, 50 units above the
+trigger, forever. That came from 4d53218. Since then, env_entity_maker also places the catcher's door, a
+func_tracktrain with spawnflags 8 (Passable). Passable trains get a 160-unit floor disc, which stands in for the
+elevator body prop's physics floor. On the catcher, that disc sat across the mouth. Over all maps, the passable trains
+are the 47 elevator bodies (192 by 192 by 148, or 192 by 16 by 148 in a00), 23 catcher doors (8 by 16 by 13), escape_01's two box carriers
+(32 by 32 by 16) and escape_02's four core rails (16 by 16 by 16). Only brushes at least 128 tall get the disc now, so it's
+just the elevators. checks/catcher-ball.ctl plays room 1 for real (orange opened, blue on the ceiling): before, the ball
+bounces for the whole 7 s; after, it drops in at frame 40, the housing plays close then closed, and lift_up_trigger_a
+is enabled. Clip: anim/catcher-ball-compare.mp4 (before | after), with its sheet.
+
+Sequential run after the fix, one serve session: a00 to a06 all reach their changelevel, with 0 page errors:
+a00 174 s of game time (8 s real), a01 82 s (18 s), a02 149 s (10 s), a03 119 s (180 s real, mostly the planner), a04 72 s,
+a05 46 s, a06 59 s. a07 stops in the launcher room, where the scorch mark isn't visible from the landing spot. It
+stops in the same place on 1af4970, before today's changes, so it isn't a regression.

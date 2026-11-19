@@ -76,7 +76,10 @@ export class Game {
         if (kv.rendermode === '10') inst.visible = false;
         e.inst = inst; this.r.instances.push(inst);
         const passableTrain = c === 'func_tracktrain' && (+kv.spawnflags & 8);
-        if (passableTrain) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
+        // only the elevator bodies (192x192x148 or 192x16x148 brushes carrying round_elevator_body) stand in for a prop's
+        // floor; the other passable trains (catcher doors 8x16x13, escape_01's box carriers, escape_02's core rails) are
+        // just non-solid, and a floor disc there blocked the catcher mouth for energy balls
+        if (passableTrain && M.maxs[2] - M.mins[2] >= 128) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
           e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-80, -80, M.mins[2]]; e.platMaxs = [80, 80, M.mins[2] + 4]; }
         const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
         if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => !e.killed && (c !== 'func_brush' || e.enabled) }; e.col = col; this.tr.colliders.push(col); }

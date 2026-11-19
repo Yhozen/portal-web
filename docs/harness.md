@@ -74,7 +74,7 @@ with semicolons belongs in a script file.
 | `sheet VIDEO OUT [CxR] [W] [A-B]` | contact sheet: C×R frames spread evenly over the video (or frames A–B), each W px wide |
 | `frames VIDEO DIR [A-B]` | dump frames as PNGs |
 | `anim [REGEX]` | animated props: entity, class, model, sequence, cycle, rate, looping, frames, fps, duration, active fades, pose parameters |
-| `poses OUT TICKS [REGEX] [EVERY] [KEYS]` | step TICKS and write every bone's position and forward axis to JSONL; replies sequence spans, cycles per second and the largest per-tick bone move and turn (with the median), which is how pops are found |
+| `poses OUT TICKS [REGEX] [EVERY] [KEYS]` | step TICKS and write every bone's position, forward and up axes to JSONL; replies sequence spans, cycles per second, `reached_end_s` for a one-shot sequence that ran from cycle 0 to 1 (compare with frames-1 over fps), and the largest per-tick bone move and turn (either axis, so hinge rolls count; with the median), which is how pops are found |
 
 Example output:
 

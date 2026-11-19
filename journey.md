@@ -230,3 +230,12 @@ Sequential run after the fix, one serve session: a00 to a06 all reach their chan
 a00 174 s of game time (8 s real), a01 82 s (18 s), a02 149 s (10 s), a03 119 s (180 s real, mostly the planner), a04 72 s,
 a05 46 s, a06 59 s. a07 stops in the launcher room, where the scorch mark isn't visible from the landing spot. It
 stops in the same place on 1af4970, before today's changes, so it isn't a regression.
+
+**11:58 AM, resumed; props started by map logic, checked against the model data.** The interrupted run left a
+`poses` change (up axes recorded, so hinge rolls count as turns, and `reached_end_s` for one-shot sequences) and
+checks/props-anim2.ctl. Ran it in a serve session: every one-shot sequence reaches cycle 1 one tick after its
+(frames-1)/fps: round_elevator_doors open and close 0.636 s (model 0.633), bed_cover opening 0.970 (0.967),
+combine_ball_launcher open and close 0.970 (0.967), light_rail_endcap movedown 1.636 (1.633). The door's largest
+per-tick turn, 10.2° at tick 8, is Scene_Root: idle_closed and open store that bone 90° apart about z and the 0.2 s
+fade slerps between them on a bell curve (1.5, 4.1, ... 10.2, ... 2.1). Root and both door leaves don't follow it
+(Root's world axes don't move at all), so it isn't visible; the leaves turn about 1.2° a tick, smoothly. No pops.

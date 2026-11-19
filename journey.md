@@ -271,3 +271,13 @@ for 8 s and 15 for the last 0.53 s, and ends flush with the floor (lift-compare.
 The model trailed its brush by up to 0.23 units while moving: the chain is four deep (bottom door, its brush, top
 door, platform brush, model) and the hierarchy ran two passes. It runs four passes now and the model stays exactly
 5.99 units under the brush. The 30 later-chamber views are byte-identical before and after.
+
+**12:40 PM, a06 broke with that fix, so it's narrower now.** The sequential run after f15d076 stopped in a06: the
+autopilot couldn't put blue on the fling pillars. Those are three start-open func_doors deep per pillar
+(bottom_bottom, bottom, top, flags 13), and a trigger_look closes the bottom_bottom ones when you look at them.
+With every door's own travel counted, the children start retracted too, so the pillar faces end up 384 units inside
+the wall, and the chamber can't be solved. With the children at their Hammer offsets, which is what the old code
+did, the faces come out to x 520 and it works. I couldn't pin down from public material how the engine places a
+start-open door on a parent, so start-open parented doors keep the old rule, and only the others (a10's pillar lifts, the
+train rest doors in a03/a04/a07/a08/a14, a11's panel, a14's catcher door) slide in their parent's space.
+checks/fling-pillars.ctl gives the same probe as before the fix; checks/lift.ctl still reaches -250.

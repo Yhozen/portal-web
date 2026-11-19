@@ -707,7 +707,9 @@ export class Game {
       // a child that also rotates on its own (rotating door / func_rotating on a moving parent): apply its local spin about its own origin
       // a func_door on a moving parent (a10's telescoping lift pillars: the top door rides the bottom one's brush) slides
       // in its parent's space, so its own travel adds to the parent's instead of being overwritten by it
-      let L = e.attachRel; if (e.cls === 'func_door' && e.closedPos && e.t) { const d = scale(sub(e.openPos, e.closedPos), e.t), R = e.spawnM || entityMatrix(e.origin, e.angles);
+      // (not for doors that start open: a06's fling pillars are three start-open doors deep and the chamber only works
+      // with the children at their Hammer offsets, so how the engine places those is still open; they keep the old rule)
+      let L = e.attachRel; if (e.cls === 'func_door' && e.closedPos && e.t && !(+e.kv.spawnflags & 1)) { const d = scale(sub(e.openPos, e.closedPos), e.t), R = e.spawnM || entityMatrix(e.origin, e.angles);
         L = mul(L, entityMatrix([R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[4] * d[0] + R[5] * d[1] + R[6] * d[2], R[8] * d[0] + R[9] * d[1] + R[10] * d[2]], [0, 0, 0])); }
       const W = e.attachAngInv ? mul(P, mul(L, mul(e.attachAngInv, entityMatrix(e.origin, e.ang)))) : mul(P, L); e.worldM = W;
       if (e.prop) e.prop.matrix = W;

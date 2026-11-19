@@ -71,3 +71,12 @@ Still open:
 - The black areas above walls in the chambers are correct (no sky faces there), but they show in noclip.
 - debugempty on escape_01's rot_door_frame, the w_portalgun cdmaterials probe 404, and the $selfillum question above.
 - A long-running harness mode (one browser, many commands over a socket, like horizon-ctl) would make interactive bug hunting faster. Each run currently pays about 1 to 2.5 s for the map load.
+
+8:58 PM. The rest of the escape_02 tick cost was elsewhere in update, outside the named sub-steps (they added up to about 70 of 997 ms). The cause turned out to be EntityIO.find. For a plain name, it also matches entities whose classname equals the name, and it found those by scanning all 1,565 entities. The parenting code looks up each parented prop's parent twice a tick, and escape_02 has 67 of them, so that alone was about 370 ms per 660 ticks in a direct test. find now keeps an index by classname, in the same add order, with the same killed and unnamed checks at call time.
+
+escape_02 simulation went from 962 to 200 ms per 660 ticks, so with the skinning change it's about 0.3 ms per tick instead of 2.0. The smoke run (1,320 ticks per map) got faster on every later map, for example a15 from 832 to 300 ms, escape_00 from 831 to 360 ms and escape_02 from 1,923 to 437 ms. Checks that nothing changed:
+- The smoke run's state replies (positions, clusters, energy-ball counts) and all 10 of its screenshots are identical before and after.
+- The GLaDOS frames are still identical to main's.
+- The autopilot playthroughs still finish with the same game times as on Nov 2: a00 to a01 at 117.8 s, a01 to a02 at 82.0 s (81.8 s before; those runs use the real-time page loop, so small drift is normal), and a03 to a04 at 119.3 s. a02 and a04 timed out when I ran four at once in parallel, and I didn't get to rerun them one at a time.
+
+9:08 PM. Stopping here.

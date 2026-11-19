@@ -52,3 +52,22 @@ Small findings from the harness's errors command:
 - Every map that has a portal gun makes one 404 for w_portalgun.vmt with the cdmaterials path doubled. That is the model loader probing cdmaterials + name before falling back to the plain name, which then works. It's noise, not a bug.
 - escape_01's rot_door_frame.mdl asks for a material named "debugempty", which isn't found because the real file is materials/debug/debugempty.vmt. I looked at the door and didn't see anything wrong, so I left it.
 - The dark lift pillars in a15 get an ambient cube of about 0.3 to 0.45 at their centre. They're dark, but that looks like the right answer for a dark metal model standing in the pit, not a lighting bug.
+
+8:50 PM. Used the harness on escape_02. A 20-second smoke run from each later map's spawn (checks/later-smoke.ctl: real physics, 1,320 ticks) showed no page errors, and the player stayed inside the map everywhere. escape_02 stood out for simulation cost: about 2 ms per tick against 0.3 to 0.7 ms elsewhere. Timing the game's sub-steps from the harness (eval to wrap animateProps and update) put 376 of 1,397 ms over 660 ticks in animateProps. The only animating prop is GLaDOS's body (glados_body.mdl, 21,575 vertices), and it was CPU-skinned and re-uploaded on every 1/66 s tick, on screen or not.
+
+Fix: animateProps still advances the animation every tick, but the skinning now waits until the renderer actually draws the prop, and runs once per pose change. Off-screen props never get skinned. Results:
+- animateProps fell from 376 ms to 12 ms per 660 ticks, and the whole escape_02 simulation from 1,326 ms to 962 ms against main (2.0 to 1.46 ms per tick).
+- checks/glados-anim.ctl looks at GLaDOS at two points in the animation. Both frames are byte-identical to main's.
+- All 30 later-chamber views are still identical to main's.
+
+Things I tried and backed out:
+- $selfillum on models. GLaDOS and the other props_bts models use $selfillum, which the renderer only applies to world faces (as fully unlit). I added the Source behaviour, where the base texture's alpha masks a self-lit term. GLaDOS's lights came up, but the lift platforms in a14 and a10 went bright white, because their textures have no real alpha mask. I can't check that against the real game from here, so I reverted it. The before/after is in selfillum-experiment-main-vs-mask.png and selfillum-experiment-glados.png. Open question: what do the lift platforms look like in the game, and does the engine ignore $selfillum when the texture has no alpha?
+- Screenshot alpha. The WebGL canvas has an alpha channel, and opaque passes write the texture's alpha into it. Image viewers then showed GLaDOS as pure white, which isn't what the page shows (it sits on a black background). The harness now flattens screenshots over black. The canvas itself is unchanged.
+
+State at the end of the session: branch gabriel/linux-depot, nothing pushed, nothing deployed. The R2 bucket wasn't touched.
+
+Still open:
+- Turrets aren't implemented, as listed in the README. a08 onward hasn't been played end to end by the autopilot; the per-chamber scripts stop at a07.
+- The black areas above walls in the chambers are correct (no sky faces there), but they show in noclip.
+- debugempty on escape_01's rot_door_frame, the w_portalgun cdmaterials probe 404, and the $selfillum question above.
+- A long-running harness mode (one browser, many commands over a socket, like horizon-ctl) would make interactive bug hunting faster. Each run currently pays about 1 to 2.5 s for the map load.

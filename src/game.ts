@@ -480,7 +480,9 @@ export class Game {
       if (sq.frames > 1 && pr.rate) { let c = (pr.cycle || 0) + dt * pr.rate / dur;
         if (c >= 1) { if (pr.loop) c %= 1; else { c = 1; if (pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } } } pr.cycle = c; }
       const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3);
-      if (pr.posed !== key && pr.seq !== undefined) { pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, pr.seq, pr.cycle || 0); pr.posed = key; }
+      // skinning is left to the renderer, which runs it once, only when the prop is actually drawn (it used to run
+      // every 1/66 s tick even off screen: GLaDOS's 21k-vertex body cost about 0.57 ms per tick in escape_02)
+      if (pr.posed !== key && pr.seq !== undefined) { const seq = pr.seq, cyc = pr.cycle || 0; pr.posed = key; pr.repose = () => { pr.repose = undefined; pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, seq, cyc); }; }
     }
   }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {

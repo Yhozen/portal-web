@@ -59,7 +59,7 @@ let lines;
 if (verb === 'script') { if (!arg) { console.log(HELP); process.exit(2); } lines = readFileSync(arg === '-' ? 0 : arg, 'utf8').split('\n'); }
 else if (verb === 'run') { if (!arg) { console.log(HELP); process.exit(2); } lines = arg.split(/;\s*/); }
 else { console.error('unknown verb ' + verb); console.log(HELP); process.exit(2); }
-const cmds = lines.map((l, i) => ({ n: i + 1, w: words(l.trim()) })).filter(c => c.w.length);
+const cmds = lines.map((l, i) => ({ n: i + 1, w: words(l.trim()), raw: l.trim() })).filter(c => c.w.length);
 
 const out = o => process.stdout.write(JSON.stringify(o) + '\n');
 const freePort = () => new Promise(r => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
@@ -132,7 +132,7 @@ const handlers = {
     const v = k === 'maxDepth' ? num(w[2], k) : /^(1|true|on)$/i.test(w[2] || ''); return page.evaluate(([k, v]) => { window.game.r[k] = v; return { [k]: window.game.r[k] }; }, [k, v]); },
   async render() { need(); return page.evaluate(RENDER); },
   async screenshot(w) { need(); const f = w[1]; if (!f) throw Object.assign(new Error('screenshot PATH'), { usage: true });
-    const r = await page.evaluate(src => { const st = (0, eval)(src)(); return { ...st, png: document.getElementById('c').toDataURL('image/png') }; }, `(${RENDER})`);
+    const r = await page.evaluate(src => { const st = (0, eval)(src)(); return { ...st, png: (() => { /* flatten over the page's black background, as it appears on screen (the canvas has an alpha channel) */ const c = document.getElementById('c'), o = document.createElement('canvas'); o.width = c.width; o.height = c.height; const x = o.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, o.width, o.height); x.drawImage(c, 0, 0); return o.toDataURL('image/png'); })() }; }, `(${RENDER})`);
     mkdirSync(dirname(resolve(f)), { recursive: true }); writeFileSync(f, Buffer.from(r.png.split(',')[1], 'base64')); delete r.png; return { path: resolve(f), ...r }; },
   async bench(w) { need(); const n = Math.max(1, Math.floor(num(w[1] ?? 60, 'N')));
     return page.evaluate(([n, src]) => { const R = (0, eval)(src); R(); const ms = []; let last; for (let i = 0; i < n; i++) { last = R(); ms.push(last.frame_ms); }
@@ -155,7 +155,7 @@ const handlers = {
   async ents(w) { need(); const re = w[1] || '.', n = +(w[2] || 50); return page.evaluate(([re, n]) => { const R = new RegExp(re);
     const m = window.game.bsp.entities.filter(e => R.test(e.classname)); return { count: m.length, ents: m.slice(0, n).map(e => ({ classname: e.classname, targetname: e.targetname, origin: e.origin })) }; }, [re, n]); },
   async errors() { const l = logs; logs = []; return { count: l.length, logs: l }; },
-  async eval(w) { need(); const js = w.slice(1).join(' '); const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js); return { value: v }; },
+  async eval(w, raw) { need(); const js = raw.replace(/^eval\s+/, ''); /* the rest of the line as written, quotes included */ const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js); return { value: v }; },
   async sleep(w) { await new Promise(r => setTimeout(r, num(w[1] ?? 1, 'S') * 1000)); return { slept: +w[1] }; },
 };
 
@@ -165,7 +165,7 @@ for (const c of cmds) {
   const t0 = Date.now();
   try {
     if (!h) throw Object.assign(new Error('unknown command: ' + name), { usage: true });
-    const r = await h(c.w); out({ line: c.n, cmd: name, ok: true, ms: Date.now() - t0, ...r });
+    const r = await h(c.w, c.raw); out({ line: c.n, cmd: name, ok: true, ms: Date.now() - t0, ...r });
   } catch (e) {
     out({ line: c.n, cmd: name, ok: false, error: String(e.message || e).split('\n')[0], kind: e.usage ? 'usage' : 'error' });
     status = Math.max(status, e.usage ? 2 : 1); if (!opt['keep-going']) break;

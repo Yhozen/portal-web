@@ -58,7 +58,7 @@ export interface Instance { model: number; matrix: M4; visible: boolean; alpha?:
 export interface MeshDraw { draw(vp: M4, clip: Float32Array): void; }
 export interface PropInst { model: GLModel | null; matrix: M4; visible: boolean; skin: number; texFrame?: number; ambient: [number, number, number]; tint?: [number, number, number];
   /** cached ambient cube and the lighting origin it was sampled at */ lightCube?: Cube | null; lightAt?: [number, number, number];
-  seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; onDone?: () => void; restPose?: boolean; }
+  seq?: number; cycle?: number; rate?: number; loop?: boolean; skinned?: Skinned | null; posed?: string; /** pending CPU skin to the latest pose, run when next drawn */ repose?: () => void; onDone?: () => void; restPose?: boolean; }
 
 const ONE3 = new Float32Array([1, 1, 1]);
 const NOCLIP = new Float32Array([0, 0, 0, -1e9]);
@@ -197,7 +197,7 @@ export class Renderer {
     }
     gl.uniform1f(P.u.uLMScale, 0);
     for (const pr of this.props) {
-      if (!pr.visible || !pr.model) continue; const md = pr.model; if (!this.seenBox(pr.matrix, md.data.mins, md.data.maxs)) { this.stats.culled++; continue; } gl.bindVertexArray(pr.skinned ? pr.skinned.vao : md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
+      if (!pr.visible || !pr.model) continue; const md = pr.model; if (!this.seenBox(pr.matrix, md.data.mins, md.data.maxs)) { this.stats.culled++; continue; } if (pr.repose) pr.repose(); gl.bindVertexArray(pr.skinned ? pr.skinned.vao : md.vao); gl.uniformMatrix4fv(P.u.uModel, false, pr.matrix);
       const cube = this.useCubes ? this.propCube(pr) : null; gl.uniform1f(P.u.uUseCube, cube ? 1 : 0);
       if (cube) { gl.uniform3fv(P.u.uCube, cube); gl.uniform3fv(P.u.uAmbient, ONE3); } else gl.uniform3fv(P.u.uAmbient, pr.ambient); const skin = md.skins[pr.skin] || md.skins[0];
       for (const d of md.draws) {

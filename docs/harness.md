@@ -14,7 +14,8 @@ both down at the end.
 After `map` loads, the harness takes the clock away from the page: the page's own frame loop stops simulating and
 stops drawing. The game only advances on `step N` (N fixed ticks of 1/66 s, the same tick the game uses) and a frame
 is only drawn on `render`, `screenshot` or `bench`. `Math.random` is replaced by a seeded generator (`--seed`, default
-1). Screenshots are the WebGL canvas only, without the HUD text. The same script on the same build gives
+1). Screenshots are the WebGL canvas only, without the HUD text, flattened over the page's black background (the canvas
+has an alpha channel that opaque passes fill from texture alpha, which image viewers otherwise show as white). The same script on the same build gives
 byte-identical screenshots; `diff` on two runs reports `"identical": true`.
 
 ## Usage
@@ -27,7 +28,9 @@ node tools/portal-ctl.mjs help
 
 Options: `--game DIR` (default `$PORTAL_DIR`, then the Steam path), `--size WxH` (default 1024x640), `--port N`,
 `--base URL` (use a server that is already running), `--keep-going`, `--no-build` (skip `./build.sh`), `--seed N`.
-`script -` reads the script from stdin. Lines are split like a shell (quotes group words) and `#` starts a comment.
+`script -` reads the script from stdin. Lines are split like a shell (quotes group words) and `#` starts a comment,
+except `eval`, which takes the rest of its line exactly as written. `run` splits its argument on `;`, so JavaScript
+with semicolons belongs in a script file.
 
 | command | what it does |
 | --- | --- |
@@ -58,7 +61,8 @@ Example output:
 {"line":10,"cmd":"diff","ok":true,"ms":179,"size":[1024,640],"changed_share":0,"mean_diff":0,"identical":true}
 ```
 
-Scripts used for checks live in `checks/`. They hold only map names, coordinates and commands, never game data;
+Scripts used for checks live in `checks/`: `escape02-ending.ctl` (skybox), `later-chambers.ctl` (30 views in a08 to
+escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop). They hold only map names, coordinates and commands, never game data;
 screenshots should be written outside the repository (the `.gitignore` also drops `*.png`).
 
 ## Numbers

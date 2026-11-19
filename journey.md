@@ -119,7 +119,7 @@ flipped between them. Rest is (0, 120), looking straight out. 90°/s turn rate; 
 New harness `lookat X Y Z` keeps the view on a point every tick. checks/camera-track.ctl: while the player strafes
 under cam1 in a00 the lens-to-eye error is median 4°, max 8° once it has turned to them (was: no camera).
 
-**10:08 AM, model animation events.** Nothing ran the events stored in the sequences, so the elevator doors and box
+**9:57 AM, model animation events.** Nothing ran the events stored in the sequences, so the elevator doors and box
 dropper moved silently. Sequences now carry their mstudioevent_t list (new-style events by name), and props run
 client events the way SDK 2013's C_BaseAnimating::DoAnimationEvents does: a new sequence starts just before cycle 0
 so frame-0 events fire, each fires once as the cycle passes it, a wrap of over half a cycle runs the rest of the loop

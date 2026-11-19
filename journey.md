@@ -80,3 +80,24 @@ escape_02 simulation went from 962 to 200 ms per 660 ticks, so with the skinning
 - The autopilot playthroughs still finish with the same game times as on Nov 2: a00 to a01 at 117.8 s, a01 to a02 at 82.0 s (81.8 s before; those runs use the real-time page loop, so small drift is normal), and a03 to a04 at 119.3 s. a02 and a04 timed out when I ran four at once in parallel, and I didn't get to rerun them one at a time.
 
 9:08 PM. Stopping here.
+
+## 2026-11-19, animation session (from 9:25 AM)
+
+Gabriel asked for five more hours, with the focus on being able to prove that animations are right rather than trusting single screenshots.
+
+9:25 AM. ffmpeg 7.1 is already on the box (Debian package), with libx264, libvpx-vp9 and drawtext, so no install was needed. Read the public Source SDK 2013 headers and sources from Valve's GitHub repo (public/studio.h, public/studio.cpp, public/bone_setup.cpp, game/client/c_baseanimating.cpp, game/server/props.cpp, game/shared/sequence_transitioner.cpp) for the data layouts and playback rules. Portal's own game code isn't in that repo, so Portal-specific behaviour comes from the HL2 equivalents and the Valve Developer Wiki.
+
+9:30 AM. Harness additions (tools/portal-ctl.mjs, docs/harness.md):
+- `record PATH FRAMES [FPS] [KEYS]` steps the fixed 1/66 s tick loop, reads back each drawn frame and pipes it to ffmpeg (mp4 or webm). Every frame is labelled with its frame number, time and game tick, so a clip can be matched against pose dumps. If the page throws mid-recording, the frames so far are kept and the command fails with the frame and tick.
+- `sheet VIDEO OUT [CxR]` makes a contact sheet of evenly spaced frames; `frames VIDEO DIR` extracts PNGs.
+- `anim [REGEX]` lists animated props with their sequence, cycle, rate, loop flag, frame count, fps and duration.
+- `poses OUT TICKS [REGEX]` steps and writes every matching prop's model-space bone positions and orientations per tick as JSONL, and replies the sequences each prop went through with the measured cycles per second.
+- tools/mdl-info.ts reads a model's animation data straight from the MDL header: sequences with flags, frames, fps, blends, fade times, events, autolayers, pose parameters, bone controllers, attachments, .ani blocks and $includemodel. `--continuity` decodes every frame of every sequence and reports the biggest frame-to-frame bone translation and rotation, plus the last-to-first gap for looping ones. Wrong decoding shows up there as jumps far bigger than the animation's normal motion, or as an exception.
+
+The refactor that exposes bone matrices to the harness leaves rendering unchanged: the GLaDOS check frames are byte-identical to the previous commit's.
+
+9:33 AM. First bug, found by surveying every animated model the maps use. The models in the ending's GLaDOS destruction (models/gladdysdestruction/*.mdl, the Destructo_glados_body* props) keep their 54 s "go" sequence in .ani files: the MDL holds the first 30 frames, and the other 42 sections point into animation blocks of the .ani. The port read every section offset relative to the MDL, so 30 frames in it read past the end of the file and threw a RangeError from inside the renderer. In the page that exception happens inside the requestAnimationFrame callback before it reschedules itself, so the whole game would have stopped at the ending. Fixed by following mstudioanimdesc_t::pAnim in the SDK's studio.cpp: sections with animblock > 0 read from the .ani at that block's start plus animindex, and the last frame of a long animation comes from its own extra section. The model loader fetches the .ani when a model has animation blocks.
+
+Evidence: /workspace/portal-web-shots/anim/destruction-before.mp4 (30 frames, then the error at tick 80), destruction-after.mp4 (the full 54.5 s at 24 fps, 640x400) and destruction-after-sheet.png. mdl-info --continuity on all six destruction models now decodes every frame. The last-frame rule changes nothing visible elsewhere (GLaDOS's sectioned idle moves by under 0.01 units at that frame).
+
+Also: `SetDefaultAnimation` with an empty value (relay_boss_burn_state_4 sends that to glados_body before "death") now clears the default, instead of falling back to the map's "idle" when the death sequence ends.

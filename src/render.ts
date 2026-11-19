@@ -112,6 +112,14 @@ export class Renderer {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
   }
+  /** named-light TurnOn/TurnOff: re-bake that style's faces and upload just their atlas rects */
+  setLightStyle(style: number, v: number) {
+    const w = this.world, gl = this.gl; if (!w || !w.mesh.setStyle) return 0; const rects = w.mesh.setStyle(style, v); if (!rects.length) return 0;
+    gl.bindTexture(gl.TEXTURE_2D, w.lm); gl.pixelStorei(gl.UNPACK_ROW_LENGTH, w.mesh.lmW);
+    for (const [x, y, rw, rh] of rects) { gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y); gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE, w.mesh.lm); }
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    return rects.length;
+  }
   async setWorld(bsp: BSP, mesh: WorldMesh) {
     const gl = this.gl, vao = gl.createVertexArray()!; gl.bindVertexArray(vao);
     const vb = this.vb = gl.createBuffer(); this.bsp = bsp; this.cubes = new LightCubes(bsp); this.pvsCache.clear(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.verts, gl.STATIC_DRAW);

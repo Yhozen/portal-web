@@ -405,6 +405,11 @@ export class Game {
       else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') { /* ignore */ }
       return true;
     });
+    // named lights switch their own light style in the lightmaps (Valve Developer Wiki, "light": TurnOn, TurnOff, Toggle)
+    const lightIn = (e: Ent, i: string) => { const st = +(e.kv.style || 0); if (st < 32) return false;
+      const on = i === 'turnon' ? 1 : i === 'turnoff' ? 0 : i === 'toggle' ? (e.lightOn ?? !(+(e.kv.spawnflags || 0) & 1) ? 0 : 1) : -1; if (on < 0) return false;
+      e.lightOn = !!on; const n = this.r.setLightStyle(st, on); io.log.push(`${io.time.toFixed(2)} light style ${st} ${on ? 'on' : 'off'} (${n} faces)`); return true; };
+    H.set('light', lightIn); H.set('light_spot', lightIn);
     H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; this.wakeCubes(e); if (e.inst) e.inst.visible = e.enabled; return true; });
     const propVis = (e: Ent, i: string, param: string) => { if (e.cube && (i === 'wake' || i === 'enablemotion')) { e.cube.asleep = false; e.cube.sleep = 0; return true; } if (e.cube && (i === 'sleep' || i === 'disablemotion')) { e.cube.asleep = true; return true; } if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') { this.playAnim(e, param, false); }
       else if (i === 'setdefaultanimation') { e.defaultAnim = param; }

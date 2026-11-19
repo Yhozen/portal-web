@@ -365,3 +365,15 @@ is lit by the leaf ambient cubes, not the shaft's lightmaps. So I didn't keep th
 
 **1:13 PM, func_noportal_volume** takes Activate, Deactivate and Toggle now (a02's trigger_portal_spawn_a2_rm3a
 deactivates noportal_door_rm3a). a02 still plays the same (149.3 s).
+
+**1:16 PM, env_shake.** Every elevator start and stop, and a00's portal-spawn rooms, send StartShake, and nothing
+acted on it. The view shake now follows SDK 2013's CViewEffects::CalcShake and ApplyShake (view_effects.cpp). Each
+shake picks a new random offset (±amplitude) and roll (±amplitude/4) `frequency` times a second, then scales them by a
+sine whose frequency rises as the shake runs out and by the squared remaining fraction, and its amplitude decays per
+frame. Starting a shake follows UTIL_ScreenShake and EnvShake.cpp: the amplitude is capped at 16 and falls off linearly
+out to the radius (flag 1 means everyone at full strength), only players on the ground are shaken unless flag 4 is set,
+and flag 0x20 means no view shake. The offset moves the view origin and the roll is added to the view angles. The
+viewmodel isn't shaken. checks/shake.ctl: a00's exit-elevator shake (amplitude 4, frequency 2.5, duration 2, radius 500)
+starts 5.47 s after the trigger and runs for exactly 40 frames at 20 fps (2.0 s). The largest offset is 1.86 units and
+the largest roll 0.34°, settling to 0 before it retires. a00, a01 and a04 still finish in the same game time. Clip:
+anim/shake-after.mp4.

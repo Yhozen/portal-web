@@ -14,24 +14,23 @@ let bl = 'none'; for (const k of [3, 4, 6, 2.5]) { const t = [eye[0] + d[0] * k,
 lg('blue through door', bl + ' ' + io.log.filter(l => /portal 0 failed/.test(l)).slice(-1));
 lg('orange start wall', shoot(1, [-600, 25, 190]));
 lg('through', through([-600, 25, 190]));
-// the wall launcher fires along -x at y 192, z 169. Orange where it hits the west wall, blue on the ceiling above the floor
-// catcher (Maker_balltrap_lvl7 spawns it mouth up at about (85,14)), so the ball comes straight down into it.
-const L = E('energy_ball_launcher_lvl7'); G.tr.ignore = null; const ht = G.tr.trace(L.origin || L.pos, [(L.origin || L.pos)[0] - 3000, (L.origin || L.pos)[1], (L.origin || L.pos)[2]], [0,0,0], [0,0,0], 0x1, null);
-lg('ball path hits', ht.end.map(v => v|0));
-const trap = E('ball_trap_10'); const tc = [(trap.bmins[0] + trap.bmaxs[0]) / 2, (trap.bmins[1] + trap.bmaxs[1]) / 2]; lg('trap', tc.map(v => v|0));
-lg('blue ceiling', shoot(0, [tc[0], tc[1], 400]));
-let o = 'none'; for (const t of [ht.end, [ht.end[0], ht.end[1], ht.end[2] + 10], [ht.end[0], ht.end[1] - 10, ht.end[2]]]) { o = shoot(1, t); if (G.gunPortals[1].open && Math.abs(G.gunPortals[1].pos[1] - 192) < 30 && G.gunPortals[1].pos[0] < -200) break; }
-lg('orange ball wall', o + ' ' + io.log.filter(l => /portal 1 failed/.test(l)).slice(-1));
-const caught = () => io.log.some(l => /start_track_logic_lvl7/.test(l));
-for (let i = 0; i < 66 * 30 && !caught(); i++) game.step(1/66, IN(0));
-lg('caught', caught() + ' balls ' + G.balls.map(b => b.pos.map(v => v|0)).join(' '));
-// the catch starts func_tracktrain_lvl7, a platform on top of the south wall that carries the chamber's only cube along y -272
-// between x -58 and 423, waiting 3 s at each end. Follow it to the east stop.
+// The cube's platform (func_tracktrain_lvl7) stands on a pole at its west stop, top at z 170, with no-portal metal above it.
+// Get up there with a fling: orange on the floor under the ceiling blue makes a fall loop; once falling fast, move blue to
+// the floor just north of the platform and steer onto it on the way up. Landing there also trips the trigger_once that
+// drops box_no_fall_off, the lip that keeps the cube on.
 const tr = E('func_tracktrain_lvl7'); const cube = G.cubes.filter(c => c.alive)[0];
-for (let i = 0; i < 66 * 30 && !(tr.pos[0] > 420 && Math.abs(tr.speedNow || 0) < 1); i++) game.step(1/66, IN(0));
-lg('train at east stop', tr.pos.map(v => v|0) + ' cube ' + cube.pos.map(v => v|0) + ' t ' + io.time.toFixed(1));
-// Not written yet: getting the cube down. Every ceiling and wall spot over the rail tried so far is no-portal metal (the
-// 048b strips at y -231 and over x 329), so the route to the platform, and from there to buttons b and c, is still open.
+lg('step aside', AP.reach([-60, 60, 0], 12));
+lg('orange under blue', shoot(1, [-133, 101, 0]));
+const fl = window.FLING || [-58, -186, 0];
+{ const O = G.gunPortals[1].pos; let shot = false, vmax = 0, t0 = io.time;
+  for (let i = 0; i < 66 * 12; i++) { const v = game.pl.vel[2]; vmax = Math.max(vmax, -v);
+    if (!shot && game.pl.pos[2] > 200 && v < -(window.FLINGV || 900)) { AP.lookAt(fl); G.shootPortal(0); shot = true; lg('moved blue', (G.gunPortals[0].open ? G.gunPortals[0].pos.map(v => v|0) : 'failed') + ' at v ' + (v|0) + ' t ' + (io.time - t0).toFixed(2)); }
+    const up = shot && G.gunPortals[0].pos[2] < 10 && Math.abs(game.pl.pos[0] - fl[0]) < 80 && Math.abs(game.pl.pos[1] - fl[1]) < 120;
+    if (up) { game.pl.ang = [0, -90, 0]; game.step(1/66, IN(game.pl.vel[2] < 300 ? 1 : 0)); if (game.pl.onGround && io.time - t0 > 1) break; }
+    else { if (!shot) game.pl.ang = [0, Math.atan2(O[1] - game.pl.pos[1], O[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, IN(shot ? 0 : 1)); }
+  }
+  lg('fling', 'max fall ' + (vmax|0) + ' landed ' + P() + ' ground ' + (game.pl.groundEnt ? game.pl.groundEnt.name || game.pl.groundEnt.cls : '-') + ' nofall ' + E('box_no_fall_off').enabled); }
+lg('pick cube', AP.pickUp(cube)); lg('held', !!G.held + ' cube ' + cube.pos.map(v => v|0));
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.slice(-6).join('\n'));
 return out.join('\n'); })()

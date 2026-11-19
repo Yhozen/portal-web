@@ -320,3 +320,27 @@ position. A door on a parent now steps from its world position by this tick's tr
 -250 to -2 standing on it the whole way, 2 units above the brush origin, at 30 and then 15 units/s. (The check walks
 into the room's entry trigger first. Teleporting straight onto the lift fires the lift's trigger and the room's
 "open all lifts" trigger on the same tick, and the second one wins.)
+
+**12:46 PM, resumed after the interruption; on to a08 (chamber 13).** a07 still plays to the top of the 07a-07b
+elevator (130.6 s, 0 page errors) and stops there, since chamber 12 has no route. So I started a08 from its own spawn
+in the serve session. Its first half now plays: standing on the start-room button opens a door high in the main room's
+west wall, over the button's grating roof. Blue goes through that door onto the main-room ceiling, orange goes on a start-room
+wall, and the player steps off the button and walks through. The wall launcher's pellet hits the west wall at
+(-255, 191, 169). Orange there and blue on the ceiling over the floor catcher (Maker_balltrap_lvl7 spawns it mouth-up at
+about (86, 14)) drop it in at 12.8 s, which starts the cube's rail platform.
+
+**1:01 PM, the cube fell off its platform.** func_tracktrain_lvl7 carries a door, the platform model, the platform brush and
+box_no_fall_off, all parented, with the cube resting on top. The moment the train started, the cube stayed where it was
+while the platform slid out from under it. It dropped 170 units to the floor at x -133, so the cube never reached the far end.
+Nothing moved physics cubes with the brushes they rest on. The player had that rule, but cubes didn't. Now, when a brush entity
+or a train moves, any cube whose box rests on it (a 3-unit downward box trace hits that entity with an upward normal)
+moves by the same amount. checks/cube-on-train.ctl fires the catch relay and films the platform. Before: the cube is on the
+floor by 2.6 s and the platform rides away empty. After: the cube stays at a fixed offset of (-42.2, 13.3) from the
+train over the whole 365-unit ride to the east stop. A first version woke the cube every tick, and it crept 13 units
+across the platform in 8 s, so a resting cube now stays asleep while it's carried. Clip:
+anim/cube-on-train-compare.mp4 (before | after) and its sheet.
+
+Still open in a08: getting the cube off the platform, then cube and player onto buttons b (pedestal top z 233) and c
+(z 137), which both have to be down to open the exit. Every ceiling and wall spot over the rail I tried is no-portal
+metal, so I haven't found the route yet. tools/play/testchmb_a_08.js plays up to the platform reaching its east stop
+(24.5 s).

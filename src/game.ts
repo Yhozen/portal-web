@@ -470,7 +470,8 @@ export class Game {
       else if (i === 'volume' && e.sndH?.src) { /* runtime volume changes are ignored */ void p; } return true; });
     H.set('trigger_teleport', () => false); H.set('trigger_once', () => false); H.set('trigger_multiple', () => false);
     H.set('player', (e, i) => { if (i === 'sethealth') {} return true; });
-    H.set('func_noportal_volume', () => false);
+    // func_noportal_volume takes Activate, Deactivate and Toggle (a02's noportal_door_rm3a is deactivated when its door opens)
+    H.set('func_noportal_volume', (e, i) => { if (i === 'activate') e.enabled = true; else if (i === 'deactivate') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; return true; });
     H.set('logic_auto', () => true);
   }
   /** env_entity_maker for non-cube templates (energy-ball catchers): the template's own copies were removed at load, so the first ForceSpawn

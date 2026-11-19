@@ -11,7 +11,7 @@ if (!map) { process.stderr.write('usage: node tools/play/ctl.mjs MAP [PRE_JS]\n'
 const js = f => readFileSync(join(dir, f), 'utf8');
 const ev = code => 'eval (0, eval)(' + JSON.stringify(code) + ')';
 const maxGame = +(process.env.MAX_GAME_S || 400), maxWall = +(process.env.MAX_WALL_S || 300);
-const watchdog = `(() => { const g = window.game, s0 = g.step.bind(g), t0 = performance.now(); let n = 0;
+const watchdog = `(() => { const g = window.game, s0 = g.step.bind(g), t0 = performance.now(); let n = 0; window.__deadline = t0 + ${maxWall} * 1000;
   g.step = (dt, inp) => { if (++n % 66 === 0) window.__last = { t: +g.game.io.time.toFixed(1), pos: g.pl.pos.map(v => v | 0), ap: window.AP ? AP.LOG.slice(-2) : [] };
     if (n > ${maxGame} * 66 || performance.now() - t0 > ${maxWall} * 1000) throw new Error('watchdog: ' + n + ' ticks, ' + ((performance.now() - t0) / 1000 | 0) + ' s; last ' + JSON.stringify(window.__last));
     return s0(dt, inp); }; })(); 1`;

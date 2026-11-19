@@ -452,3 +452,14 @@ The attempt still misses the platform. The lateral speed coming out of the exit 
 air control can't undo that before the player comes back down, so it lands on the floor at y -193. The script for the
 attempt is kept outside the repository (portal-web-shots/testchmb_a_08-fling-attempt.js), and tools/play/testchmb_a_08.js
 still stops at the east stop.
+
+**1:45 PM, steering during the drop doesn't change the fling's drift.** Two more a08 attempts with the fixed floor
+portals, holding forward toward +y and then toward -y for the whole final drop into orange. The exit velocity's y came
+out +44 and +57 (exit z speed 913 and 949), so air control during the fall barely moves it. The drift away from the
+platform comes from the horizontal speed built up walking into the fall loop and from how the two floor portals' frames
+map it, so the next try should change the approach into the loop or where orange sits, not the input during the drop.
+Both attempts land at about (-83, -156), 115 units short of the platform at y -272. Neither change is committed.
+
+**1:50 PM, wrap-up.** tools/run-checks.sh runs every checks/*.ctl in one serve session and counts only console and page
+errors as failures. All 29 pass. The sequential playthrough a00 to a07 was rerun on the final build. The highlight reel
+(tools/highlight-reel.py) is anim/highlights-2026-11-19.mp4, with a contact sheet next to it.

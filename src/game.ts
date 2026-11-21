@@ -1,6 +1,8 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
-import { findSeq, skinModel } from './models.ts';
+import { findSeq, skinModel, type GLModel } from './models.ts';
+import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
+import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -13,13 +15,15 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
 
-interface Cube extends Body { ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
+interface Cube extends Body { /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
+
+interface Turret { state: TurretState; next: number; shot: number; lastSight: number; thrash: number; eyes: number; shots: number; seen: boolean; }
 
 export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
-  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = [];
+  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = []; cameras: Ent[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
     this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
     this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
@@ -72,7 +76,10 @@ export class Game {
         if (kv.rendermode === '10') inst.visible = false;
         e.inst = inst; this.r.instances.push(inst);
         const passableTrain = c === 'func_tracktrain' && (+kv.spawnflags & 8);
-        if (passableTrain) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
+        // only the elevator bodies (192x192x148 or 192x16x148 brushes carrying round_elevator_body) stand in for a prop's
+        // floor; the other passable trains (catcher doors 8x16x13, escape_01's box carriers, escape_02's core rails) are
+        // just non-solid, and a floor disc there blocked the catcher mouth for energy balls
+        if (passableTrain && M.maxs[2] - M.mins[2] >= 128) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
           e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-80, -80, M.mins[2]]; e.platMaxs = [80, 80, M.mins[2] + 4]; }
         const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
         if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => !e.killed && (c !== 'func_brush' || e.enabled) }; e.col = col; this.tr.colliders.push(col); }
@@ -97,6 +104,8 @@ export class Game {
       const p: Portal = { pos: e.origin, f, r, u, color: kv.portaltwo === '1' ? ORANGE : BLUE, open: false, linked: null, name: e.name }; e.portal = p; this.portals.push(p);
       if (kv.activated === '1') this.activatePortal(e, true);
     }
+    if (c === 'npc_portal_turret_floor') this.spawnTurret(e);
+    if (c === 'npc_security_camera') { kv.model ||= 'models/props/security_camera.mdl'; e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); e.prop.poses = [0, 0]; this.cameras.push(e); }
     if (c === 'weapon_portalgun' && !/spawn/.test(e.name)) { e.prop = this.addProp('models/weapons/w_portalgun.mdl', e.origin, e.angles); e.onKill = () => { if (e.prop) e.prop.visible = false; }; }
     if (c === 'func_portal_bumper') this.bumpers.push(e);
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
@@ -117,7 +126,63 @@ export class Game {
     e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
     this.updateCubeBox(cube); if (e.killed) e.onKill();
   }
-  updateCubeBox(c: Cube) { const b = c.ent.box, x = halfExtent(c).map(v => Math.min(v, c.ext * 1.3)); b.mins = [c.pos[0] - x[0], c.pos[1] - x[1], c.pos[2] - x[2]]; b.maxs = [c.pos[0] + x[0], c.pos[1] + x[1], c.pos[2] + x[2]]; }
+  /** floor turret: a physics box sized from the model's hull, standing on its origin; behaviour in updateTurret */
+  spawnTurret(e: Ent) {
+    const kv = e.kv; kv.model ||= 'models/props/turret_01.mdl';
+    const prop = e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); prop.poses = [0, 0];
+    this.models.get(kv.model).then(m => { if (!m) return; const d = m.data, he = [0, 1, 2].map(k => (d.hullMaxs[k] - d.hullMins[k]) / 2) as V3, off = [0, 1, 2].map(k => (d.hullMaxs[k] + d.hullMins[k]) / 2) as V3;
+      const R = entityMatrix([0, 0, 0], e.angles), pos = add(e.origin, xformDir(R, off)), ext = Math.min(...he);
+      const cube: Cube = { ent: e, pos, vel: [0, 0, 0], held: false, prop, ext, h: ext, he, off, onGround: false, spawn: [...pos] as V3, alive: true, tunnel: null, R, w: [0, 0, 0], sleep: 0, asleep: true,
+        turret: { state: 'idle', next: 0, shot: 0, lastSight: 0, thrash: 0, eyes: d.attachments.findIndex(a => a.name.toLowerCase() === 'eyes'), shots: 0, seen: false } };
+      e.cube = cube; this.cubes.push(cube); this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
+      e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
+      this.updateCubeBox(cube); if (e.killed) e.onKill(); });
+  }
+  turretSay(c: Cube, what: string) { this.snd?.play('npc_floorturret.' + what, c.pos); }
+  turretAct(c: Cube, seq: string) { const pr = c.prop, m = pr.model; if (!m) return; const si = findSeq(m, seq); if (si >= 0 && pr.seq !== si) { this.startSeq(pr, m, si); pr.onDone = undefined; } }
+  /** a turret think, at the SDK's think rates (0.05 s, 0.1 s while active) */
+  updateTurret(c: Cube) {
+    const T = c.turret!, now = this.io.time, pr = c.prop, m = pr.model; if (!m || T.state === 'dead' || T.eyes < 0 || now < T.next) return;
+    const P = pr.poses ??= [0, 0], R = c.R, up = R[10], seqName = () => m.skel.seqs[pr.seq ?? 0]?.name;
+    const finished = () => !pr.loop && (pr.cycle ?? 0) >= 1;
+    // model-space goal from world angles relative to the turret
+    const W = pr.matrix, Wi = invertRigid(W), toModel = (v: V3) => xformDir(Wi, v);
+    const f = attachFrame(m, T.eyes, P), eye = xformPoint(W, f.pos), muzzle = norm(xformDir(W, f.x));
+    const target: V3 = add(this.player.pos, [0, 0, 36]), to = sub(target, eye), dist = len(to), dir = scale(to, 1 / (dist || 1));
+    const fwd: V3 = [R[0], R[1], 0], fl = Math.hypot(fwd[0], fwd[1]) || 1, d2 = Math.hypot(dir[0], dir[1]) || 1;
+    const inCone = (fwd[0] * dir[0] + fwd[1] * dir[1]) / (fl * d2) > TURRET.cone;
+    this.tr.ignore = null; const vis = dist < TURRET.range && inCone && this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, c.ent).fraction > 0.98; T.seen = vis;
+    const face = (goal: V3) => turretFace(m, T.eyes, P, toModel(goal), 0, 1);
+    const shoot = () => { this.turretAct(c, 'fire'); pr.cycle = 0; this.snd?.play('npc_floorturret.shotsounds', eye); T.shots++; };
+    T.next = now + TURRET.think;
+    if (c.held) { if (T.state !== 'tipped') { /* carried: keeps its state but doesn't shoot */ } }
+    if (T.state !== 'tipped' && !c.held && up < 0.5) { T.state = 'tipped'; T.thrash = now + 2 + Math.random() * 0.5; this.snd?.play('npc_floorturret.alarm', eye); this.turretSay(c, 'talktipped'); this.io.fire(c.ent, 'ontipped', c.ent); return; }
+    switch (T.state) {
+      case 'idle': if (vis && !c.held) { T.state = 'deploy'; this.turretAct(c, 'deploy'); this.snd?.play('npc_floorturret.deploy', eye); this.turretSay(c, 'talkdeploy'); this.io.fire(c.ent, 'ondeploy', c.ent); } break;
+      case 'deploy': if (finished()) { this.turretAct(c, 'idlealert'); T.shot = now + 1; T.state = 'search'; T.lastSight = now + TURRET.maxWait; } break;
+      case 'search':
+        if (vis && !c.held) { T.state = 'active'; T.shot = now + 0.5; this.snd?.play('npc_floorturret.activate', eye); this.turretSay(c, 'talkactive'); break; }
+        if (now > T.lastSight) { T.state = 'retire'; break; }
+        { const a = Math.atan2(R[1], R[0]) * 180 / Math.PI, ang: V3 = [Math.sin(now) * 15, a + Math.sin(now * 2) * 60, 0]; face(angleVectors(ang).f); }
+        if (seqName() === 'fire' && finished()) this.turretAct(c, 'idlealert'); break;
+      case 'active':
+        T.next = now + TURRET.thinkActive;
+        if (!vis || c.held) { T.state = 'search'; T.lastSight = now + TURRET.maxWait; this.turretSay(c, 'talksearch'); break; }
+        if (T.shot < now && dot(dir, muzzle) >= TURRET.aimDot) shoot(); else if (seqName() === 'fire' && finished()) this.turretAct(c, 'idlealert');
+        face(dir); break;
+      case 'retire':
+        if (seqName() !== 'retract') { this.turretAct(c, 'idlealert'); if (!face(xformDir(W, [1, 0, 0]))) { this.turretAct(c, 'retract'); this.snd?.play('npc_floorturret.retire', eye); this.turretSay(c, 'talkretire'); this.io.fire(c.ent, 'onretire', c.ent); } }
+        else if (finished()) { T.state = 'idle'; this.turretAct(c, 'idle'); }
+        break;
+      case 'tipped':
+        if (up >= 0.5 && !c.held) { T.state = 'search'; T.lastSight = now + TURRET.maxWait; break; }   // ReturnToLife
+        if (now < T.thrash) { if (T.shot < now) { shoot(); T.shot = now + 0.05; } const a = Math.atan2(R[1], R[0]) * 180 / Math.PI; face(angleVectors([(Math.random() * 2 - 1) * 60, a + (Math.random() * 2 - 1) * 60, 0]).f); }
+        else if (seqName() !== 'retract') { this.turretAct(c, 'idlealert'); if (!face(xformDir(W, [1, 0, 0]))) { this.snd?.play('npc_floorturret.die', eye); this.turretAct(c, 'retract'); this.snd?.play('npc_floorturret.retract', eye); } }
+        else if (finished()) { T.state = 'dead'; this.io.fire(c.ent, 'ondeath', c.ent); }
+        break;
+    }
+  }
+  updateCubeBox(c: Cube) { const cap = (c.he ? Math.max(...c.he) : c.ext) * 1.3, b = c.ent.box, x = halfExtent(c).map(v => Math.min(v, cap)); b.mins = [c.pos[0] - x[0], c.pos[1] - x[1], c.pos[2] - x[2]]; b.maxs = [c.pos[0] + x[0], c.pos[1] + x[1], c.pos[2] + x[2]]; }
   // ---------- portals ----------
   activatePortal(e: Ent, on: boolean) {
     const p: Portal = e.portal; if (!p) return;
@@ -189,7 +254,9 @@ export class Game {
     const t = da / (da - db); const x = add(a, scale(sub(b, a), t)); const d = sub(x, p.pos);
     const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
   }
+  lastExit: { p: Portal; t: number } | null = null;
   teleportPlayer(a: Portal, b: Portal, centre = false) {
+    this.lastExit = { p: b, t: this.io.time };
     const M = throughPortal(a, b); const pl = this.player; const mid = centre ? pl.maxs()[2] / 2 : pl.viewOffset;
     const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
     pl.vel = xformDir(M, pl.vel);
@@ -216,6 +283,7 @@ export class Game {
   /** src: fire from somewhere else (the a01 pedestal gun's FirePortal1 input) */
   shootPortal(which: 0 | 1, src?: { eye: V3; f: V3 }) {
     if (!src && (!this.hasGun || !this.canFire[which])) return;
+    if (!src) this.vmPlay('act_vm_primaryattack');
     const eye = src ? src.eye : this.player.eye(); const f = src ? src.f : angleVectors(this.player.ang).f;
     this.tr.ignore = null;
     const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
@@ -238,13 +306,15 @@ export class Game {
     const rr = norm(cross(n, up)); void right;
     let pos = ma(t.end, 0, n);
     const other = this.gunPortals[1 - which];
+    // the face a trace hit carries a no-portal material (or the NOPORTAL surface flag)
+    const noportal = (q: any) => { if (q.hit < 0) return false; const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
+      if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; return !!(ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal); } } return false; };
     const fits = (c: V3) => {
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
         const pt = add(add(c, scale(rr, a * (PW - 1))), scale(up, b * (PH - 1)));
         const s = ma(pt, 2, n), e2 = ma(pt, -2, n); const q = this.tr.trace(s, e2, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
         if (q.fraction >= 1 || q.startsolid || dot(q.normal, n) < 0.99 || (q.ent && q.ent !== t.ent) || (!q.ent && onCol)) return false;
-        if (q.hit >= 0) { const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
-          if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; if (ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal) return false; break; } } }
+        if (noportal(q)) return false;
         // must not be covered (e.g. by geometry right in front)
         const block = this.tr.trace(ma(pt, 3, n), ma(pt, 0.5, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt); if (block.startsolid) return false;
       }
@@ -259,7 +329,8 @@ export class Game {
       for (const [ax, sgn] of [[rr, 1], [rr, -1], [up, 1], [up, -1]] as [V3, number][]) {
         const ext = ax === rr ? PW : PH; const pt = add(pos, scale(ax, sgn * (ext - 1)));
         const q = this.tr.trace(ma(pt, 2, n), ma(pt, -2, n), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
-        if (q.fraction >= 1 || dot(q.normal, n) < 0.99 || q.startsolid) { pos = add(pos, scale(ax, -sgn * 4)); moved = true; }
+        // a no-portal surface counts as an edge too, so a shot near a metal strip slides onto the concrete beside it
+        if (q.fraction >= 1 || dot(q.normal, n) < 0.99 || q.startsolid || noportal(q)) { pos = add(pos, scale(ax, -sgn * 4)); moved = true; }
       }
       if (!moved) break; ok = fits(pos);
     }
@@ -336,11 +407,31 @@ export class Game {
       else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') { /* ignore */ }
       return true;
     });
+    // named lights switch their own light style in the lightmaps (Valve Developer Wiki, "light": TurnOn, TurnOff, Toggle)
+    const lightIn = (e: Ent, i: string) => { const st = +(e.kv.style || 0); if (st < 32) return false;
+      const on = i === 'turnon' ? 1 : i === 'turnoff' ? 0 : i === 'toggle' ? (e.lightOn ?? !(+(e.kv.spawnflags || 0) & 1) ? 0 : 1) : -1; if (on < 0) return false;
+      e.lightOn = !!on; const n = this.r.setLightStyle(st, on); io.log.push(`${io.time.toFixed(2)} light style ${st} ${on ? 'on' : 'off'} (${n} faces)`); return true; };
+    H.set('light', lightIn); H.set('light_spot', lightIn);
+    // env_shake (SDK 2013 EnvShake.cpp + UTIL_ScreenShake): amplitude capped at 16, falls off linearly to the radius (0 or
+    // flag 1 = everyone at full), only players on the ground unless flag 4; flag 0x20 is no view shake
+    H.set('env_shake', (e, i) => { const sf = +(e.kv.spawnflags || 0);
+      if (i === 'stopshake') { this.shakes = []; return true; }
+      if (i !== 'startshake' && i !== 'amplitude' && i !== 'frequency') return false;
+      const rad = sf & 1 ? 0 : +(e.kv.radius || 0); let amp = Math.min(16, +(e.kv.amplitude || 0));
+      if (i === 'startshake' && !(sf & 4) && !this.player.onGround) return true;
+      if (rad > 0) { const c = add(this.player.pos, [0, 0, 36]), d = len(sub(c, e.origin)); if (d > rad) return true; amp *= 1 - d / rad; }
+      if (amp <= 0) return true;
+      const longest = () => this.shakes.reduce((a: any, b: any) => !a || b.duration > a.duration ? b : a, null);
+      if (i === 'startshake') { if (!(sf & 0x20) && this.shakes.length < 32) this.shakes.push({ amplitude: amp, frequency: +(e.kv.frequency || 0), duration: +(e.kv.duration || 0), next: 0, end: io.time + +(e.kv.duration || 0), offset: [0, 0, 0], angle: 0 }); }
+      else if (i === 'amplitude') { const l = longest(); if (l) l.amplitude = amp; }
+      else { const l = longest(); if (l) l.frequency = +(e.kv.frequency || 0); }
+      return true; });
     H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; this.wakeCubes(e); if (e.inst) e.inst.visible = e.enabled; return true; });
     const propVis = (e: Ent, i: string, param: string) => { if (e.cube && (i === 'wake' || i === 'enablemotion')) { e.cube.asleep = false; e.cube.sleep = 0; return true; } if (e.cube && (i === 'sleep' || i === 'disablemotion')) { e.cube.asleep = true; return true; } if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') { this.playAnim(e, param, false); }
       else if (i === 'setdefaultanimation') { e.defaultAnim = param; }
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
       else return false; return true; };
+    H.set('npc_security_camera', (e, i) => { if (i === 'disable') e.camDisabled = true; else if (i === 'enable') e.camDisabled = false; else return false; return true; });
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
     // material_modify_control: drives $frame of its parent brush's material (Valve Developer Wiki); used by the a00 countdown clock
     H.set('material_modify_control', (e, i, param) => { const par = e.kv.parentname ? this.io.find(e.kv.parentname, null, e)[0] : null; const ins: any = par && (par.inst || par.prop); if (!ins) return true;
@@ -378,6 +469,16 @@ export class Game {
     H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
     H.set('env_fade', (e, i) => { if (i !== 'fade') return true; const from = +e.kv.spawnflags & 1; const dur = +(e.kv.duration || 1), hold = +(e.kv.holdtime || 0);
       if (from) { this.hud.fade = 1; this.hud.fadeTarget = 0; this.hud.fadeRate = 1 / Math.max(0.01, dur); this.hud.fadeHoldUntil = io.time + hold; } else { this.hud.fadeTarget = 1; this.hud.fadeRate = 1 / Math.max(0.01, dur); } return true; });
+    // env_physexplosion (SDK 2013 physobj.cpp, CPhysExplosion::Explode): every physics body named by targetentityname, or
+    // within radius (0: any distance), is pushed away from the explosion with damage magnitude − 0.4 × distance (at least
+    // 1), applied at the explosion point so it also spins. There is no mass model here: 8 in/s per damage point is tuned so
+    // a11's magnitude-30 kicks tip the 64-unit turret over, as they are placed to.
+    H.set('env_physexplosion', (e, i) => { if (i !== 'explode') return false; const o = e.pos || e.origin, rad = +(e.kv.radius || 0), tgt = (e.kv.targetentityname || '').toLowerCase(), mag = +(e.kv.magnitude || 0);
+      for (const c of this.cubes) { if (!c.alive || c.held || (tgt && c.ent.name !== tgt)) continue; const spot = [...c.pos] as V3, from = [...o] as V3; if (+(e.kv.spawnflags || 0) & 4) from[2] = spot[2];
+        const d = sub(spot, from), dist = len(d); if (rad && dist > rad) continue; const dmg = Math.max(1, mag - dist * 0.4), j = scale(d, 8 * dmg / (dist || 1));
+        const r = sub(o, c.pos), he = c.he, invI = he ? 9 / (2 * (he[0] ** 2 + he[1] ** 2 + he[2] ** 2)) : 6 / ((2 * c.h) ** 2);
+        c.vel = add(c.vel, j); c.w = add(c.w, scale(cross(r, j), invI)); c.asleep = false; c.sleep = 0; this.io.log.push(`${this.io.time.toFixed(2)} ${e.name} pushed ${c.ent.name} ${len(j).toFixed(0)} in/s`); }
+      return true; });
     H.set('trigger_portal_cleanser', (e, i) => { if (i === 'fizzleTouchingPortals'.toLowerCase()) this.fizzleGunPortals(); return false; });
     H.set('ambient_generic', (e, i, p) => { const sn = this.snd; const fl = +(e.kv.spawnflags || 0);
       const start = () => { e.sndH?.stop(); if (!sn) return; const msg = e.kv.message || ''; e.sndH = sn.play(msg, e.pos || e.origin, { vol: Math.min(1, +(e.kv.health ?? 10) / 10), everywhere: !!(fl & 1), loop: fl & 32 ? false : undefined, music: /^portal\.song|music\//i.test(msg) }); this.io.log.push(`${io.time.toFixed(2)} sound ${msg}`); };
@@ -385,7 +486,8 @@ export class Game {
       else if (i === 'volume' && e.sndH?.src) { /* runtime volume changes are ignored */ void p; } return true; });
     H.set('trigger_teleport', () => false); H.set('trigger_once', () => false); H.set('trigger_multiple', () => false);
     H.set('player', (e, i) => { if (i === 'sethealth') {} return true; });
-    H.set('func_noportal_volume', () => false);
+    // func_noportal_volume takes Activate, Deactivate and Toggle (a02's noportal_door_rm3a is deactivated when its door opens)
+    H.set('func_noportal_volume', (e, i) => { if (i === 'activate') e.enabled = true; else if (i === 'deactivate') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; return true; });
     H.set('logic_auto', () => true);
   }
   /** env_entity_maker for non-cube templates (energy-ball catchers): the template's own copies were removed at load, so the first ForceSpawn
@@ -397,8 +499,13 @@ export class Game {
     const R = entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]);
     const place = (o: V3): V3 => add(maker.origin, xformDir(R, sub(o, t.origin)));
     for (const n of names) for (const e of this.io.byName.get(n) || []) {
-      if (e.cube || e.cls === 'func_tracktrain' || e.cls === 'path_track' || e.kv.parentname) continue;
-      const np = place(e.origin); const M = mul(R, entityMatrix([0, 0, 0], e.angles || [0, 0, 0])); M[12] = np[0]; M[13] = np[1]; M[14] = np[2];
+      if (e.cube) continue;
+      // parented members (the caught ball and its sprites) come back too and follow their parent through the hierarchy,
+      // which relates them by their spawn matrices, so they land in the same place on the placed parent
+      if (e.kv.parentname) { e.killed = false; if (e.prop) e.prop.visible = e.kv.startdisabled !== '1'; this.io.fire(e, 'onspawn', e); continue; }
+      // the catcher's door is a func_tracktrain between two of the template's path_tracks: move both; the train was put
+      // on its first path at load, so it is placed from there
+      const np = place(e.cls === 'func_tracktrain' ? e.pos : e.origin); const M = mul(R, entityMatrix([0, 0, 0], e.angles || [0, 0, 0])); M[12] = np[0]; M[13] = np[1]; M[14] = np[2];
       e.killed = false; e.origin = np; e.pos = [...np] as V3; e.ang = vectorAngles([M[0], M[1], M[2]], [M[8], M[9], M[10]]);
       if (e.model != null && typeof e.model === 'number') { const B = this.bsp.models[e.model]; const lo: V3 = [1e9, 1e9, 1e9], hi: V3 = [-1e9, -1e9, -1e9];
         for (let k = 0; k < 8; k++) { const c: V3 = [k & 1 ? B.maxs[0] : B.mins[0], k & 2 ? B.maxs[1] : B.mins[1], k & 4 ? B.maxs[2] : B.mins[2]]; const w = xformPoint(M, c); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], w[a]); hi[a] = Math.max(hi[a], w[a]); } }
@@ -417,10 +524,11 @@ export class Game {
   balls: { ent: Ent; pos: V3; vel: V3; r: number; die: number; launcher: Ent; prop: PropInst }[] = [];
   launchBall(L: Ent) {
     const io = this.io; const f = angleVectors(L.angles || [0, 0, 0]).f; const spd = +(L.kv.minspeed || 200) || 200; const r = +(L.kv.ballradius || 12) || 12;
-    const e = new Ent({ classname: 'prop_energy_ball', origin: L.origin.join(' ') }); e.game = this; this.io.add(e);
-    const prop = this.addProp('models/effects/combineball.mdl', [...L.origin] as V3, [0, 0, 0]);
+    const e = new Ent({ classname: 'prop_energy_ball', origin: L.origin.join(' '), model: 'models/effects/combineball.mdl' }); e.game = this; this.io.add(e);
+    const prop = this.addProp(e.kv.model, [...L.origin] as V3, [0, 0, 0]);
     const b = { ent: e, pos: ma(L.origin, r + 2, f), vel: scale(f, spd), r, die: io.time + (+(L.kv.balllifetime || 12) || 12), launcher: L, prop };
     e.ball = b; e.onKill = () => { prop.visible = false; io.log.push(`${io.time.toFixed(2)} energy ball gone at ${b.pos.map(v => v | 0)}${io.time >= b.die ? ' (expired)' : ''}`); this.balls = this.balls.filter(x => x !== b); };
+    e.prop = prop; this.playAnim(e, 'idle', true); // combineball.mdl's own looping idle turns its three bones (about 86 deg/s)
     this.balls.push(b); io.fire(L, 'onpostspawnball', e); io.log.push(`${io.time.toFixed(2)} energy ball from ${L.name}`);
   }
   updateBalls(dt: number) {
@@ -447,7 +555,10 @@ export class Game {
         const M = throughPortal(p, p.linked); b.pos = xformPoint(M, b.pos); b.vel = xformDir(M, b.vel);
         b.die = Math.max(b.die, io.time + (+(b.launcher.kv.minlifeafterportal || 6))); io.log.push(`${io.time.toFixed(2)} energy ball through ${p.name} at ${b.pos.map(v => v | 0)}`); break; }
       b.ent.pos = b.pos; b.ent.origin = b.pos;
-      const m = entityMatrix(b.pos, [0, io.time * 400 % 360, 0]); b.prop.matrix = m;
+      // combineball.mdl is built to be seen from one side: its glow cards are flat and the shell is a dome, facing -y in
+      // the bind pose, and the idle's base bone turns that to +x. So the ball keeps its +x on the viewer, or most
+      // directions show a sliver (checks/energy-ball.ctl)
+      { const v = sub(this.player.eye(), b.pos); b.prop.matrix = entityMatrix(b.pos, [-Math.atan2(v[2], Math.hypot(v[0], v[1])) * 180 / Math.PI, Math.atan2(v[1], v[0]) * 180 / Math.PI, 0]); }
     }
   }
   prevPath(p: Ent) { return this.io.ents.find(q => q.cls === 'path_track' && !q.killed && (q.kv.target || '').toLowerCase() === p.name) || null; }
@@ -466,25 +577,120 @@ export class Game {
   /** start a sequence by name on a prop entity (applied once the model has loaded) */
   /** current world matrix of an entity (brush, prop, mover or point) */
   entWorld(e: Ent): Float32Array { if (e.worldM && e.kv.parentname) return e.worldM; return entityMatrix(e.pos || e.origin, e.ang || e.angles); }
+  /** an attachment's world matrix on a prop in its current pose (sequence, cycle, fades and pose parameters): the
+   *  attachment's local matrix on its bone, then the prop's matrix. Bones are cached until the pose changes. */
+  attachWorld(pr: PropInst, name: string): Float32Array | null {
+    const m = pr.model; if (!m || pr.seq === undefined) return null; const n = name.toLowerCase();
+    const a = m.data.attachments.find(a => a.name.toLowerCase() === n); if (!a) return null;
+    const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses;
+    const key = pr.seq + ':' + (pr.cycle || 0) + (fades ? '|' + fades.map(f => f.seq + ':' + f.cycle + ':' + f.weight).join(',') : '') + (poses ? '|' + poses.join(',') : '');
+    if (pr.boneCache?.key !== key) pr.boneCache = { key, M: boneMatrices(m.skel, pr.seq, pr.cycle || 0, fades || poses ? { fades, poses: poses?.slice() } : undefined) };
+    const B = pr.boneCache.M, b = a.bone * 12, A = a.m, L = new Float32Array(16);
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 3; r++) L[c * 4 + r] = B[b + r * 4] * A[c] + B[b + r * 4 + 1] * A[4 + c] + B[b + r * 4 + 2] * A[8 + c] + (c === 3 ? B[b + r * 4 + 3] : 0);
+    L[15] = 1; return mul(pr.matrix, L);
+  }
+  /** switch a prop to sequence si, cross-fading from the old one */
+  startSeq(pr: PropInst, m: GLModel, si: number) {
+    const nsq = m.skel.seqs[si];
+    if ((nsq.flags & F.SNAP) || this.r.animFades === false) pr.fades = [];
+    else if (pr.seq !== undefined && m.skel.seqs[pr.seq]) { const fade = Math.min(m.skel.seqs[pr.seq].fadeout, nsq.fadein);
+      if (fade > 0) (pr.fades ??= []).push({ seq: pr.seq, cycle: pr.cycle || 0, rate: pr.rate || 0, age: 0, fade, weight: 1 }); }
+    pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = nsq.looping;
+  }
+  /** the first-person portal gun (v_portalgun.mdl): drawn by the renderer's viewmodel pass, matrix set to the eye each
+   * frame. Sequences by activity: ACT_VM_DRAW when the gun is first held, PRIMARYATTACK per shot, FIZZLE when a
+   * cleanser takes the portals, PICKUP / RELEASE around carrying an object (held on PICKUP's last frame meanwhile),
+   * IDLE otherwise. */
+  vm: PropInst | null = null; private vmHeld = false;
+  vmPlay(act: string, then: string | null = 'act_vm_idle') {
+    const pr = this.vm, m = pr?.model; if (!pr || !m) return; const si = findSeq(m, act); if (si < 0) return;
+    this.startSeq(pr, m, si); pr.onDone = then ? () => this.vmPlay(then, null) : undefined;
+  }
+  updateViewModel() {
+    if (this.hasGun && !this.vm) { const pr: PropInst = this.vm = { model: null, matrix: m4(), visible: true, skin: 0, ambient: [1, 1, 1] }; this.r.viewModel = pr;
+      this.models.get('models/weapons/v_portalgun.mdl').then(m => { pr.model = m; this.vmPlay('act_vm_draw'); }); }
+    const pr = this.vm; if (!pr) return; pr.visible = this.hasGun;
+    const held = !!this.held; if (held !== this.vmHeld) { this.vmHeld = held; if (held) this.vmPlay('act_vm_pickup', null); else this.vmPlay('act_vm_release'); }
+  }
   playAnim(e: Ent, name: string, isDefault: boolean) {
     const pr = e.prop; if (!pr || !name) return;
     const apply = () => { const m = pr.model; if (!m) return; const si = findSeq(m, name); if (si < 0) return;
-      pr.seq = si; pr.cycle = 0; if (pr.restPose) { pr.rate = 1; pr.restPose = false; } pr.rate = pr.rate ?? 1; pr.loop = m.skel.seqs[si].looping;
-      pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim || e.kv.defaultanim; if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
+      // the sequence being left keeps playing and fades out over min(its fadeout, the new one's fadein), 0.2 s by
+      // default, unless the new sequence is STUDIO_SNAP (CSequenceTransitioner::CheckForSequenceChange in the SDK)
+      this.startSeq(pr, m, si);
+      pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim !== undefined ? e.defaultAnim : e.kv.defaultanim; /* SetDefaultAnimation with an empty value clears it */ if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
     if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
   }
-  animateProps(dt: number) {
-    for (const pr of this.r.props) { const m = pr.model; if (!m || pr.seq === undefined || !pr.visible) continue;
-      const sq = m.skel.seqs[pr.seq]; if (!sq) continue;
+  animateProps(dt: number) { for (const pr of this.r.props) this.animateProp(pr, dt); if (this.vm) this.animateProp(this.vm, dt); }
+  animateProp(pr: PropInst, dt: number) {
+    { const m = pr.model; if (!m || pr.seq === undefined) return;
+      // hidden props keep animating, as the server's frame advance does for EF_NODRAW entities; only skinning waits
+      const sk = m.skel, sq = sk.seqs[pr.seq]; if (!sq) return;
       const dur = Math.max(1, sq.frames - 1) / (sq.fps || 30);
       if (sq.frames > 1 && pr.rate) { let c = (pr.cycle || 0) + dt * pr.rate / dur;
-        if (c >= 1) { if (pr.loop) c %= 1; else { c = 1; if (pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } } } pr.cycle = c; }
-      const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3);
-      if (pr.posed !== key && pr.seq !== undefined) { pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, pr.seq, pr.cycle || 0); pr.posed = key; }
+        if (c >= 1) { if (pr.loop) c %= 1; else c = 1; } pr.cycle = c; /* before onDone, which may start the next sequence at cycle 0 */
+        if (c >= 1 && !pr.loop && pr.onDone) { const f = pr.onDone; pr.onDone = undefined; f(); } }
+      if (pr.fades?.length) { for (const f of pr.fades) { const fs = sk.seqs[f.seq]; f.age += dt;
+          if (fs && fs.frames > 1 && f.rate) { const c = f.cycle + dt * f.rate * (fs.fps || 30) / (fs.frames - 1); f.cycle = fs.looping ? c - Math.floor(c) : Math.min(1, c); }
+          const s = 1 - f.age / f.fade; f.weight = s <= 0 ? 0 : s >= 1 ? 1 : 3 * s * s - 2 * s * s * s; /* C_AnimationLayer::GetFadeout's spline */ }
+        pr.fades = pr.fades.filter(f => f.weight > 0); }
+      if (!pr.visible) return;   // C_BaseAnimating::DoAnimationEvents skips invisible entities too
+      if (sq.events.length) this.animEvents(pr, sq);
+      const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses?.slice();
+      const key = pr.seq + ':' + (pr.cycle || 0).toFixed(3) + (fades ? '|' + fades.map(f => f.seq + ':' + f.cycle.toFixed(3) + ':' + f.weight.toFixed(3)).join(',') : '') + (poses ? '|' + poses.map(v => v.toFixed(2)).join(',') : '');
+      // skinning is left to the renderer, which runs it once, only when the prop is actually drawn (it used to run
+      // every 1/66 s tick even off screen: GLaDOS's 21k-vertex body cost about 0.57 ms per tick in escape_02)
+      if (pr.posed !== key) { const seq = pr.seq, cyc = pr.cycle || 0, ex = fades || poses ? { fades, poses } : undefined; pr.posed = key; pr.repose = () => { pr.repose = undefined; pr.skinned = skinModel(this.r.gl, m, pr.skinned || null, seq, cyc, ex); }; }
     }
   }
+  /** client animation events, run as C_BaseAnimating::DoAnimationEvents does: a new sequence starts from just before
+   * cycle 0 so frame-0 events fire; events fire once as the cycle passes them; a wrap of more than half a cycle runs the
+   * rest of the old loop first. Only client events (new-style AE_CL_*, or old-style numbers from 5000) are run. */
+  animEvents(pr: PropInst, sq: Seq) {
+    let cur = pr.cycle || 0;
+    if (pr.evSeq !== pr.seq) { pr.evSeq = pr.seq; cur = 0; pr.evPrev = -0.01; }
+    let prev = pr.evPrev ?? -0.01; if (cur === prev) return;
+    const client = (e: SeqEvent) => e.name ? e.name.startsWith('AE_CL_') : e.event >= 5000;
+    if (cur <= prev) { if (prev - cur <= 0.5) return; for (const e of sq.events) if (client(e) && e.cycle > prev) this.animEvent(pr, sq, e); prev = cur - 0.001; }
+    for (const e of sq.events) if (client(e) && e.cycle > prev && e.cycle <= cur) this.animEvent(pr, sq, e);
+    pr.evPrev = cur;
+  }
+  /** fired animation events, newest last, for the harness */ animEventLog: { t: number; model: string; seq: string; cycle: number; ev: string; options: string }[] = [];
+  animEvent(pr: PropInst, sq: Seq, e: SeqEvent) {
+    const ev = e.name || String(e.event), log = this.animEventLog; log.push({ t: +this.r.time.toFixed(3), model: pr.model?.data.name || '', seq: sq.name, cycle: e.cycle, ev, options: e.options }); if (log.length > 200) log.shift();
+    const M = pr.matrix, at: V3 = [M[12], M[13], M[14]], sounds = (pr as any).evSounds ??= new Map<string, { stop(): void }>();
+    if (ev === 'AE_CL_PLAYSOUND' || ev === '5004') { const h = this.snd?.play(e.options, at); if (h) { sounds.get(e.options.toLowerCase())?.stop(); sounds.set(e.options.toLowerCase(), h); } }
+    else if (ev === 'AE_CL_STOPSOUND') { sounds.get(e.options.toLowerCase())?.stop(); sounds.delete(e.options.toLowerCase()); }
+  }
+  /** security cameras follow the player's eye while they can see it (see src/npc.ts) */
+  updateCameras(dt: number) {
+    const eye = this.player.eye(), TURN = 90 * dt; // degrees per second
+    for (const e of this.cameras) { const pr = e.prop, m = pr?.model; if (!pr || !m || e.killed || !pr.visible || e.camDisabled) continue;
+      const t = aimTable(m); if (!t) continue;
+      if (!e.camInit) { e.camInit = true; pr.poses = [...t.rest]; }   // spawn looking straight out, not at pose 0 (straight down)
+      const W = this.entWorld(e), lens = xformPoint(W, t.lensPos), to = sub(eye, lens), dist = len(to);
+      const local = xformDir(invertRigid(W), scale(to, 1 / (dist || 1)));
+      let goal = t.rest;
+      if (dist < 2048 && local[0] > -0.2 && this.tr.ray(lens, eye, MASK_SHOT_PORTAL).fraction > 0.98) goal = aimFor(t, local as V3, e.prop.poses);
+      const P = pr.poses ??= [0, 0]; P[0] = approach(P[0], goal[0], TURN); P[1] = approach(P[1], goal[1], TURN); e.camSees = goal !== t.rest; }
+  }
+  shakes: { amplitude: number; frequency: number; duration: number; next: number; end: number; offset: V3; angle: number }[] = [];
+  shakeOffset: V3 = [0, 0, 0]; shakeRoll = 0;
+  /** CViewEffects::CalcShake (SDK 2013 view_effects.cpp): each shake re-picks a random offset and roll 'frequency' times a
+   *  second, scaled by a sine whose frequency rises as the shake runs out and by the squared remaining fraction */
+  updateShake(dt: number) {
+    const now = this.io.time; const off: V3 = [0, 0, 0]; let roll = 0;
+    this.shakes = this.shakes.filter(s => !(now > s.end || s.duration <= 0 || s.amplitude <= 0 || s.frequency <= 0));
+    for (const s of this.shakes) {
+      if (now > s.next) { s.next = now + 1 / s.frequency; for (let k = 0; k < 3; k++) s.offset[k] = (Math.random() * 2 - 1) * s.amplitude; s.angle = (Math.random() * 2 - 1) * s.amplitude * 0.25; }
+      let fr = (s.end - now) / s.duration; const freq = fr ? s.frequency / fr : 0; fr *= fr; fr *= Math.sin(Math.min(1e8, now * freq));
+      off[0] += s.offset[0] * fr; off[1] += s.offset[1] * fr; off[2] += s.offset[2] * fr; roll += s.angle * fr;
+      s.amplitude -= s.amplitude * (dt / (s.duration * s.frequency));
+    }
+    this.shakeOffset = off; this.shakeRoll = roll;
+  }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.animateProps(dt); this.r.time += dt;
+    this.updateShake(dt); this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;
@@ -494,7 +700,10 @@ export class Game {
         const dist = len(sub(e.openPos, e.closedPos)) || 1; const step = e.speed * dt / dist; const tgt = e.state;
         const before = e.t; e.t = tgt ? Math.min(1, e.t + step) : Math.max(0, e.t - step);
         // don't crush: if the door would move into the player, stop for this tick
-        const np = add(e.closedPos, scale(sub(e.openPos, e.closedPos), e.t)); const old = e.pos.slice(); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2];
+        // a door riding a parent (e.g. a10's pillar lifts) has its world position from the hierarchy pass; step that by
+        // this tick's travel, or the crush test below compares a spawn-frame position with a world one and throws the player
+        const riding = !!(e.kv.parentname && e.worldM && !(+e.kv.spawnflags & 1));
+        const np = riding ? add(e.pos, scale(sub(e.openPos, e.closedPos), e.t - before)) : add(e.closedPos, scale(sub(e.openPos, e.closedPos), e.t)); const old = e.pos.slice(); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2];
         this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0xffffffff, this.playerEnt);
         if (pt.startsolid && pt.ent === e) { const d = sub(np, old as V3); if (d[2] > 0 && Math.abs(d[2]) > Math.abs(d[0]) + Math.abs(d[1])) { this.player.pos = add(this.player.pos, d); } else { e.pos[0] = old[0]; e.pos[1] = old[1]; e.pos[2] = old[2]; e.t = before; } }
         if (e.t === tgt) { e.moving = false; io.fire(e, tgt ? 'onfullyopen' : 'onfullyclosed', null); }
@@ -505,6 +714,7 @@ export class Game {
           const to = sub(path.origin, e.pos); const d = len(to); const step = Math.abs(e.speedNow) * dt;
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
           if (this.player.groundEnt === e || this.onTrain(e)) { this.player.pos = add(this.player.pos, mv); this.trainCarried = true; }
+          this.carryCubes(e, mv);
           if (d <= step) { e.curPath = path; io.fire(path, 'onpass', e); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
@@ -525,13 +735,27 @@ export class Game {
       const d = sub(pp, e.trigBase.p); e.bmins = add(e.trigBase.lo, d); e.bmaxs = add(e.trigBase.hi, d);
     }
     // hierarchy: child = parent(now) * inverse(parent at attach time) * child at attach time (full rotation + translation)
-    for (let pass = 0; pass < 2; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
+    for (let pass = 0; pass < 4; pass++) for (const e of io.ents) if (e.kv.parentname && (e.prop || e.inst || e.cube) && !e.killed) {
       const par = io.find(e.kv.parentname.split(',')[0], null, e)[0]; if (!par || !par.pos || par === e) continue;
+      // SetParentAttachment: the child sits on the attachment itself (its origin and angles become the attachment's) and
+      // follows it as the parent animates; SetParentAttachmentMaintainOffset keeps the offset it had when attached
+      if (e.parentAttach && par.prop) { const A = this.attachWorld(par.prop, e.parentAttach);
+        if (A) { if (e.attachKeep) { e.attachOff = mul(invertRigid(A), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)); e.attachKeep = false; }
+          const W = e.attachOff ? mul(A, e.attachOff) : A; e.worldM = W; e.attachTo = par; e.attachRel = null;
+          if (e.prop) e.prop.matrix = W;
+          if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
+          continue; } }
       const P = this.entWorld(par); if (!e.attachRel || e.attachTo !== par) { e.attachTo = par; const now = e.reparentNow; e.reparentNow = false;
         e.attachRel = now ? mul(invertRigid(P), e.prop ? e.prop.matrix : e.inst ? e.inst.matrix : this.entWorld(e)) : mul(invertRigid(par.spawnM || P), e.spawnM || entityMatrix(e.origin, e.angles));
         e.attachAngInv = e.closedAng || e.cls === 'func_rotating' ? invertRigid(entityMatrix(e.origin, e.ang)) : null; }
       // a child that also rotates on its own (rotating door / func_rotating on a moving parent): apply its local spin about its own origin
-      const W = e.attachAngInv ? mul(P, mul(e.attachRel, mul(e.attachAngInv, entityMatrix(e.origin, e.ang)))) : mul(P, e.attachRel); e.worldM = W;
+      // a func_door on a moving parent (a10's telescoping lift pillars: the top door rides the bottom one's brush) slides
+      // in its parent's space, so its own travel adds to the parent's instead of being overwritten by it
+      // (not for doors that start open: a06's fling pillars are three start-open doors deep and the chamber only works
+      // with the children at their Hammer offsets, so how the engine places those is still open; they keep the old rule)
+      let L = e.attachRel; if (e.cls === 'func_door' && e.closedPos && e.t && !(+e.kv.spawnflags & 1)) { const d = scale(sub(e.openPos, e.closedPos), e.t), R = e.spawnM || entityMatrix(e.origin, e.angles);
+        L = mul(L, entityMatrix([R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[4] * d[0] + R[5] * d[1] + R[6] * d[2], R[8] * d[0] + R[9] * d[1] + R[10] * d[2]], [0, 0, 0])); }
+      const W = e.attachAngInv ? mul(P, mul(L, mul(e.attachAngInv, entityMatrix(e.origin, e.ang)))) : mul(P, L); e.worldM = W;
       if (e.prop) e.prop.matrix = W;
       if (e.inst) { e.pos = [W[12], W[13], W[14]]; e.inst.matrix = W; if (e.col) { e.col.offset = e.pos; e.col.rot = W; } }
     }
@@ -541,19 +765,28 @@ export class Game {
     for (const e of io.ents) if (e.col && e.pos && e.cls !== 'func_tracktrain' && !e.killed) {
       const lp = e.ridePos; e.ridePos = [...e.pos];
       if (!lp) continue; const d = sub(e.pos, lp); if (!d[0] && !d[1] && !d[2]) continue;
+      this.carryCubes(e, d);
       if (this.player.groundEnt === e) { if (!carried) this.player.pos = add(this.player.pos, d); continue; }
       if (d[2] > 0) { this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt);
         if (pt.startsolid && pt.ent === e) { const up: V3 = add(this.player.pos, [0, 0, d[2] + 0.1]); const q = this.tr.trace(up, up, HULL.mins, this.player.maxs(), 0x1 | 0x2 | 0x8 | 0x10000, this.playerEnt); if (!q.startsolid) this.player.pos = up; } }
     }
     // player
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
-    const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3;
+    const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
     this.player.move(input, dt);
     const nowC: V3 = this.player.eye();
     let tp = false; for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); tp = true; break; }
     // floor portals: a shallow hole under the portal can stop the player before the eye crosses, so the hull centre counts there too
     if (!tp) { const hc = this.player.maxs()[2] / 2, pa: V3 = [prevPos[0], prevPos[1], prevPos[2] + hc], pb: V3 = [this.player.pos[0], this.player.pos[1], this.player.pos[2] + hc];
-      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb)) { this.teleportPlayer(p, p.linked, true); break; } }
+      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb)) { this.teleportPlayer(p, p.linked, true); tp = true; break; } }
+    // landing fast on a floor portal: the floor behind the hole stops the hull before its centre crosses, which used to
+    // zero the fall and let the player sink through slowly (a fling came out at 213 u/s after falling at 904). Falling
+    // into the hole counts as going through, with the speed from before the landing.
+    if (!tp && this.player.onGround && !wasGround && prevVel[2] < -150) { const pl = this.player, mid = pl.maxs()[2] / 2;
+      for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open || p.f[2] < 0.7 || Math.abs(pl.pos[2] - p.pos[2]) > 4) continue;
+        if (this.lastExit && this.lastExit.p === p && this.io.time - this.lastExit.t < 1.5) continue; // falling back onto the portal just left: land on it as before (a05's route relies on it)
+        const d = sub(pl.pos, p.pos); if (Math.abs(dot(d, p.r)) > 32 - 8 || Math.abs(dot(d, p.u)) > 56 - 8) continue;
+        pl.vel = prevVel; pl.pos = [pl.pos[0], pl.pos[1], p.pos[2] - mid - 1]; this.teleportPlayer(p, p.linked, true); break; } }
     this.tr.ignore = null;
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
@@ -566,7 +799,8 @@ export class Game {
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
     // held-cube prop matrix
-    for (const c of this.cubes) { const m = new Float32Array(c.R); m[12] = c.pos[0]; m[13] = c.pos[1]; m[14] = c.pos[2]; m[15] = 1; c.prop.matrix = m; }
+    for (const c of this.cubes) { const m = new Float32Array(c.R), o = c.off ? sub(c.pos, xformDir(c.R, c.off)) : c.pos; m[12] = o[0]; m[13] = o[1]; m[14] = o[2]; m[15] = 1; c.prop.matrix = m; }
+    for (const c of this.cubes) if (c.turret && c.alive) this.updateTurret(c);
   }
   onTrain(e: Ent) { const p = this.player.pos; const lo = e.platform ? e.platMins : this.bsp.models[e.model].mins, hi = e.platform ? e.platMaxs : this.bsp.models[e.model].maxs; return p[0] > e.pos[0] + lo[0] - 16 && p[0] < e.pos[0] + hi[0] + 16 && p[1] > e.pos[1] + lo[1] - 16 && p[1] < e.pos[1] + hi[1] + 16 && Math.abs(p[2] - (e.pos[2] + hi[2])) < 4; }
   updateCube(c: Cube, dt: number) {
@@ -597,6 +831,19 @@ export class Game {
       if (c.held) c.viaPortal = c.viaPortal === p.linked ? null : p; break;
     }
     this.updateCubeBox(c);
+  }
+  /** cubes resting on a moving brush entity (a08's cube on its rail platform, a cube on a lift) move with it, as physics
+   *  objects on a pusher do in the engine; before this they stayed put while the platform slid out from under them */
+  carryCubes(e: Ent, d: V3) {
+    const Z: V3 = [0, 0, 0];
+    for (const c of this.cubes) { if (!c.alive || c.held) continue;
+      const h = halfExtent(c), lo: V3 = [-h[0] + 1, -h[1] + 1, -h[2]], hi: V3 = [h[0] - 1, h[1] - 1, h[2]];
+      if (Math.abs(c.pos[0] - e.pos[0]) > 512 || Math.abs(c.pos[1] - e.pos[1]) > 512 || Math.abs(c.pos[2] - e.pos[2]) > 512) continue;
+      c.ent.box.mins = [1e9, 1e9, 1e9]; c.ent.box.maxs = [1e9, 1e9, 1e9]; this.tr.ignore = null;
+      const t = this.tr.trace(c.pos, [c.pos[0], c.pos[1], c.pos[2] - 3 - Math.max(0, -d[2])], lo, hi, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
+      this.updateCubeBox(c);
+      if (t.ent !== e || t.fraction >= 1 || t.normal[2] < 0.7) continue;
+      c.pos = add(c.pos, d); }
   }
   /** something the cubes might rest on changed (a brush toggled, a door moved): let sleeping cubes re-check their support */
   wakeCubes(e?: Ent) {
@@ -656,7 +903,7 @@ export class Game {
         if (e.cls === 'trigger_once') { io.fire(e, 'ontrigger', a); e.killed = true; }
         else if (e.cls === 'trigger_multiple') { if (!e.waitUntil || io.time >= e.waitUntil) { io.fire(e, 'ontrigger', a); e.waitUntil = io.time + Math.max(0.1, +(e.kv.wait ?? 0.2)); } }
         else if (e.cls === 'trigger_teleport') { const d = io.find(e.kv.target, null, e)[0]; if (d && a === this.playerEnt) { pl.pos = [...d.origin] as V3; pl.vel = [0, 0, 0]; pl.ang = [0, d.angles[1], 0]; } }
-        else if (e.cls === 'trigger_portal_cleanser') { if (a === this.playerEnt) { if (this.gunPortals.some(p => p.open)) io.fire(e, 'onfizzle', a); this.fizzleGunPortals(); } else if (a.cube) { io.fire(e, 'ondissolvebox', a); io.fire(e, 'ondissolve', a); a.killed = true; a.onKill?.(); } }
+        else if (e.cls === 'trigger_portal_cleanser') { if (a === this.playerEnt) { if (this.gunPortals.some(p => p.open)) { io.fire(e, 'onfizzle', a); this.vmPlay('act_vm_fizzle'); } this.fizzleGunPortals(); } else if (a.cube) { io.fire(e, 'ondissolvebox', a); io.fire(e, 'ondissolve', a); a.killed = true; a.onKill?.(); } }
         else if (e.cls === 'trigger_changelevel' && !(sf & 2) && a === this.playerEnt) this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase());
       }
       for (const a of [...e.touching]) if (!now.has(a)) { e.touching.delete(a); io.fire(e, 'onendtouch', a); if (!e.touching.size) io.fire(e, 'onendtouchall', a); }

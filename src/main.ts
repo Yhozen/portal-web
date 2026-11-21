@@ -1,4 +1,6 @@
 import { Sound } from './audio.ts';
+import { boneMatrices } from './anim.ts';
+import { lensAt, aimTable, attachFrame } from './npc.ts';
 import { BSP } from './bsp.ts';
 import { Assets } from './assets.ts';
 import { openFileSource } from './files.ts';
@@ -8,7 +10,7 @@ import { MaterialCache } from './materials.ts';
 import { Renderer } from './render.ts';
 import { ModelCache } from './models.ts';
 import { Game } from './game.ts';
-import { angleVectors, perspective, viewFrom, parseV3, type V3, sub, add } from './math.ts';
+import { angleVectors, perspective, viewFrom, parseV3, type V3, sub, add, entityMatrix } from './math.ts';
 
 declare global { interface Window { game: any; } }
 const log = (...a: any[]) => { console.log(...a); const el = document.getElementById('log'); if (el) el.textContent = a.join(' ') + '\n' + el.textContent!.slice(0, 2000); };
@@ -91,11 +93,15 @@ async function main() {
     gl.viewport(0, 0, canvas.width, canvas.height);
     const proj = perspective(75 * Math.PI / 180 * 0.82, canvas.width / canvas.height, 1, 16384);
     const eye = pl.eye(); const { f, r: rt, u } = angleVectors(pl.ang);
-    r.frame(proj, viewFrom(eye, f, rt, u), eye); stats.frames++; stats.draws = r.stats.draws;
+    game.updateViewModel(); if (game.vm) game.vm.matrix = entityMatrix(eye, pl.ang);
+    // screen shake moves the view origin and adds roll (CViewEffects::ApplyShake); the viewmodel isn't shaken
+    const so = game.shakeOffset, sr = game.shakeRoll; let ve = eye, vf = f, vr = rt, vu = u;
+    if (so[0] || so[1] || so[2] || sr) { ve = add(eye, so); ({ f: vf, r: vr, u: vu } = angleVectors([pl.ang[0], pl.ang[1], (pl.ang[2] || 0) + sr])); }
+    r.frame(proj, viewFrom(ve, vf, vr, vu), ve); stats.frames++; stats.draws = r.stats.draws;
     if (hint) hint.textContent = game.hud.hint ? localize(game.hud.hint) : '';
     if (fade) fade.style.opacity = String(game.hud.fade);
   };
-  window.game = { bsp, r, game, pl, stats, mats, assets, io: game.io, step, render,
+  window.game = { bsp, r, game, pl, stats, mats, assets, io: game.io, step, render, anim: { boneMatrices }, npc: { lensAt, aimTable, attachFrame },
     sim(seconds: number, inp?: any) { for (let t = 0; t < seconds; t += TICK) step(TICK, inp); render(); },
     look(p: number, y: number) { pl.ang = [p, y, 0]; } };
   let last = performance.now(), acc = 0, cnt = 0, fms = 0;

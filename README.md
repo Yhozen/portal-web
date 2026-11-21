@@ -43,6 +43,11 @@ path against `site/`, `?files=manage` opens the files screen, and `?files=server
 - `pos=x,y,z`, `ang=p,y,r` set the spawn override. `landmark=&lp=&ang=` are set by trigger_changelevel.
 - `nochange=1` stops level changes from navigating. `sens=1.0` sets mouse sensitivity.
 
+## Test harness
+`node tools/portal-ctl.mjs --game DIR script checks/escape02-ending.ctl` runs the port headlessly from a script
+(load a map, pose the camera, step ticks, screenshot, bench, diff) and prints one JSON line per command. Runs are
+deterministic, so two builds can be compared image for image. See [docs/harness.md](docs/harness.md).
+
 ## What is implemented
 - Formats: VPK v2 directory and archives, BSP v20 (faces, displacements, lightmaps, brushes, entities,
   static props, pakfile zip), VTF 7.x (DXT1/3/5 and the common RGBA formats, mips), VMT (incl. `patch`),

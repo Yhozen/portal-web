@@ -31,6 +31,7 @@ window.AP = (() => {
     const h = p => Math.hypot(p[0] - target[0], p[1] - target[1], (p[2] - target[2]) * 0.5);
     let n = 0, near = open[0], nearH = h(start);
     while (open.length && n++ < maxN) {
+      if ((n & 1023) === 0 && window.__deadline && performance.now() > window.__deadline) throw new Error('watchdog: planner past the wall-time limit');
       let bi = 0; for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i; const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
       if (cur.g > best.get(cur.k)) continue; { const hc = h(cur.p); if (hc < nearH) { nearH = hc; near = cur; } }
       if (Math.hypot(cur.p[0] - target[0], cur.p[1] - target[1]) < R && cur.p[2] - target[2] > ZT.lo && cur.p[2] - target[2] < ZT.hi) {

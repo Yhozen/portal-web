@@ -1,15 +1,19 @@
 // Simple impulse-based rigid body for cubes (own code; standard textbook method:
 // point contacts at the 8 box corners, sequential impulses with Coulomb friction).
-// A cube's inertia tensor is isotropic (I = m*s^2/6), so world-space inverse inertia is a scalar.
+// A cube's inertia tensor is isotropic (I = m*s^2/6), so world-space inverse inertia is a scalar; other boxes
+// (turrets) use the mean of their three moments, which keeps the scalar form.
 import { V3, add, sub, scale, dot, cross, len, ma } from './math';
 
-export interface Body { pos: V3; vel: V3; R: Float32Array; w: V3; h: number; sleep: number; asleep: boolean; }
+/** a box body: half-size h on every axis, or he per local axis when set */
+export interface Body { pos: V3; vel: V3; R: Float32Array; w: V3; h: number; he?: V3; sleep: number; asleep: boolean; }
 export interface TraceFn { (a: V3, b: V3): { fraction: number; end: V3; normal: V3; startsolid: boolean; ent?: any } }
 
 export const CORNERS: V3[] = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) CORNERS.push([x, y, z]);
-export function cornerOf(b: Body, s: V3, shrink = 1): V3 { const R = b.R, h = b.h * shrink; return [b.pos[0] + h * (s[0] * R[0] + s[1] * R[4] + s[2] * R[8]), b.pos[1] + h * (s[0] * R[1] + s[1] * R[5] + s[2] * R[9]), b.pos[2] + h * (s[0] * R[2] + s[1] * R[6] + s[2] * R[10])]; }
+export function cornerOf(b: Body, s: V3, shrink = 1): V3 { if (b.he) return cornerOfBox(b, s, shrink); const R = b.R, h = b.h * shrink; return [b.pos[0] + h * (s[0] * R[0] + s[1] * R[4] + s[2] * R[8]), b.pos[1] + h * (s[0] * R[1] + s[1] * R[5] + s[2] * R[9]), b.pos[2] + h * (s[0] * R[2] + s[1] * R[6] + s[2] * R[10])]; }
+function cornerOfBox(b: Body, s: V3, shrink: number): V3 { const R = b.R, e = b.he!, x = s[0] * e[0] * shrink, y = s[1] * e[1] * shrink, z = s[2] * e[2] * shrink;
+  return [b.pos[0] + x * R[0] + y * R[4] + z * R[8], b.pos[1] + x * R[1] + y * R[5] + z * R[9], b.pos[2] + x * R[2] + y * R[6] + z * R[10]]; }
 /** world AABB half-extent of the rotated box */
-export function halfExtent(b: Body): V3 { const R = b.R, h = b.h; return [h * (Math.abs(R[0]) + Math.abs(R[4]) + Math.abs(R[8])), h * (Math.abs(R[1]) + Math.abs(R[5]) + Math.abs(R[9])), h * (Math.abs(R[2]) + Math.abs(R[6]) + Math.abs(R[10]))]; }
+export function halfExtent(b: Body): V3 { const R = b.R, h = b.h; const e = b.he; if (e) return [0, 1, 2].map(k => e[0] * Math.abs(R[k]) + e[1] * Math.abs(R[4 + k]) + e[2] * Math.abs(R[8 + k])) as V3; return [h * (Math.abs(R[0]) + Math.abs(R[4]) + Math.abs(R[8])), h * (Math.abs(R[1]) + Math.abs(R[5]) + Math.abs(R[9])), h * (Math.abs(R[2]) + Math.abs(R[6]) + Math.abs(R[10]))]; }
 
 function orthonormalize(R: Float32Array) {
   let x: V3 = [R[0], R[1], R[2]], y: V3 = [R[4], R[5], R[6]];
@@ -24,7 +28,7 @@ export function rotateBy(R: Float32Array, w: V3, dt: number) {
 
 /** one physics step. trace(a,b) is a point trace (world + other solids). Returns contact normals seen. */
 export function stepBody(b: Body, dt: number, trace: TraceFn, gravity = 600): V3[] {
-  const invM = 1, invI = 6 / ((2 * b.h) ** 2), e = 0.15, mu = 0.55;
+  const he = b.he, invM = 1, invI = he ? 9 / (2 * (he[0] ** 2 + he[1] ** 2 + he[2] ** 2)) : 6 / ((2 * b.h) ** 2), /* the box's mean moment of inertia; exact for a cube */ e = 0.15, mu = 0.55;
   const normals: V3[] = [];
   if (b.asleep) {
     // stay asleep while at least 3 corners are still supported

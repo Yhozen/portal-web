@@ -5,7 +5,7 @@ import { dot } from './math.ts';
 export const STRIDE = 11; // pos3 uv2 lmuv2 normal3 alpha1
 export interface Batch { texdata: number; start: number; count: number; }
 export interface ModelMesh { batches: Batch[]; }
-export interface WorldMesh { verts: Float32Array; indices: Uint32Array; models: ModelMesh[]; lmW: number; lmH: number; lm: Uint8Array; faceTris: number; faceStart: Int32Array; faceCount: Int32Array; faceTex: Int32Array; faceDisp: Uint8Array; overlays: { id: number; texdata: number; start: number; count: number }[]; }
+export interface WorldMesh { verts: Float32Array; indices: Uint32Array; models: ModelMesh[]; lmW: number; lmH: number; lm: Uint8Array; faceTris: number; faceStart: Int32Array; faceCount: Int32Array; faceTex: Int32Array; faceDisp: Uint8Array; overlays: { id: number; texdata: number; start: number; count: number }[]; setStyle?: (style: number, v: number) => [number, number, number, number][]; }
 
 const SKIP_FLAGS = SURF.SKY | SURF.SKY2D | SURF.NODRAW | SURF.HINT | SURF.SKIP | SURF.TRIGGER;
 
@@ -22,16 +22,30 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
   let lmH = 1; while (lmH < shelfY + shelfH + 1) lmH <<= 1;
   const lm = new Uint8Array(lmW * lmH * 4); lm.fill(255);
   const L = bsp.lighting;
-  const tm = (c: number, e: number) => { const v = c * Math.pow(2, e) / 255; return Math.min(255, Math.round(Math.pow(Math.min(v / 4, 1), 1 / 2.2) * 255)); };
-  for (const [fi, [x0, y0]] of place) {
-    const f = bsp.faces[fi], w = f.lmSize[0] + 1, h = f.lmSize[1] + 1; const o = f.lightofs;
+  // Faces can carry up to four light styles (BSP v20: each style's samples follow the previous style's, 1 block per
+  // style, or 4 for bump-lit faces). Style 0 is always on; switchable ones (32+, from named lights) start on unless the
+  // light was flagged initially dark. The styles are summed in linear before the same tone curve as before.
+  const styleVal = new Map<number, number>();
+  for (const e of bsp.entities) if (/^light/.test(e.classname) && e.targetname && +e.style >= 32) styleVal.set(+e.style, +(e.spawnflags || 0) & 1 ? 0 : 1);
+  const sv = (st: number) => st === 0 ? 1 : st === 255 ? 0 : styleVal.get(st) ?? 0;
+  const tmv = (v: number) => Math.min(255, Math.round(Math.pow(Math.min(v / 4, 1), 1 / 2.2) * 255));
+  const bake = (fi: number, x0: number, y0: number) => {
+    const f = bsp.faces[fi], w = f.lmSize[0] + 1, h = f.lmSize[1] + 1; const o = f.lightofs; const ti = bsp.texinfo[f.texinfo];
+    const block = w * h * 4 * (ti && ti.flags & SURF.BUMPLIGHT ? 4 : 1);
+    const ks = f.styles.map((st, k) => [st, k, sv(st)]).filter(([st, , v]) => st !== 255 && v > 0);
     for (let y = -1; y <= h; y++) for (let x = -1; x <= w; x++) {
-      const sx = Math.min(w - 1, Math.max(0, x)), sy = Math.min(h - 1, Math.max(0, y)); const s = o + (sy * w + sx) * 4;
-      if (s + 3 >= L.length) continue;
-      const e = (L[s + 3] << 24) >> 24; const d = ((y0 + y) * lmW + (x0 + x)) * 4;
-      lm[d] = tm(L[s], e); lm[d + 1] = tm(L[s + 1], e); lm[d + 2] = tm(L[s + 2], e); lm[d + 3] = 255;
+      const sx = Math.min(w - 1, Math.max(0, x)), sy = Math.min(h - 1, Math.max(0, y)); const s0 = o + (sy * w + sx) * 4;
+      if (s0 + 3 >= L.length) continue;
+      let r = 0, g = 0, b = 0; for (const [, k, v] of ks) { const s = s0 + k * block; if (s + 3 >= L.length) continue; const m = Math.pow(2, (L[s + 3] << 24) >> 24) / 255 * v; r += L[s] * m; g += L[s + 1] * m; b += L[s + 2] * m; }
+      const d = ((y0 + y) * lmW + (x0 + x)) * 4;
+      lm[d] = tmv(r); lm[d + 1] = tmv(g); lm[d + 2] = tmv(b); lm[d + 3] = 255;
     }
-  }
+  };
+  for (const [fi, [x0, y0]] of place) bake(fi, x0, y0);
+  /** switch a light style (TurnOn/TurnOff on a named light): re-bake the faces that use it; returns the atlas rects to upload */
+  const setStyle = (style: number, v: number) => { const rects: [number, number, number, number][] = []; if ((styleVal.get(style) ?? 0) === v) return rects; styleVal.set(style, v);
+    for (const [fi, [x0, y0]] of place) { const f = bsp.faces[fi]; if (!f.styles.includes(style)) continue; bake(fi, x0, y0); rects.push([x0 - 1, y0 - 1, f.lmSize[0] + 3, f.lmSize[1] + 3]); }
+    return rects; };
   // --- geometry ---
   const verts: number[] = [], idx: number[] = []; const models: ModelMesh[] = [];
   let faceTris = 0; const NF = bsp.faces.length; const faceStart = new Int32Array(NF).fill(-1), faceCount = new Int32Array(NF), faceTex = new Int32Array(NF).fill(-1), faceDisp = new Uint8Array(NF);
@@ -111,5 +125,5 @@ export function buildWorld(bsp: BSP, skipTex: (name: string) => boolean): WorldM
     overlays.push({ id: ov.id, texdata: ti0.texdata, start: idx.length, count: 6 }); idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base, base + 2, base + 1, base, base + 3, base + 2);
     overlays[overlays.length - 1].count = 12; // both windings: basis handedness varies
   }
-  return { verts: new Float32Array(verts), indices: new Uint32Array(idx), models, lmW, lmH, lm, faceTris, faceStart, faceCount, faceTex, faceDisp, overlays };
+  return { verts: new Float32Array(verts), indices: new Uint32Array(idx), models, lmW, lmH, lm, faceTris, faceStart, faceCount, faceTex, faceDisp, overlays, setStyle };
 }

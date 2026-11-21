@@ -4,10 +4,13 @@ import { parseVTF, decodeToRGBA, FMT, TEXF } from './vtf.ts';
 
 export interface GLMat { name: string; vmt: Material | null; tex: WebGLTexture; w: number; h: number; translucent: boolean; additive: boolean; alphatest: number;
   unlit: boolean; tint: [number, number, number, number]; nodraw: boolean; noportal: boolean; selfillum: boolean;
+  /** model $selfillum that takes effect: the base texture has an alpha channel (ONEBITALPHA or EIGHTBITALPHA). VertexLitGeneric
+   *  drops $selfillum when the base texture isn't translucent, so DXT1 textures (lift platforms, turrets) are just lit. */
+  selfillumMask?: boolean; selfillumTint?: [number, number, number];
   frames?: WebGLTexture[]; animRate?: number; toggle?: boolean; frame0?: number; }
 
 export class MaterialCache {
-  gl: WebGL2RenderingContext; assets: Assets; s3tc: any; mats = new Map<string, Promise<GLMat>>(); texs = new Map<string, Promise<{ tex: WebGLTexture; w: number; h: number; frames?: WebGLTexture[] } | null>>();
+  gl: WebGL2RenderingContext; assets: Assets; s3tc: any; mats = new Map<string, Promise<GLMat>>(); texs = new Map<string, Promise<{ tex: WebGLTexture; w: number; h: number; frames?: WebGLTexture[]; alpha?: boolean } | null>>();
   white: WebGLTexture; missing: WebGLTexture; vtfBytes = 0;
   constructor(gl: WebGL2RenderingContext, assets: Assets) {
     this.gl = gl; this.assets = assets; this.s3tc = gl.getExtension('WEBGL_compressed_texture_s3tc');
@@ -42,13 +45,14 @@ export class MaterialCache {
     return t; };
     const t = up(0); let frames: WebGLTexture[] | undefined;
     if (v.frames > 1) { frames = [t]; for (let f = 1; f < Math.min(v.frames, 64); f++) frames.push(v.data[0][f] ? up(f) : t); }
-    return { tex: t, w: v.width, h: v.height, frames };
+    return { tex: t, w: v.width, h: v.height, frames, alpha: !!(v.flags & (TEXF.ONEBITALPHA | TEXF.EIGHTBITALPHA)) };
   }
   get(name: string) {
     name = name.toLowerCase().replace(/\\/g, '/').replace(/\.vmt$/, '');
     let p = this.mats.get(name); if (!p) { p = this.load(name); this.mats.set(name, p); } return p;
   }
   private async load(name: string): Promise<GLMat> {
+    if (name === 'debug/debugempty') return { name, vmt: null, tex: this.white, w: 1, h: 1, translucent: false, additive: false, alphatest: 0, unlit: true, tint: [1, 1, 1, 1], nodraw: true, noportal: false, selfillum: false };
     const vmt = await loadVMT(name, p => this.assets.text(p));
     const P = vmt?.params || {}; const sh = vmt?.shader || '';
     const flag = (k: string) => P[k] !== undefined && P[k] !== '0';
@@ -60,7 +64,8 @@ export class MaterialCache {
       m.tint = [c[0] / s, c[1] / s, c[2] / s, 0.35]; if (!base) base = ''; }
     if (P['$alpha']) m.tint[3] = +P['$alpha'], m.translucent = true;
     if (P['$color']) { const c = P['$color'].replace(/[{}\[\]]/g, ' ').trim().split(/\s+/).map(Number); const s = P['$color'].includes('{') ? 255 : 1; m.tint = [c[0] / s, c[1] / s, c[2] / s, m.tint[3]]; }
-    if (base) { const t = await this.texture(base); if (t) { m.tex = t.tex; m.w = t.w; m.h = t.h; m.frames = t.frames; } }
+    if (base) { const t = await this.texture(base); if (t) { m.tex = t.tex; m.w = t.w; m.h = t.h; m.frames = t.frames;
+      if (m.selfillum && t.alpha && /vertexlit/i.test(sh) && !P['$selfillummask']) { m.selfillumMask = true; const c = (P['$selfillumtint'] || '[1 1 1]').replace(/[{}\[\]]/g, ' ').trim().split(/\s+/).map(Number), k = (P['$selfillumtint'] || '').includes('{') ? 255 : 1; m.selfillumTint = [c[0] / k || 0, (c[1] ?? c[0]) / k || 0, (c[2] ?? c[0]) / k || 0]; } } }
     const px = vmt?.proxies; if (px && m.frames) for (const [k, v] of Object.entries(px)) { const kk = k.toLowerCase().replace(/#\d+$/, '');
       if (kk === 'animatedtexture' && typeof v === 'object') m.animRate = +((v as any).animatedtextureframerate || 15);
       if (kk === 'toggletexture' || kk === 'materialmodify') m.toggle = true; }

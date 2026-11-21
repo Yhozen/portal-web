@@ -23,12 +23,16 @@ interface Ev { t: number; target: string; input: string; param: string; activato
 export class IO {
   ents: Ent[] = []; byName = new Map<string, Ent[]>(); queue: Ev[] = []; time = 0; handlers = new Map<string, (e: Ent, input: string, param: string, act: Ent | null, caller: Ent) => boolean>();
   log: string[] = []; timeScale = 1; player!: Ent;
-  add(e: Ent) { this.ents.push(e); if (e.name) { const l = this.byName.get(e.name) || []; l.push(e); this.byName.set(e.name, l); } }
+  /** entities by classname, in add order: find() falls back to a classname match, and scanning every entity there cost
+   *  about 1 ms per tick in escape_02 (1,565 entities, 67 parented props looked up twice a tick) */
+  byCls = new Map<string, Ent[]>();
+  add(e: Ent) { this.ents.push(e); if (e.name) { const l = this.byName.get(e.name) || []; l.push(e); this.byName.set(e.name, l); }
+    const c = this.byCls.get(e.cls); if (c) c.push(e); else this.byCls.set(e.cls, [e]); }
   find(name: string, act: Ent | null, caller: Ent | null): Ent[] {
     name = name.toLowerCase();
     if (name === '!player') return [this.player]; if (name === '!activator') return act ? [act] : []; if (name === '!self' || name === '!caller') return caller ? [caller] : [];
     if (name.endsWith('*')) { const pre = name.slice(0, -1); return this.ents.filter(e => !e.killed && e.name.startsWith(pre)); }
-    return (this.byName.get(name) || []).filter(e => !e.killed).concat(this.ents.filter(e => !e.killed && !e.name && e.cls === name));
+    return (this.byName.get(name) || []).filter(e => !e.killed).concat((this.byCls.get(name) || []).filter(e => !e.killed && !e.name));
   }
   fire(e: Ent, output: string, act: Ent | null, paramOverride?: string) {
     const list = e.outputs.get(output.toLowerCase()); if (!list) return;
@@ -48,8 +52,9 @@ export class IO {
   }
   deliver(e: Ent, input: string, param: string, act: Ent | null, caller: Ent) {
     if (this.log.length > 400) this.log.shift(); this.log.push(`${this.time.toFixed(2)} ${e.name || e.cls}.${input}(${param})`);
-    if (input === 'setparent') { e.kv.parentname = param; e.attachRel = null; e.reparentNow = true; return; }
-    if (input === 'clearparent') { if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
+    if (input === 'setparent') { e.kv.parentname = param; e.attachRel = null; e.reparentNow = true; e.parentAttach = null; e.attachOff = null; return; }
+    if (input === 'setparentattachment' || input === 'setparentattachmentmaintainoffset') { if (!e.kv.parentname) return; e.parentAttach = param.trim(); e.attachOff = null; e.attachKeep = input !== 'setparentattachment'; return; }
+    if (input === 'clearparent') { e.parentAttach = null; e.attachOff = null; if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
     if (input === 'kill') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     if (input === 'killhierarchy') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
     // AddOutput (Valve Developer Wiki): "OnFoo target:input:param:delay:times" adds an output; "key value" sets a keyvalue
@@ -59,5 +64,7 @@ export class IO {
     if (input.startsWith('fireuser')) { this.fire(e, 'onuser' + input.slice(8), act); return; }
     const h = this.handlers.get(e.cls); if (h && h(e, input, param, act, caller)) return;
     if (input === 'enable') e.enabled = true; else if (input === 'disable') e.enabled = false; else if (input === 'toggle') e.enabled = !e.enabled;
+    else { const k = e.cls + '.' + input; this.unhandled.set(k, (this.unhandled.get(k) || 0) + 1); } // for the harness: inputs nothing acted on
   }
+  unhandled = new Map<string, number>();
 }

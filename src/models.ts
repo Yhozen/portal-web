@@ -2,17 +2,17 @@ import { parseMDL, type MdlData } from './mdl.ts';
 import type { Assets } from './assets.ts';
 import type { MaterialCache, GLMat } from './materials.ts';
 import { STRIDE } from './world.ts';
-import { parseSkeleton, poseMatrices, type Skeleton } from './anim.ts';
+import { parseSkeleton, poseMatrices, type Skeleton, type PoseExtra } from './anim.ts';
 
 export interface GLModel { data: MdlData; vao: WebGLVertexArrayObject; draws: { start: number; count: number; mat: number }[]; skins: GLMat[][]; skel: Skeleton; base: Float32Array; ib: WebGLBuffer; }
 export interface Skinned { vao: WebGLVertexArrayObject; buf: WebGLBuffer; data: Float32Array; }
 export function findSeq(m: GLModel, name: string) { name = name.toLowerCase(); return m.skel.seqs.findIndex(s => s.name === name || s.activity === name); }
 /** CPU-skin a model into its own vertex buffer for one pose (sequence + cycle). */
-export function skinModel(gl: WebGL2RenderingContext, m: GLModel, sk: Skinned | null, seq: number, cycle: number): Skinned {
+export function skinModel(gl: WebGL2RenderingContext, m: GLModel, sk: Skinned | null, seq: number, cycle: number, ex?: PoseExtra): Skinned {
   if (!sk) { const vao = gl.createVertexArray()!; gl.bindVertexArray(vao); const buf = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, m.base.byteLength, gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ib); for (const [l, k, o] of [[0, 3, 0], [1, 2, 3], [2, 2, 5], [3, 3, 7], [4, 1, 10]]) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, k, gl.FLOAT, false, STRIDE * 4, o * 4); }
     gl.bindVertexArray(null); sk = { vao, buf, data: new Float32Array(m.base) }; }
-  const M = poseMatrices(m.skel, seq, cycle), d = m.data, out = sk.data, base = m.base, n = d.verts.length / 8;
+  const M = poseMatrices(m.skel, seq, cycle, ex), d = m.data, out = sk.data, base = m.base, n = d.verts.length / 8;
   for (let i = 0; i < n; i++) {
     const o = i * STRIDE, px = base[o], py = base[o + 1], pz = base[o + 2], nx = base[o + 7], ny = base[o + 8], nz = base[o + 9];
     let x = 0, y = 0, z = 0, a = 0, b = 0, c = 0, wsum = 0;
@@ -44,10 +44,17 @@ export class ModelCache {
     gl.bindVertexArray(null);
     const cds: string[] = (d.materials as any).cds || [''];
     const resolve = async (t: string) => {
-      for (const cd of cds) { const p = (cd + t).replace(/^\/+/, ''); if (await this.assets.read('materials/' + p + '.vmt')) return this.mats.get(p); }
+      // "debugempty" is the engine's draw-nothing material (debug/debugempty); escape_01's rot_door_frame names it bare
+      if (/^(debug\/)?debugempty$/i.test(t)) return this.mats.get('debug/debugempty');
+      for (const cd of cds) { const p = (cd + t).replace(/^\/+/, '');
+        // a texture name that already carries its directory (w_portalgun) would only probe a doubled path that can't exist
+        if (cd && t.toLowerCase().startsWith(cd.toLowerCase().replace(/^\/+/, ''))) continue;
+        if (await this.assets.read('materials/' + p + '.vmt')) return this.mats.get(p); }
       return this.mats.get(t);
     };
     const skins = await Promise.all(d.materials.map(row => Promise.all(row.map(resolve))));
-    return { data: d, vao, draws, skins, skel: parseSkeleton(a), base: vb, ib };
+    const skel = parseSkeleton(a);
+    if (skel.blocks.length > 1) { const ani = await this.assets.read(base + '.ani'); if (ani) skel.ani = new DataView(ani); else console.warn('missing animation blocks', base + '.ani'); }
+    return { data: d, vao, draws, skins, skel, base: vb, ib };
   }
 }

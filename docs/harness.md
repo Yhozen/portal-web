@@ -92,7 +92,7 @@ Example output:
 ```
 
 Scripts used for checks live in `checks/`: `escape02-ending.ctl` (skybox), `later-chambers.ctl` (30 views in a08 to
-escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop), `glados-hit.ctl` and `glados-destruction.ctl` (sequence cross-fades and the 54 s `.ani`-streamed ending, recorded), `camera-track.ctl` (a security camera following the player, with a lens-error probe). They hold only map names, coordinates and commands, never game data;
+escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop), `glados-hit.ctl` and `glados-destruction.ctl` (sequence cross-fades and the 54 s `.ani`-streamed ending, recorded), `camera-track.ctl` (a security camera following the player, with a lens-error probe), `opaque-canvas.ctl` (asserts that every pixel of the drawing buffer is opaque, with a cube on a00's button). They hold only map names, coordinates and commands, never game data;
 screenshots should be written outside the repository (the `.gitignore` also drops `*.png`).
 
 `node tools/mdl-info.ts models/props/glados.mdl` (paths inside the game, `--game DIR` as above) prints a model's animation data straight from the file: sequences with flags,

@@ -6,6 +6,7 @@ import { ProfileStore } from "alchemy/Auth/Profile";
 import { layerNonInteractive } from "alchemy/Interaction";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
 // Read through Alchemy so stored secrets and OAuth refresh keep their normal behavior.
@@ -14,11 +15,11 @@ export async function profileCredentials(profile = "default") {
   return Effect.runPromise(Effect.gen(function* () {
     const store = yield* ProfileStore;
     const auth = yield* getAuthProvider<CloudflareAuthConfig, CloudflareResolvedCredentials>("Cloudflare");
-    const config = yield* store.loadProviderConfig(auth, profile);
-    return yield* auth.read(profile, config, (updated) => store.setProviderConfig(profile, "Cloudflare", updated)
+    // The provider reads the profile's config itself, under its credentials lock.
+    return yield* auth.read(profile, store.loadProviderConfig(auth, profile), (updated) => store.setProviderConfig(profile, "Cloudflare", updated)
       .pipe(Effect.mapError((cause) => AuthError.make({ message: "Could not save refreshed Cloudflare credentials", cause }))));
   }).pipe(Effect.provide(CloudflareApiLive()), Effect.provide(layerNonInteractive()),
-    Effect.provide(NodeServices.layer), Effect.provide(FetchHttpClient.layer),
+    Effect.provide(NodeServices.layer), Effect.provide(FetchHttpClient.layer), Effect.provide(SecureRandom.layerWebCrypto),
     Effect.provideService(AuthProviders, {})));
 }
 

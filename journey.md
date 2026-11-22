@@ -2,6 +2,25 @@
 
 A running log of work on the port. Times are America/New_York.
 
+## 2026-11-21, evening (about 6:40 to 7:55 PM)
+
+**Black models on macOS.** On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except
+for their self-lit strips. It did not reproduce here on SwiftShader, on Mesa llvmpipe (new `PCTL_GL=mesa`), through the
+hosted-files reader (new `FILES_DIR` on the dev server), or with the deployed minified bundle. The cause was the canvas: model
+materials keep their $selfillum mask in the base texture's alpha, the opaque passes wrote it into an alpha-channel drawing
+buffer, and the page composited colour > alpha as premultiplied, which macOS shows as black. 71% of the pixels over the button
+and cube had alpha under 250. The context is now `alpha: false`; renders are byte-identical here and every pixel reads 255.
+checks/opaque-canvas.ctl uses the new `assert JS` command, which fails unless the value is truthy (a first step on item 7).
+
+**io.unhandled.** Over the first 20 s of a08 to escape_02 the only unhandled inputs were env_tonemap_controller
+(exposure, bloom, tonemap rate) and logic_autosave. They are registered as no-ops (LDR renderer, no saves).
+
+**v_hands.vtf.** The 404 comes from the game data: models/weapons/v_models/v_portalgun/v_hands.vmt sets $basetexture
+models\weapons\v_models\v_hands\v_hands, which isn't shipped. A v_hands.vtf sits next to the VMT. Not changed.
+
+Also noticed: game.ts calls `io.cancel?.()` on choreo Cancel/Stop, but IO has no `cancel`, so pending outputs of a cancelled
+scene still fire.
+
 ## 2026-11-19 session summary (animation session, 9:25 AM to 2:25 PM)
 
 This session's goal was to stop judging animations from single screenshots. The harness can now record. `record`

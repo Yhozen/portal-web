@@ -39,7 +39,7 @@ export default Alchemy.Stack("PortalWeb", {
   const gameFiles = yield* Cloudflare.R2.Bucket("GameFiles", { name: gameFilesBucket, publicAccess: false, domains: [], cors: [] });
   // The account's one-time PIN login is a singleton already managed by the HorizonWeb stack: look it up
   // instead of creating (or adopting, and later deleting) it here.
-  const login = Cloudflare.Access.getIdentityProvider({ type: "onetimepin" });
+  const login = Cloudflare.Access.IdentityProvider.lookup({ type: "onetimepin" });
   const published = yield* PublishAssets({ ...upload, bucket: bucket.bucketName });
   const game = yield* Cloudflare.Worker("Game", {
     name: workerName,

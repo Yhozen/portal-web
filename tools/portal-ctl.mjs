@@ -42,6 +42,7 @@ commands:
   ents [CLASS_REGEX] [N]      entities from the BSP: classname, targetname, origin
   errors                      console errors, warnings and page errors since the last call
   eval JS                     evaluate JS in the page (window.game is the engine); replies the JSON result
+  assert JS                   like eval, but fails (exit 1) unless the value is truthy
   sleep S                     wait S seconds of wall time
   record PATH FRAMES [FPS] [KEYS]  step the fixed tick loop and encode every frame (mp4 or webm, default 33 fps, labelled
                               with frame, time and tick unless --no-label); window.__probe() is logged per frame if set
@@ -106,7 +107,10 @@ try {
     base = `http://127.0.0.1:${port}/`;
   }
   browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: true,
-    args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
+    // PCTL_GL=mesa runs ANGLE on the system OpenGL ES driver (Mesa llvmpipe on a GPU-less box; needs mesa-dri-drivers):
+    // a second WebGL implementation, whose NaN, texture and precision behaviour is closer to a real driver's than SwiftShader's
+    args: [...(process.env.PCTL_GL === 'mesa' ? ['--use-gl=angle', '--use-angle=gl-egl']
+      : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']), '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 } catch (e) { out({ error: String(e.message || e), kind: 'launch' }); await cleanup(); process.exit(3); }
 
 const [W, H] = opt.size.split('x').map(Number);
@@ -163,7 +167,7 @@ const handlers = {
     const v = k === 'maxDepth' ? num(w[2], k) : /^(1|true|on)$/i.test(w[2] || ''); return page.evaluate(([k, v]) => { window.game.r[k] = v; return { [k]: window.game.r[k] }; }, [k, v]); },
   async render() { need(); return page.evaluate(RENDER); },
   async screenshot(w) { need(); const f = w[1]; if (!f) throw Object.assign(new Error('screenshot PATH'), { usage: true });
-    const r = await page.evaluate(src => { const st = (0, eval)(src)(); return { ...st, png: (() => { /* flatten over the page's black background, as it appears on screen (the canvas has an alpha channel) */ const c = document.getElementById('c'), o = document.createElement('canvas'); o.width = c.width; o.height = c.height; const x = o.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, o.width, o.height); x.drawImage(c, 0, 0); return o.toDataURL('image/png'); })() }; }, `(${RENDER})`);
+    const r = await page.evaluate(src => { const st = (0, eval)(src)(); return { ...st, png: (() => { /* flatten over black (the canvas is opaque since 2026-11-21; kept for older builds) */ const c = document.getElementById('c'), o = document.createElement('canvas'); o.width = c.width; o.height = c.height; const x = o.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, o.width, o.height); x.drawImage(c, 0, 0); return o.toDataURL('image/png'); })() }; }, `(${RENDER})`);
     mkdirSync(dirname(resolve(f)), { recursive: true }); writeFileSync(f, Buffer.from(r.png.split(',')[1], 'base64')); delete r.png; return { path: resolve(f), ...r }; },
   async bench(w) { need(); const n = Math.max(1, Math.floor(num(w[1] ?? 60, 'N')));
     return page.evaluate(([n, src]) => { const R = (0, eval)(src); R(); const ms = []; let last; for (let i = 0; i < n; i++) { last = R(); ms.push(last.frame_ms); }
@@ -187,6 +191,10 @@ const handlers = {
     const m = window.game.bsp.entities.filter(e => R.test(e.classname)); return { count: m.length, ents: m.slice(0, n).map(e => ({ classname: e.classname, targetname: e.targetname, origin: e.origin })) }; }, [re, n]); },
   async errors() { const l = logs; logs = []; return { count: l.length, logs: l }; },
   async eval(w, raw) { need(); const js = raw.replace(/^eval\s+/, ''); /* the rest of the line as written, quotes included */ const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js); return { value: v }; },
+  // assert JS: like eval, but the command fails unless the value is truthy. Write checks as expressions that compare against
+  // the expected numbers (e.g. `assert window.game.game.stats.teleports === 1`), so a check fails on a wrong value, not only on errors
+  async assert(w, raw) { need(); const js = raw.replace(/^assert\s+/, ''); const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js);
+    if (!v) throw new Error('assertion failed: ' + js); return { value: v }; },
   // ---- animation checks: video, contact sheets, pose dumps ----
   async record(w) { need(); const f = w[1], frames = Math.floor(num(w[2] ?? 0, 'FRAMES')); if (!f || frames < 1) throw Object.assign(new Error('record PATH FRAMES [FPS] [KEYS]'), { usage: true });
     const fps = num(w[3] ?? 33, 'FPS'), keys = w[4] || '', inp = keyInput(keys); mkdirSync(dirname(resolve(f)), { recursive: true });

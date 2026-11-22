@@ -480,6 +480,9 @@ export class Game {
         c.vel = add(c.vel, j); c.w = add(c.w, scale(cross(r, j), invI)); c.asleep = false; c.sleep = 0; this.io.log.push(`${this.io.time.toFixed(2)} ${e.name} pushed ${c.ent.name} ${len(j).toFixed(0)} in/s`); }
       return true; });
     H.set('trigger_portal_cleanser', (e, i) => { if (i === 'fizzleTouchingPortals'.toLowerCase()) this.fizzleGunPortals(); return false; });
+    // Known no-ops, so io.unhandled lists only real gaps: the renderer is LDR (no auto-exposure or bloom to drive), and
+    // there are no saves yet
+    H.set('env_tonemap_controller', () => true); H.set('logic_autosave', () => true);
     H.set('ambient_generic', (e, i, p) => { const sn = this.snd; const fl = +(e.kv.spawnflags || 0);
       const start = () => { e.sndH?.stop(); if (!sn) return; const msg = e.kv.message || ''; e.sndH = sn.play(msg, e.pos || e.origin, { vol: Math.min(1, +(e.kv.health ?? 10) / 10), everywhere: !!(fl & 1), loop: fl & 32 ? false : undefined, music: /^portal\.song|music\//i.test(msg) }); this.io.log.push(`${io.time.toFixed(2)} sound ${msg}`); };
       if (i === 'playsound') start(); else if (i === 'stopsound') e.sndH?.stop(); else if (i === 'togglesound') { if (e.sndH && !e.sndH.stopped) e.sndH.stop(); else start(); }

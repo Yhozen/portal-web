@@ -18,7 +18,11 @@ const log = (...a: any[]) => { console.log(...a); const el = document.getElement
 async function main() {
   const q = new URLSearchParams(location.search); const mapName = q.get('map') || 'testchmb_a_00';
   const canvas = document.getElementById('c') as HTMLCanvasElement;
-  const gl = canvas.getContext('webgl2', { stencil: true, antialias: false, powerPreference: 'high-performance' })!;
+  const gl = canvas.getContext('webgl2', { stencil: true, antialias: false, powerPreference: 'high-performance',
+    // opaque: model materials keep masks ($selfillum, $phong) in the base texture's alpha, and the opaque passes write it to the
+    // drawing buffer. With an alpha channel the page then composited colour > alpha as premultiplied, which macOS shows as
+    // black (the floor button and the cube on it went black except their self-lit strips)
+    alpha: false })!;
   if (!gl) throw new Error('WebGL2 not available');
   const source = await openFileSource();
   const t0 = performance.now(); const assets = new Assets(source);

@@ -4,6 +4,33 @@ A running log of work on the port. Times are America/New_York.
 
 ## 2026-11-23 to 24, oracle session (from about 11:45 PM EST)
 
+**Summary (written 8:50 AM EST).** I built an oracle out of the original Portal and measured the port against it all
+night. The original's Linux build runs headless on the box: Xvfb display :20, launched through Steam, which signed in by
+itself with no password prompt and no Steam Guard. tools/oracle-ctl.mjs drives it through its own console, and
+tools/parity.mjs runs the same scenario in both. The original's numbers live in checks/reference as JSON (numbers and
+notes only). Its clips and stills stay in portal-web-shots/oracle. 36 commits from 9c6c160 to af8974f, plus this note.
+
+Original vs port, before and after this session:
+- Movement (22 metrics on a09's floor): walk 150 vs 175, now 150. Running jump speed 225 vs 175, now 225. Air strafe cap
+  60 vs 30, now 60. Duck eye 90% at 0.345 s vs 0.18 s, now matched. Running jump distance 116.6 vs 116.6.
+- Floor-to-floor fling, came back up 37-41 units too high. Now exit vz 362.8/349.1, 442.0/427.3, 509.1/493.2 and
+  611.1/603.5 (original/port) for drops of 100/150/200/300. Sideways mapping within 0.03.
+- Floor-to-wall fling: exit 391.5/526.5/625.5 vs 409.1/536.4/636.4, still 2-5% high. A fix that gets it to
+  400.0/527.3/627.3 broke a10 and isn't committed (8:35 entry). The port's flight is still 18-44 units higher.
+- Cube size: ±20.25 from the model hull (was ±12). Resting z 20.4/20.4 (a11), 500.4/500.3 (a09), 468.4/468.3 (a02).
+- +use reach: the SDK's FindUseEntity (80 units, hull sweeps, cone 0.8), fits all 7 readings (98 grabs, 104 doesn't
+  standing at the centre; 104 grabs looking over the top). It was 100 to the centre.
+- Glass takes no portal. Cleansers fizzle shots across them. Template cubes go to their own offsets, as ent_text shows.
+- Held distance: the original holds ~81 from the eye (88 looking up), the port 56. Measured, not changed.
+
+Checks: 36 pass (33 ctl files plus the parity runs). Playthroughs on the final build, game seconds to the next map:
+a00 178.9, a01 85.6, a02 168.3, a03 125.6, a04 72.1, a05 52.0, a06 65.0, a07 stops at the elevator log at 131.3 as
+before, a08 78.7, a09 118.6, a10 198.2, a11 69.8 to a13. a08 to a11 are new tonight. a13 is WIP and gets into the
+ball hallway with the box at 43.7 s.
+
+Left: a13's ball catchers and lifts, a14, the escape maps; the wall-fling height and the speed fix without breaking
+a10; held distance; box_dropper's cover and prop_dynamic solidity; turret damage and the turret tip-over.
+
 **The original runs here, natively.** Portal's Linux build (hl2_linux, 32-bit, build 19017868) runs on the box under Xvfb
 display :20 with Mesa llvmpipe, launched through the Steam client with my remembered login. It needed the i386 libraries
 and the en_US.UTF-8 locale. No password prompt and no Steam Guard came up; the game log says it's logged on to Steam.
@@ -203,6 +230,25 @@ balls into catchers. That's the next session's work.
 The port holds it 56 out. The SDK's UpdateObject gives 24 + radius, which is 67 at level for this box. So Portal holds
 further than the SDK too. Three readings don't pin down a rule, and the scripted button drops in a00–a11 are tuned to
 56, so I've written this down and left the code alone.
+
+**8:35 AM EST, WIP, not committed: the wall-fling speed gap.** A guess at where the 2 to 5% comes from: the port
+applies the tick's gravity before the teleport, so a floor-in, wall-out fling carries one extra tick of fall (600/66,
+about 9 u/s) out sideways. Putting that tick back in z when the entry faces up and the exit is a wall
+(`|in.f.z| > 0.7 && |out.f.z| < 0.7`, add 600*dt to vel.z before the portal transform) takes the exits from 409.1, 536.4
+and 636.4 to 400.0, 527.3 and 627.3 against the original's 391.5, 526.5 and 625.5. The 200 and 300 drops are then within
+1 u/s and the 100 drop is still 8.5 high. It broke a10: the double flings land about 9 units shorter, the patch portal
+in the stair pit no longer fit (clamping its target fixed that), and further on the second cart hop misses ("hop 1 board
+false") and the run stops at 312 s without leaving the chamber. Retuning a10's cart hops wasn't quick, so I took the change
+out as the rule says. The diff, with the clamp, is in portal-web-shots/wip-wallfling-gravity.patch. The flight height
+(wf eye5 551.9, 578.4, 578.7 in the original vs 596.3 in the port) is a separate thing and is still open.
+
+**8:40 AM EST, a13: where the balls have to go.** The script's end of the ball hallway (1533, -974, 64) is a dead end on
+foot. The two rm8 launchers sit at (1481, -980, 236) and (1599, -980, 172), launcher3_lab5 at (691, -277, -200). The
+catchers are far west and low: ball_trap_10 at (-512, -585, -196), ball_trap_12 at (-512, -1273, -164), ball_trap_11 at
+(-512, -1977, -164). Each one raises a lift (lift1..3_rm5 at x 960, y 448, 672, 896). So the balls have to be carried
+west by portals across most of the map. From the script's end spot (1523, -855, 64), with the box put down, a sweep
+of 84 shots (pitch -75 to 75, every 30 degrees of yaw) placed no portal: the hallway is noportal metal and one glass
+window, so the way west isn't from there. The launchers face north (angles 0 90 0). Nothing more done on that yet.
 
 ## 2026-11-21, evening (about 6:40 to 7:55 PM)
 

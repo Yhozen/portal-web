@@ -200,6 +200,24 @@ that. It now compares from the eye at the start of the tick when the movers only
 script rides the piston up, comes out of the wall and lands on the walkway at (479, 22, -63), at 84.6 s. The rest of the
 map (the exit-sign ledge, the fast pistons, the horizontal pistons and the cube tube over the goo) is still to do.
 
+**5:50 PM EST, a15's fall loop starts further west.** The wall-fling tick takes 9 u/s off the first exit (204 instead
+of 213). From the old mark at -1900 the second hop went up into the deck beam at x -1760, z 666, and the chamber
+didn't clear. From -1940 the same 204 exit still happens, but the second hop starts at z 619 and lands in the tank
+room at [-1262, 447, 352]. It goes through to escape_00 in 265.3 s (it was 267.1 before the wall-fling tick). a14 was
+already retuned this afternoon: it walks up to the wedge switch and retries use until the piston starts, and clears in
+125.4 s.
+
+**6:00 PM EST, escape_00 reaches the exit-sign pad (92.5 s).** From the walkway I jump the north rail and drop onto the
+portalable floor at z -319, then put blue on the east wall at (895, 478, 410) and orange on the floor at (650, 351,
+-319). The important bit is to stand at (650, 280) and run due north (yaw 90) into the floor portal. A hop that isn't
+lined up that way comes out with no +y, 34 units south of the pad, and falls through the hole. Lined up, the walk-in
+itself is enough: the exit is (878, 496, 373) at 204 u/s west, and I land on the z=320 pad at (792, 497, 320), then
+walk north to (792, 546, 320). The pad floor and the west wall at x 256 are both noportal metal, so the high-speed
+piston room (lab4a_crusherroom2, west of that wall) still needs another portal pair. Thonky says to look at the red
+arrow, put a portal on the wall across from the next ledge, and fall through a floor portal (the lower floor is visible
+through the hole from the pad). That's the next step.
+
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

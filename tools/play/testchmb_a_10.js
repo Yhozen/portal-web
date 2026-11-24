@@ -106,6 +106,66 @@ lg('east side', JSON.stringify(AP.gotoRetry([300, -640, -255], 20, 3)));
 lg('blue scorch b', (() => { let r; for (let k = 0; k < 4 && !(G.gunPortals[0].open && G.gunPortals[0].pos[1] > -390); k++) r = shoot(0, [547, -384, -67]); return r; })());
 lg('orange south b', (() => { let r; for (let k = 0; k < 4 && !(G.gunPortals[1].open && G.gunPortals[1].pos[1] < -890); k++) r = shoot(1, [547, -896, -67]); return r; })());
 lg('caught b', waitFor(() => E('ball_trap_11').enabled === false, 15) + ' ' + io.log.filter(l => /energy ball|ball_trap_11/.test(l)).slice(-3));
+/* back over the field the same way: orange high on the east wall (x 639, facing west), clear of the angled panels */
+doubleFling('field 3 back', [639, -800, 190], [540, -800, -256], [480, -800, -255], { clamp: p => [Math.max(60, p[0]), p[1]], ok: () => game.pl.pos[0] < -10 });
+/* the conveyor: carts spawn every 15 s at the far end (200, 416) and ride the goo channel backwards to room 3 (north
+   along x 64 is the way out, then west along y 64, then south along x -320 to the room-3 mouth). As in the walkthrough:
+   blue on room 3's north wall, orange further down the channel each time, come out onto a passing cart, place the next
+   orange from it, ride back and repeat; the last orange goes on the final room's floor */
+const carts = () => io.ents.filter(e => e.cls === 'func_tracktrain' && e.isCopy && !e.killed);
+const cartAt = f => carts().find(c => f(c.pos));
+const walkInto = (until, s = 3) => { for (let i = 0; i < s * 66 && !until(); i++) { const B = G.gunPortals[0].pos; game.pl.ang = [0, Math.atan2(B[1] + 20 - game.pl.pos[1], B[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); } return until(); };
+const offCart = () => { const c = game.pl.groundEnt; waitFor(() => c && c.pos ? c.pos[1] < -306 : game.pl.pos[1] < -300, 40); for (let i = 0; i < 3 * 66 && game.pl.pos[1] > -420; i++) { game.pl.ang = [0, -90, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); } return P(); };
+const nowShoot = (w, at) => { const e = game.pl.pos, d = [at[0] - e[0], at[1] - e[1], at[2] - e[2] - 64]; game.pl.ang = [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0]; G.shootPortal(w); const Q = G.gunPortals[w]; return Q.open ? Q.pos.map(v => v|0) + ' f ' + Q.f.map(v => +v.toFixed(2)) : 'not placed (' + (io.log.filter(l => /failed/.test(l)).slice(-1)[0] || '').slice(0, 90) + ')'; };
+/* walk into the room-3 blue when a cart is about to pass under the orange, so we come out standing in the orange's mouth
+   (the floor behind the blue holds us there) and step onto the cart as it goes by */
+const hop = (name, ready, board, boardTo) => {
+  lg(name + ' wait', JSON.stringify(AP.gotoRetry([-420, -440, -255], 20, 3)) + ' carts ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
+  lg(name + ' cart', waitFor(() => !!cartAt(ready), 60) + ' ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
+  const n0 = G.stats.teleports; walkInto(() => G.stats.teleports > n0);
+  waitFor(() => game.pl.onGround, 2); lg(name + ' out', P() + ' on ' + (game.pl.groundEnt ? game.pl.groundEnt.name : '-'));
+  if (game.pl.groundEnt && /rail_cart/.test(game.pl.groundEnt.name)) return;
+  lg(name + ' board', waitFor(() => !!cartAt(board), 20) + ' ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
+  boardTo = boardTo(); for (let i = 0; i < 66 && Math.hypot(boardTo[0] - game.pl.pos[0], boardTo[1] - game.pl.pos[1]) > 6; i++) { game.pl.ang = [0, Math.atan2(boardTo[1] - game.pl.pos[1], boardTo[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); }
+  for (let i = 0; i < 20; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
+  lg(name + ' on', P() + ' ground ' + (game.pl.groundEnt ? game.pl.groundEnt.name : '-'));
+};
+lg('blue north wall', (() => { AP.gotoRetry([-420, -470, -255], 20, 3); let r; for (let k = 0; k < 4 && !(G.gunPortals[0].open && G.gunPortals[0].pos[1] > -390); k++) r = shoot(0, [-420, -384, -200]); return r; })());
+lg('orange channel 1', (() => { AP.gotoRetry([-320, -420, -255], 20, 3); let r; for (let k = 0; k < 4 && !(G.gunPortals[1].open && G.gunPortals[1].pos[1] > 100); k++) r = shoot(1, [-300, 130, -200]); return r; })());
+hop('hop 1', p => Math.abs(p[1] - 64) < 2 && p[0] < -255 && p[0] > -275, p => Math.abs(p[1] - 64) < 2 && p[0] < game.pl.pos[0] + 12 && p[0] > game.pl.pos[0] - 4, () => [game.pl.pos[0], 50]);
+lg('orange channel 2', nowShoot(1, [140, 64, -200]));
+lg('off cart 1', offCart());
+hop('hop 2', p => Math.abs(p[0] - 64) < 2 && p[1] < 95 && p[1] > 75, p => Math.abs(p[0] - 64) < 2 && p[1] < game.pl.pos[1] + 12 && p[1] > game.pl.pos[1] - 4, () => [60, game.pl.pos[1]]);
+lg('orange final floor', nowShoot(1, [64, 580, -256]));
+lg('off cart 2', offCart());
+lg('final wait', JSON.stringify(AP.gotoRetry([-420, -440, -255], 20, 3)));
+{ const n0 = G.stats.teleports; walkInto(() => G.stats.teleports > n0); waitFor(() => game.pl.onGround, 3); lg('final room', P()); }
+/* final room. The walkthrough's high jump to the exit (its alternative to the two buttons and the pellet): orange on the
+   floor just east of the exit lift (shot looking west, so what goes in heading along the blue's up comes out heading
+   west), ride lift a up, step to its north edge (the platform itself blocks shots straight down), put blue on the floor
+   beyond it looking north, jump off north into it and come out of the orange heading up and west onto the exit ledge */
+lg('orange by exit lift', (() => { AP.gotoRetry([60, 1216, -255], 30, 3); let r; for (let k = 0; k < 4; k++) { r = shoot(1, [-30, 1180, -256]); if (G.gunPortals[1].open && G.gunPortals[1].pos[2] < -250 && G.gunPortals[1].pos[1] > 1150) break; } return r + ' u ' + G.gunPortals[1].u.map(v => +v.toFixed(2)) + ' from ' + P(); })());
+const liftA = E('lift_brush_a10_1');
+lg('lift a', JSON.stringify(AP.gotoRetry([40, 600, -255], 30, 3)) + JSON.stringify(AP.gotoRetry([-128, 600, -255], 30, 3)) + ' lift ' + liftA.pos.map(v => v|0));
+waitFor(() => liftA.pos[2] < -245, 15);
+for (let i = 0; i < 99 && Math.hypot(-128 - game.pl.pos[0], 704 - game.pl.pos[1]) > 6; i++) { game.pl.ang = [0, Math.atan2(704 - game.pl.pos[1], -128 - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); }
+lg('lift a top', waitFor(() => liftA.pos[2] > -4 && game.pl.onGround, 25) + ' ' + P() + ' lift ' + liftA.pos.map(v => v|0));
+for (let i = 0; i < 99 && game.pl.pos[1] < 748; i++) { game.pl.ang = [0, 90, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); }
+for (let i = 0; i < 30; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
+/* hop off the north edge slowly (what goes in along the blue's up, north, comes out along the orange's up, west: too
+   fast and we fly in under the exit lift's platform), and put blue where the fall lands */
+{ const n0 = G.stats.teleports; let shot = null;
+  for (let i = 0; i < 66 * 5; i++) { const n = G.stats.teleports - n0;
+    game.pl.ang = [0, n === 0 ? 90 : 180, 0];
+    if (n === 0 && !shot && !game.pl.onGround && game.pl.pos[1] > 770) { let p = game.pl.pos.slice(); const v = game.pl.vel.slice(); for (let k = 0; k < 400 && (p[2] > -255 || v[2] > 0); k++) { v[2] -= 600 / 66; p = p.map((c, j) => c + v[j] / 66); }
+      shot = nowShoot(0, [p[0], p[1], -256]) + ' landing ' + p.map(v => v|0) + ' u ' + G.gunPortals[0].u.map(v => +v.toFixed(2)); lg('blue past lift', shot); }
+    game.step(1/66, { fwd: n === 0 && i < (window.FT ?? 3) ? 1 : 0, side: 0, jump: i === 1, duck: false });
+    if (G.stats.teleports - n0 !== n) lg('exit jump ' + (n + 1), P() + ' v ' + game.pl.vel.map(v => v|0));
+    if (n >= 1 && game.pl.onGround) break; }
+  lg('landed', P() + ' on ' + (game.pl.groundEnt ? game.pl.groundEnt.name : '-')); }
+lg('elevator', JSON.stringify(AP.gotoRetry([-576, 1216, 20], 30, 3)));
+lg('changelevel', waitFor(() => io.log.some(l => /a10_a11_elevator_body.startforward/.test(l)), 20) + ' ' + io.log.filter(l => /elevator/.test(l)).slice(-3));
+AP.wait(40, () => window.changedTo); lg('changedTo', window.changedTo + ' pos ' + P());
 } catch (e) { lg('ERROR', String(e).slice(0, 300) + ' at ' + P()); }
 lg('end', P() + ' ' + AP.LOG.slice(-(window.NLOG || 3)).join(' | '));
 return out.join('\n'); })()

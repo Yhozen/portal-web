@@ -155,6 +155,15 @@ if (window.STAGE === 16) throw 'stage 16';
 { const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: Math.min(1, Math.hypot(dx, dy) / 60), side: 0, jump: false, duck: false }); }
   lg('through', G.stats.teleports > n0, fly(0.05, 3), game.pl.groundEnt ? game.pl.groundEnt.cls : 'world'); AP.wait(0.5); lg('on', P()); }
 if (window.STAGE === 17) throw 'stage 17';
+// over to the broken catwalk (the west platform's z 960 catwalk, reaching east to x ~510 before it breaks off): orange
+// on the room floor below the strip's west end, blue on the east wall at the catwalk's height (x 896, y 1350, the
+// corner facing it), and off the strip into orange: ~620 u/s out of blue going west lands on the catwalk's end
+AP.approach([675, 1615], 3, 2);
+{ let r = ''; for (const t of (window.OF ?? [[600, 1450, 640], [580, 1440, 640], [620, 1460, 640]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange room floor', P(), r); }
+{ let r = ''; for (const t of [[896, 1350, 1088], [896, 1344, 1080], [896, 1360, 1095]]) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue east wall', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); }
+  lg('through', G.stats.teleports > n0, fly(0.05, 3), game.pl.groundEnt ? game.pl.groundEnt.cls : 'world'); AP.wait(0.5); lg('on', P()); }
+if (window.STAGE === 18) throw 'stage 18';
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

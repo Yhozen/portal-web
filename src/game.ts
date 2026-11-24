@@ -473,7 +473,7 @@ export class Game {
         const cur = e.curPath && len(sub(e.curPath.origin, e.pos)) < 4 ? e.curPath : io.find(e.pathName, null, e)[0]; if (cur && len(sub(cur.origin, e.pos)) < 4) { const prev = this.prevPath(cur); if (prev) e.pathName = prev.name; else e.speedNow = 0; } } else if (i === 'setspeed') { } return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
     H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
-    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) { this.respawnTemplate(t, e.origin); this.placeTemplateGroup(t, e); } } return true; });
+    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) { this.respawnTemplate(t, e); this.placeTemplateGroup(t, e); } } return true; });
     H.set('point_energy_ball_launcher', (e, i) => { if (i === 'enable') { e.enabled = true; e.nextBall = Math.min(e.nextBall ?? 0, io.time + 0.1); } else if (i === 'disable') e.enabled = false; else if (i === 'launchball') this.launchBall(e); else return false; return true; });
     H.set('filter_combineball_type', () => false);
     H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
@@ -575,15 +575,24 @@ export class Game {
     }
   }
   prevPath(p: Ent) { return this.io.ents.find(q => q.cls === 'path_track' && !q.killed && (q.kv.target || '').toLowerCase() === p.name) || null; }
-  respawnTemplate(t: Ent, at: V3 | null) {
-    // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps)
+  respawnTemplate(t: Ent, maker: Ent | null) {
+    // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps). Measured in the
+    // original (oracle-ctl, ent_dump / ent_text): a08's box_maker makes BOTH of its template's cubes, the platform one and the one
+    // on the start room's grating roof, each at its own place (there the maker sits on the template's origin). a02's maker, whose
+    // template has one cube, puts it at the maker's x, y (0.4, 80.1 against the maker's 0, 80), not at the offset that
+    // CPointTemplate::CreateInstance in the public SDK 2013 point_template.cpp would give (-27, 111). So: several cubes keep their
+    // offsets from the template, moved to the maker; a single cube goes to the maker's origin. Why the original differs from the
+    // SDK for the single case is not known. The port used to make only the first cube.
     const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
+    const R = maker ? entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]) : null;
+    const srcs = names.flatMap(n => (this.io.byName.get(n) || []).filter(e => e.cube && !e.isCopy));
+    const place = (o: V3): V3 => !maker ? [...o] as V3 : srcs.length === 1 ? [...maker.origin] as V3 : add(maker.origin, xformDir(R!, sub(o, t.origin)));
     for (const n of names) for (const src of this.io.byName.get(n) || []) {
       if (src.cls === 'weapon_portalgun' && !src.picked) { src.killed = false; if (src.prop) src.prop.visible = true; this.io.log.push(`${this.io.time.toFixed(2)} spawned ${n} (portal gun)`); continue; } // a07: the next map's gun is a template spawned on new game
       if (!src.cube || src.isCopy) continue;
-      const kv = { ...src.kv, origin: (at || src.origin).join(' ') }; if (!(+t.kv.spawnflags & 2)) delete (kv as any).targetname;
+      const kv = { ...src.kv, origin: place(src.origin).join(' ') }; if (!(+t.kv.spawnflags & 2)) delete (kv as any).targetname;
       const e = new Ent(kv); e.isCopy = true; e.game = this; e.pos = [...e.origin] as V3; this.io.add(e); this.spawnCube(e);
-      this.io.log.push(`${this.io.time.toFixed(2)} spawned ${n} at ${e.origin.map(v => v | 0)}`); break;
+      this.io.log.push(`${this.io.time.toFixed(2)} spawned ${n} at ${e.origin.map(v => v | 0)}`);
     }
   }
   // ---------- per-tick update ----------

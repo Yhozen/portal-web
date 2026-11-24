@@ -1,0 +1,163 @@
+{
+ "about": "Measured in the original Portal by tools/parity.mjs orig checks/oracle/fling.json. Values are what the original did; tol is how far the port may be off. Notes say when a value is derived rather than read directly.",
+ "build": {
+  "appid": 400,
+  "buildid": "19017868",
+  "patch_version": "1745010",
+  "server_version": "9862575"
+ },
+ "settings": {
+  "host_framerate": 0.015,
+  "tick": 0.015,
+  "sampler": "getpos once per tick. It reports the client view of the eye position (cl_smooth 0 during runs), blended between ticks, so times are good to about a tick; rates, speeds and heights are medians or fits. One sample per tick checked by a free fall (0.135 units per tick squared = 600 u/s²).",
+  "cvars_after_run": {
+   "host_framerate": "0",
+   "sv_gravity": "600",
+   "cl_forwardspeed": "450",
+   "cl_sidespeed": "450",
+   "fps_max": "300"
+  },
+  "window": [
+   800,
+   500
+  ]
+ },
+ "metrics": {
+  "fling100_apex_feet_gain": {
+   "value": -7.531,
+   "tol": 10,
+   "scenario": "fling-drop-100",
+   "note": "feet height reached after coming back up, minus the drop height. Original loses 2-8 units; port conserves energy exactly (floor-to-floor fix in teleportPlayer). Tol 10 is a judgement call, not measured noise."
+  },
+  "fling100_eye_pop_t": {
+   "value": 0.345,
+   "tol": 0.035,
+   "scenario": "fling-drop-100",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling100_eye_pop": {
+   "value": 47.438,
+   "tol": 0.949,
+   "scenario": "fling-drop-100",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling100_entry_vz": {
+   "value": -433.719,
+   "tol": 8.674,
+   "scenario": "fling-drop-100",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling100_exit_vz": {
+   "value": 362.783,
+   "tol": 7.256,
+   "scenario": "fling-drop-100",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling150_apex_feet_gain": {
+   "value": -3.319,
+   "tol": 10,
+   "scenario": "fling-drop-150",
+   "note": "feet height reached after coming back up, minus the drop height. Original loses 2-8 units; port conserves energy exactly (floor-to-floor fix in teleportPlayer). Tol 10 is a judgement call, not measured noise."
+  },
+  "fling150_eye_pop_t": {
+   "value": 0.36,
+   "tol": 0.035,
+   "scenario": "fling-drop-150",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling150_eye_pop": {
+   "value": 47.418,
+   "tol": 0.948,
+   "scenario": "fling-drop-150",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling150_entry_vz": {
+   "value": -498.549,
+   "tol": 9.971,
+   "scenario": "fling-drop-150",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling150_exit_vz": {
+   "value": 441.953,
+   "tol": 8.839,
+   "scenario": "fling-drop-150",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling200_apex_feet_gain": {
+   "value": 2.067,
+   "tol": 10,
+   "scenario": "fling-drop-200",
+   "note": "feet height reached after coming back up, minus the drop height. Original loses 2-8 units; port conserves energy exactly (floor-to-floor fix in teleportPlayer). Tol 10 is a judgement call, not measured noise."
+  },
+  "fling200_eye_pop_t": {
+   "value": 0.36,
+   "tol": 0.035,
+   "scenario": "fling-drop-200",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling200_eye_pop": {
+   "value": 47.422,
+   "tol": 0.948,
+   "scenario": "fling-drop-200",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling200_entry_vz": {
+   "value": -560.686,
+   "tol": 11.214,
+   "scenario": "fling-drop-200",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling200_exit_vz": {
+   "value": 509.052,
+   "tol": 10.181,
+   "scenario": "fling-drop-200",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling300_apex_feet_gain": {
+   "value": -5.643,
+   "tol": 10,
+   "scenario": "fling-drop-300",
+   "note": "feet height reached after coming back up, minus the drop height. Original loses 2-8 units; port conserves energy exactly (floor-to-floor fix in teleportPlayer). Tol 10 is a judgement call, not measured noise."
+  },
+  "fling300_eye_pop_t": {
+   "value": 0.375,
+   "tol": 0.035,
+   "scenario": "fling-drop-300",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling300_eye_pop": {
+   "value": 47.416,
+   "tol": 0.948,
+   "scenario": "fling-drop-300",
+   "assert": false,
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+  },
+  "fling300_entry_vz": {
+   "value": -651.476,
+   "tol": 13.03,
+   "scenario": "fling-drop-300",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  },
+  "fling300_exit_vz": {
+   "value": 613.026,
+   "tol": 12.261,
+   "scenario": "fling-drop-300",
+   "assert": false,
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+  }
+ }
+}

@@ -12,5 +12,10 @@ for c in $list; do
   if [ $rc -eq 0 ] && [ "${errs:-0}" = 0 ]; then r=PASS; pass=$((pass+1)); else r=FAIL; fail=$((fail+1)); fi
   echo "$r $n exit=$rc page_errors=${errs:-?} wall_s=$(( $(date +%s) - s ))"
 done
+# parity against the original: every checks/oracle/X.json that has measured numbers in checks/reference/X.json
+if [ -z "$*" ]; then for f in checks/oracle/*.json; do n=$(basename "$f" .json); [ -f "checks/reference/$n.json" ] || continue; s=$(date +%s)
+  node tools/parity.mjs check "$f" --attach "$sock" > "/tmp/check-parity-$n.out" 2>&1; rc=$?
+  if [ $rc -eq 0 ]; then r=PASS; pass=$((pass+1)); else r=FAIL; fail=$((fail+1)); fi
+  echo "$r parity-$n exit=$rc $(grep -c '^PASS' "/tmp/check-parity-$n.out")/$(grep -c -E '^(PASS|FAIL)' "/tmp/check-parity-$n.out") metrics wall_s=$(( $(date +%s) - s ))"; done; fi
 echo "passed $pass failed $fail"
 [ $fail -eq 0 ]

@@ -69,7 +69,7 @@ lg('blue pit', (() => { let r; for (let k = 0; k < 4 && !(G.gunPortals[0].open &
     if (n === 1 && !shot && game.pl.pos[1] > -1590) {
       /* predict where the arc meets the floor and put blue there (no waits: the shot has to land before we do) */
       let p = game.pl.pos.slice(); const v = game.pl.vel.slice(); for (let k = 0; k < 400 && p[2] > -255; k++) { v[2] -= 600 / 66; p = p.map((c, j) => c + v[j] / 66); }
-      const at = [p[0], Math.min(-1010, Math.max(-1150, p[1])), -256], e = game.pl.pos, d = [at[0] - e[0], at[1] - e[1], at[2] - e[2] - 64];
+      const at = [p[0], Math.min(-1010, Math.max(-1138, p[1])), -256], e = game.pl.pos, d = [at[0] - e[0], at[1] - e[1], at[2] - e[2] - 64];
       game.pl.ang = [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0]; G.shootPortal(0);
       lg('patch blue', (G.gunPortals[0].open ? G.gunPortals[0].pos.map(v => v|0) : 'not placed') + ' landing ' + p.map(v => v|0) + ' v ' + game.pl.vel.map(v => v|0)); shot = true; }
     game.step(1/66, { fwd: n === 0 ? 1 : 0, side: 0, jump, duck: false });
@@ -123,19 +123,22 @@ const hop = (name, ready, board, boardTo) => {
   lg(name + ' wait', JSON.stringify(AP.gotoRetry([-420, -440, -255], 20, 3)) + ' carts ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
   lg(name + ' cart', waitFor(() => !!cartAt(ready), 60) + ' ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
   const n0 = G.stats.teleports; walkInto(() => G.stats.teleports > n0);
-  waitFor(() => game.pl.onGround, 2); lg(name + ' out', P() + ' on ' + (game.pl.groundEnt ? game.pl.groundEnt.name : '-'));
+  waitFor(() => game.pl.onGround, 2); lg(name + ' out', P() + ' on ' + (game.pl.groundEnt ? game.pl.groundEnt.name : '-') + ' carts ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
   if (game.pl.groundEnt && /rail_cart/.test(game.pl.groundEnt.name)) return;
   lg(name + ' board', waitFor(() => !!cartAt(board), 20) + ' ' + carts().map(c => c.pos.map(v => v|0)).join(' '));
-  boardTo = boardTo(); for (let i = 0; i < 66 && Math.hypot(boardTo[0] - game.pl.pos[0], boardTo[1] - game.pl.pos[1]) > 6; i++) { game.pl.ang = [0, Math.atan2(boardTo[1] - game.pl.pos[1], boardTo[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); }
+  for (let i = 0; i < 66; i++) { const bt = boardTo(); if (Math.hypot(bt[0] - game.pl.pos[0], bt[1] - game.pl.pos[1]) <= 6) break; game.pl.ang = [0, Math.atan2(bt[1] - game.pl.pos[1], bt[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); }
   for (let i = 0; i < 20; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
   lg(name + ' on', P() + ' ground ' + (game.pl.groundEnt ? game.pl.groundEnt.name : '-'));
 };
 lg('blue north wall', (() => { AP.gotoRetry([-420, -470, -255], 20, 3); let r; for (let k = 0; k < 4 && !(G.gunPortals[0].open && G.gunPortals[0].pos[1] > -390); k++) r = shoot(0, [-420, -384, -200]); return r; })());
 lg('orange channel 1', (() => { AP.gotoRetry([-320, -420, -255], 20, 3); let r; for (let k = 0; k < 4 && !(G.gunPortals[1].open && G.gunPortals[1].pos[1] > 100); k++) r = shoot(1, [-300, 130, -200]); return r; })());
-hop('hop 1', p => Math.abs(p[1] - 64) < 2 && p[0] < -255 && p[0] > -275, p => Math.abs(p[1] - 64) < 2 && p[0] < game.pl.pos[0] + 12 && p[0] > game.pl.pos[0] - 4, () => [game.pl.pos[0], 50]);
+/* boarding: the cart may already be up to 24 units past when we come out (a tenth of a second late), so walk onto where
+   it is now rather than where we stand */
+const onRail = (axis, at) => p => Math.abs(p[axis] - at) < 2 && Math.abs(p[1 - axis] - game.pl.pos[1 - axis]) < 24;
+hop('hop 1', p => Math.abs(p[1] - 64) < 2 && p[0] < -255 && p[0] > -275, p => onRail(1, 64)(p), () => { const c = cartAt(onRail(1, 64)); return [c ? c.pos[0] : game.pl.pos[0], 50]; });
 lg('orange channel 2', nowShoot(1, [140, 64, -200]));
 lg('off cart 1', offCart());
-hop('hop 2', p => Math.abs(p[0] - 64) < 2 && p[1] < 95 && p[1] > 75, p => Math.abs(p[0] - 64) < 2 && p[1] < game.pl.pos[1] + 12 && p[1] > game.pl.pos[1] - 4, () => [60, game.pl.pos[1]]);
+hop('hop 2', p => Math.abs(p[0] - 64) < 2 && p[1] < 95 && p[1] > 75, p => onRail(0, 64)(p), () => { const c = cartAt(onRail(0, 64)); return [60, c ? c.pos[1] : game.pl.pos[1]]; });
 lg('orange final floor', nowShoot(1, [64, 580, -256]));
 lg('off cart 2', offCart());
 lg('final wait', JSON.stringify(AP.gotoRetry([-420, -440, -255], 20, 3)));

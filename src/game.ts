@@ -371,6 +371,12 @@ export class Game {
     this.lastExit = { p: b, t: this.io.time };
     const M = throughPortal(a, b); const pl = this.player; const mid = centre ? pl.maxs()[2] / 2 : pl.viewOffset;
     const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
+    // floor (or ceiling) into a wall: the original's exit speed is the entry speed less 4 to 6 (391.5/526.5/625.5 from
+    // 395.5/532.9/629.8, checks/reference/fling-wall.json), where this port's came out 4.5 more (409/536/636). That's
+    // one tick of gravity, 9.1: the port moves the player (both gravity halves) and then teleports, so the speed carried
+    // into the horizontal includes this tick's gravity. Take it back out for those exits; floor-to-floor flings are fitted
+    // separately below. Wall-to-wall and other cases aren't measured.
+    if (this.wallFlingTick && Math.abs(a.f[2]) > 0.7 && Math.abs(b.f[2]) < 0.7) pl.vel = [pl.vel[0], pl.vel[1], pl.vel[2] + 600 * this.lastDt];
     pl.vel = xformDir(M, pl.vel);
     const { f, u } = angleVectors(pl.ang); const nf = xformDir(M, f), nu = xformDir(M, u);
     const na = vectorAngles(nf, nu); pl.ang = [Math.max(-89, Math.min(89, na[0])), na[1], 0];
@@ -910,7 +916,9 @@ export class Game {
     }
     this.shakeOffset = off; this.shakeRoll = roll;
   }
+  lastDt = 1 / 66; /** the floor-into-wall gravity tick above (a switch, so scripts can be compared with it off) */ wallFlingTick = true;
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
+    this.lastDt = dt;
     this.updateShake(dt); this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.updateFollowers(); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {

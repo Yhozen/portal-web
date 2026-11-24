@@ -19,6 +19,14 @@ interface Cube extends Body { /** model origin relative to the body centre, in b
 
 interface Turret { state: TurretState; next: number; shot: number; lastSight: number; thrash: number; eyes: number; shots: number; seen: boolean; }
 
+/** does the segment a-b pass through the box lo-hi (slab test) */
+function segHitsBox(a: V3, b: V3, lo: V3, hi: V3): boolean {
+  let t0 = 0, t1 = 1;
+  for (let k = 0; k < 3; k++) { const d = b[k] - a[k];
+    if (Math.abs(d) < 1e-9) { if (a[k] < lo[k] || a[k] > hi[k]) return false; continue; }
+    let u = (lo[k] - a[k]) / d, v = (hi[k] - a[k]) / d; if (u > v) [u, v] = [v, u]; t0 = Math.max(t0, u); t1 = Math.min(t1, v); if (t0 > t1) return false; }
+  return true;
+}
 export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
@@ -296,6 +304,9 @@ export class Game {
     // brush entities (func_brush / func_door, e.g. a06's fling pillars) take portals while they hold still; the portal fizzles if they move
     const R0 = t.col?.rot; const onCol = t.ent && t.col && (!R0 || (R0[0] > 0.999 && R0[5] > 0.999 && R0[10] > 0.999)) && /^func_(brush|door|wall)$/.test(t.ent.cls) ? t.col : null; // unrotated only
     if (t.fraction >= 1 || (t.ent && !onCol)) return this.fizzleShot(which, 'nothing');
+    // the shot doesn't cross an enabled trigger_portal_cleanser: measured in the original (a10, oracle-ctl), shots across
+    // its cleansers at portalable floor, walls and ceiling leave no portal, while the same floor this side takes one
+    for (const c of this.io.ents) if (c.cls === 'trigger_portal_cleanser' && c.enabled !== false && !c.killed && c.bmins && segHitsBox(eye, t.end, c.bmins, c.bmaxs)) return this.fizzleShot(which, 'cleanser');
     const off: V3 = onCol ? [...onCol.offset] as V3 : [0, 0, 0];
     // find the surface flags of the brush side we hit
     const n = t.normal; let flags = 0, texd = -1;
@@ -539,7 +550,14 @@ export class Game {
     const io = this.io; const f = angleVectors(L.angles || [0, 0, 0]).f; const spd = +(L.kv.minspeed || 200) || 200; const r = +(L.kv.ballradius || 12) || 12;
     const e = new Ent({ classname: 'prop_energy_ball', origin: L.origin.join(' '), model: 'models/effects/combineball.mdl' }); e.game = this; this.io.add(e);
     const prop = this.addProp(e.kv.model, [...L.origin] as V3, [0, 0, 0]);
-    const b = { ent: e, pos: ma(L.origin, r + 2, f), vel: scale(f, spd), r, die: io.time + (+(L.kv.balllifetime || 12) || 12), launcher: L, prop };
+    // a10's launcher_a sits 0.8 in front of the wall it faces (angles 0 0 0, wall at x 460) with its housing behind it, and
+    // in the original its ball crosses the room the other way along the launcher's own y and z (ent_text: 165.3, -1989.9,
+    // -196.5). So a ball that would start in solid backs out of it and leaves reversed, as if it had bounced off that wall (a
+    // guess at the push-out; the port has no vphysics)
+    const box: V3 = [r, r, r], nbox: V3 = [-r, -r, -r]; let pos = ma(L.origin, r + 2, f), dir = f;
+    if (this.tr.trace(pos, pos, nbox, box, 0x1 | 0x8, this.playerEnt).startsolid) { dir = scale(f, -1); pos = [...L.origin] as V3;
+      for (let k = 0; k < 4 * r && this.tr.trace(pos, pos, nbox, box, 0x1 | 0x8, this.playerEnt).startsolid; k++) pos = ma(pos, 1, dir); }
+    const b = { ent: e, pos, vel: scale(dir, spd), r, die: io.time + (+(L.kv.balllifetime || 12) || 12), launcher: L, prop };
     e.ball = b; e.onKill = () => { prop.visible = false; io.log.push(`${io.time.toFixed(2)} energy ball gone at ${b.pos.map(v => v | 0)}${io.time >= b.die ? ' (expired)' : ''}`); this.balls = this.balls.filter(x => x !== b); };
     e.prop = prop; this.playAnim(e, 'idle', true); // combineball.mdl's own looping idle turns its three bones (about 86 deg/s)
     this.balls.push(b); io.fire(L, 'onpostspawnball', e); io.log.push(`${io.time.toFixed(2)} energy ball from ${L.name}`);

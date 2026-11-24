@@ -1,6 +1,6 @@
 (() => { const G = game.game, io = G.io, out = [], P = () => game.pl.pos.map(v => v|0), C = AP.centre, E = AP.ent, F = n => AP.floorUnder(E(n));
 const lg = (k, ...v) => out.push(io.time.toFixed(1) + ' ' + k + ' ' + v.map(x => JSON.stringify(x)).join(' '));
-const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.15); G.shootPortal(which); AP.wait(0.15); const Pp = G.gunPortals[which]; return Pp.open ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed ' + io.log.filter(l => /failed/.test(l)).slice(-1); };
+const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.15); const n0 = io.log.length; G.shootPortal(which); AP.wait(0.15); const Pp = G.gunPortals[which]; return Pp.open && !io.log.slice(n0).some(l => /failed/.test(l)) ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed ' + io.log.filter(l => /failed/.test(l)).slice(-1); };
 try {
 AP.wait(2); lg('start', P() + ' gun ' + G.hasGun + ' fire ' + G.canFire);
 if (!G.hasGun) { lg('gun', AP.gotoRetry(E('portalgun1_spawn_lab5').origin, 20, 3)); AP.wait(1); }
@@ -59,9 +59,15 @@ if (window.STAGE === 8) throw 'stage 8';
 // the lab's east panel facing west. Getting back up to hallway 1: orange on the east panel, blue high on the wall above
 // the ledge, walk in.
 const ta = C(E('trigger_catcherpuzzle_box_a_lab5')), tb = C(E('trigger_catcherpuzzle_box_b_lab5'));
-// button b sits on a 64-unit pedestal (x -188..-50, y 0..130): carry the box to its south edge and set it on top
-lg('to b pedestal', JSON.stringify(AP.gotoRetry([-128, -40, -256], 16, 3)).slice(0, 80), AP.approach([-124, -30], 4, 3) + ' ' + P());
-for (let k = 0; k < 8 && G.held; k++) { AP.lookAt([tb[0], tb[1], tb[2] + 8]); AP.wait(0.4); if (Math.hypot(tb[0] - box.pos[0], tb[1] - box.pos[1]) < 6 && box.pos[2] > tb[2] - 12) break; AP.approach([tb[0] - (box.pos[0] - game.pl.pos[0]), Math.min(-22, tb[1] - (box.pos[1] - game.pl.pos[1]))], 3, 0.5); }
+// button b sits on a 64-unit pedestal (x -200..-60, y 0..140, top -192), too high to set the box on from the floor at
+// the 56 hold. So use the box as a step: set it against the pedestal's east face, hop onto it and up, then turn round,
+// lift the box up after you and set it on the button.
+lg('to pedestal east', JSON.stringify(AP.gotoRetry([60, 70, -256], 16, 3)).slice(0, 60), 'held ' + !!G.held);
+if (!G.held) lg('repick', pick());
+lg('box at base', drop([-30, 70], -246), P());
+AP.approach([20, 70], 3, 2); lg('onto box 3', hop([-28, 70], -215)); lg('onto pedestal', hop([-80, 70], -192));
+AP.lookAt(box.pos); AP.wait(0.2); G.use(); AP.wait(0.5); AP.lookAt([-60, 70, -150]); AP.wait(1); lg('lift box up', !!G.held + ' box ' + box.pos.map(v => v|0));
+for (let k = 0; k < 10 && G.held; k++) { AP.lookAt([tb[0], tb[1], tb[2] + 12]); AP.wait(0.4); if (Math.hypot(tb[0] - box.pos[0], tb[1] - box.pos[1]) < 5) break; AP.approach([tb[0] - (box.pos[0] - game.pl.pos[0]), tb[1] - (box.pos[1] - game.pl.pos[1])], 2, 1); }
 G.use(); AP.wait(1.5); lg('box on b', 'box ' + box.pos.map(v => v|0), 'door b ' + E('button_catcherpuzzle_b_lab5').state);
 if (window.STAGE === 9) throw 'stage 9';
 lg('to 880,300', JSON.stringify(AP.gotoRetry([880, 300, -256], 16, 3)).slice(0, 80), AP.approach([880, 300], 4, 3) + ' ' + P());
@@ -69,9 +75,11 @@ lg('blue up', shoot(0, [1407, 300, 190])); lg('orange east panel', shoot(1, [117
 for (let k = 0; k < 66 * 6 && game.pl.pos[2] < -100; k++) { game.pl.ang = [0, Math.atan2(254 - game.pl.pos[1], 1175 - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } AP.wait(1.5); lg('walk in', P());
 lg('up', P(), JSON.stringify(AP.gotoRetry([1589, 528, 128], 24, 3)).slice(0, 100));
 if (window.STAGE === 10) throw 'stage 10';
-const n11 = io.log.length; lg('blue hallway 1 wall', shoot(0, [1599, 639, 172]), io.log.filter(l => /portal|fail/.test(l)).slice(-2));
-// the player on button a, beside the ball's line (y 253) so it passes
-lg('to button a', JSON.stringify(AP.gotoRetry([ta[0], ta[1] + 22, -256], 12, 4)).slice(0, 120), AP.approach([ta[0], ta[1] + 22], 3, 3) + ' ' + P(), 'door a ' + E('button_catcherpuzzle_a_lab5').state);
+// the end wall of hallway 1 (a concrete alcove at y 639 behind a player clip, metal either side). launcher2_rm8's ball
+// bounces off it every few seconds, and a shot that meets the ball there doesn't place, so shoot again
+const n11 = io.log.length; let s11 = shoot(0, [1599, 639, 184]); for (let k = 0; k < 4 && /not placed/.test(s11); k++) { AP.wait(0.4); s11 = shoot(0, [1599, 639, 184]); } lg('blue hallway 1 wall', s11);
+// the player on button a (trigger y 229..277), beside the ball's line (y 253, z -200) so it passes
+lg('to button a', JSON.stringify(AP.gotoRetry([ta[0], ta[1] + 34, -256], 12, 4)).slice(0, 120), AP.approach([ta[0], ta[1] + 34], 3, 3) + ' ' + P(), 'door a ' + E('button_catcherpuzzle_a_lab5').state);
 lg('double door', caught('ball_trap_11', 30, n11), 'box ' + box.pos.map(v => v|0));
 lg('lifts', ['lift1_rm5', 'lift2_rm5', 'lift3_rm5'].map(n => n + ' ' + E(n).state).join(', '));
 if (window.STAGE === 11) throw 'stage 11';

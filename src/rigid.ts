@@ -63,7 +63,8 @@ export function stepBody(b: Body, dt: number, trace: TraceFn, gravity = 600): V3
         const jt = Math.min(vtl / kT, mu * j); b.vel = ma(b.vel, -jt * invM, tdir); b.w = ma(b.w, -jt * invI, rt); }
     }
     if (!any) break;
-    b.pos = add(b.pos, scale(push, 0.9));
+    // the correction is swept too: a deep corner (in another cube's loose AABB) must not push the centre through a thin wall
+    { const want = add(b.pos, scale(push, 0.9)), t = trace(b.pos, want); b.pos = t.startsolid || t.fraction >= 1 ? want : ma(t.end, 0.5, t.normal); }
   }
   // damping + sleep
   b.w = scale(b.w, Math.max(0, 1 - 1.5 * dt));

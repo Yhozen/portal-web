@@ -126,13 +126,20 @@ export class Game {
     if (c === 'math_counter') { e.value = +(kv.startvalue || 0); e.min = +(kv.min || 0); e.max = +(kv.max || 0); }
     if (/^trigger_/.test(c)) { e.touching = new Set(); if (kv.startdisabled === '1') e.enabled = false; }
   }
+  cubeHull = new Map<string, number>();
   spawnCube(e: Ent) {
     const prop = this.addProp(e.kv.model || 'models/props/metal_box.mdl', e.origin, e.angles, +(e.kv.skin || 0));
-    const cube: Cube = { ent: e, pos: [...e.origin] as V3, vel: [0, 0, 0], held: false, prop, ext: 12, onGround: false, spawn: [...e.origin] as V3, alive: true, tunnel: null, R: entityMatrix([0, 0, 0], e.angles), w: [0, 0, 0], h: 12, sleep: 0, asleep: false };
+    const mdl = (e.kv.model || 'models/props/metal_box.mdl').toLowerCase(), h0 = this.cubeHull.get(mdl) ?? 12;
+    const cube: Cube = { ent: e, pos: [...e.origin] as V3, vel: [0, 0, 0], held: false, prop, ext: h0, onGround: false, spawn: [...e.origin] as V3, alive: true, tunnel: null, R: entityMatrix([0, 0, 0], e.angles), w: [0, 0, 0], h: h0, sleep: 0, asleep: false };
     e.cube = cube; this.cubes.push(cube);
     this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
     e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
     this.updateCubeBox(cube); if (e.killed) e.onKill();
+    // Collision size from the model's hull (metal_box.mdl: ±20.25). It was a fixed ±12, so cubes sat 8 units into the floor;
+    // the original rests a11's boxes at z 20.4 on a z-0 floor and stacks them.
+    // (kept per model too, so template copies made mid-tick get it at once)
+    if (!this.cubeHull.has(mdl)) this.models.get(mdl).then(m => { const d = m?.data; if (!d || !d.hullMaxs || d.hullMaxs[0] <= d.hullMins[0]) return;
+      const h = Math.min(...[0, 1, 2].map(k => (d.hullMaxs[k] - d.hullMins[k]) / 2)); if (h > 4 && h < 64) { this.cubeHull.set(mdl, h); for (const c of this.cubes) if (!c.turret && (c.ent.kv.model || 'models/props/metal_box.mdl').toLowerCase() === mdl) { c.h = c.ext = h; if (c.alive) this.updateCubeBox(c); } } });
   }
   /** floor turret: a physics box sized from the model's hull, standing on its origin; behaviour in updateTurret */
   spawnTurret(e: Ent) {
@@ -869,6 +876,12 @@ export class Game {
     for (const c of this.cubes) if (c.turret && c.alive) this.updateTurret(c);
   }
   onTrain(e: Ent) { const p = this.player.pos; const lo = e.platform ? e.platMins : this.bsp.models[e.model].mins, hi = e.platform ? e.platMaxs : this.bsp.models[e.model].maxs; return p[0] > e.pos[0] + lo[0] - 16 && p[0] < e.pos[0] + hi[0] + 16 && p[1] > e.pos[1] + lo[1] - 16 && p[1] < e.pos[1] + hi[1] + 16 && Math.abs(p[2] - (e.pos[2] + hi[2])) < 4; }
+  /** a trace that starts inside another cube's box (cube AABBs are looser than the boxes once they turn, and stacked or
+   *  packed cubes touch) is retried without that cube, so the centre sweep can't go startsolid and let a cube fall through
+   *  the floor, and a held cube can be pulled out of a pile */
+  traceFree(a: V3, b: V3, mins: V3, maxs: V3, mask: number) { let t = this.tr.trace(a, b, mins, maxs, mask, this.playerEnt); const off: { box: { mins: V3; maxs: V3 }; mins: V3; maxs: V3 }[] = [];
+    for (let k = 0; k < 4 && t.startsolid && t.ent?.cube && t.ent.box; k++) { const bx = t.ent.box; off.push({ box: bx, mins: bx.mins, maxs: bx.maxs }); bx.mins = [1e9, 1e9, 1e9]; bx.maxs = [1e9, 1e9, 1e9]; t = this.tr.trace(a, b, mins, maxs, mask, this.playerEnt); }
+    for (const o of off) { o.box.mins = o.mins; o.box.maxs = o.maxs; } return t; }
   updateCube(c: Cube, dt: number) {
     const mins: V3 = [-c.ext, -c.ext, -c.ext], maxs: V3 = [c.ext, c.ext, c.ext];
     const prev: V3 = [...c.pos] as V3;
@@ -885,7 +898,7 @@ export class Game {
       { const pz = this.player.pos[2], top = pz + this.player.maxs()[2], nz = Math.max(pz, Math.min(top, want[2])); const dl: V3 = [want[0] - this.player.pos[0], want[1] - this.player.pos[1], want[2] - nz]; const L = len(dl);
         if (L < radius) want = L > 1e-3 ? add([this.player.pos[0], this.player.pos[1], nz], scale(dl, radius / L)) : ma(want, radius, [f[0], f[1], 0]); } if (c.viaPortal) { const vp = c.viaPortal; if (vp.open && vp.linked?.open) want = xformPoint(throughPortal(vp, vp.linked), want); else c.viaPortal = null; }
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
-      const t = this.tr.trace(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
+      const t = this.traceFree(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000); // a held cube pulled out of a stack starts touching its neighbours
       c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
       if (c.Rrel && !c.viaPortal) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
       if (this.player.groundEnt === c.ent) { this.io.log.push(`${this.io.time.toFixed(2)} stood on the held cube, dropped`); c.held = false; this.held = null; c.viaPortal = null; } // UpdateObject lets go of what the player stands on
@@ -893,7 +906,7 @@ export class Game {
     } else {
       const Z: V3 = [0, 0, 0]; const mask = 0x1 | 0x2 | 0x8 | 0x4000;
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
-      const tf = (p: V3, q: V3) => this.tr.trace(p, q, Z, Z, mask, this.playerEnt);
+      const tf = (p: V3, q: V3) => this.traceFree(p, q, Z, Z, mask);
       const ns = stepBody(c, dt, tf);
       c.onGround = ns.some(n => n[2] > 0.7);
       if (c.pos[2] < -16000) c.ent.game.io.fire(c.ent, 'onoutofworld', c.ent);

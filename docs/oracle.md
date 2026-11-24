@@ -73,3 +73,10 @@ the same tick, so metrics are counted from when the motion starts, not from the 
 - A `setpos` in the same batch as the trace sometimes landed a few ticks into the trace. Setup now goes in its own
   batch with wall time to settle, and parity.mjs reruns a scenario if the first sample isn't at the start position.
 - The game window's title doesn't match `xdotool search --name`, so the window is found by pid.
+
+## Entity positions: ent_text
+
+`developer 1; ent_text NAME` (or a class name) draws the entity's overlay text, including `Position: x, y, z`, next to it
+in the world. Take a screenshot from a spot where the overlays don't overlap (looking straight down helps) and read it off.
+It's the game's own debug overlay, so it's within the rules, and it's how the a02/a08/a09 template cube positions were
+measured. `report_entities` prints a count per class to the console log.

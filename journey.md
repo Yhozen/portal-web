@@ -69,6 +69,25 @@ training turret on its side straight away, and it thrashes and fires into the wa
 leaves it leaning on the wall at about 45 degrees (up 0.70, so not tipped, since that needs < 0.5). It only goes
 over about 20 s later. More spin doesn't help, because it's the lean against the wall that holds it up.
 
+**12:50 PM EST, a13 plays through, 295 s to the a14 elevator.** I didn't change the 56 hold. I worked the script around
+it instead, the way a player would:
+- Button b's pedestal is 64 high, too high to set the box on from the floor. So the box goes against the pedestal's
+  east face as a step. The player hops onto it and up, turns round, lifts the box up after them and sets it on the
+  button.
+- The hallway 1 blue that "didn't place" had two causes. The end wall the ball hits is a concrete alcove at y 639,
+  behind a player clip at 623, with metal on both sides, so 1599, 639, 184 is the one spot that takes a portal. Also,
+  launcher2's ball bounces off that alcove every few seconds. A shot that meets the ball there doesn't place, and the
+  old shoot() helper read the previous portal's open flag as success. shoot() now looks for a "failed" in the log, and
+  the script fires again.
+- The player stands on button a 34 units off the ball's line (y 253), so the ball passes.
+- Each catcher raises one lift (relay_lift1/2/3_up enable each other in turn, so one relay_lift_up only lifts the next
+  one). With all three up at -8 they're stepping stones: lift 1 from the upper room, running jumps to 2 and 3, then a
+  jump east down onto the -128 corridor. The ramp from there leads up to the exit floor button. All of that is done
+  carrying the box.
+- It's chamber 17's ending. The box on the floor button opens switch_door_*_a11, and the incinerator button behind
+  them holds the incinerator open for 13 s (wait 13). So: press it, run back for the box (the doors close behind,
+  which doesn't matter now), and drop it in. trigger_killbox opens the exit doors and the elevator takes you to a14.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

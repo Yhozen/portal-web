@@ -44,7 +44,7 @@ window.AP = (() => {
     return { ok: false, expanded: n, bb, closest: cl, visited: [...new Set([...best.keys()])].map(k => nodeAt.get(k)).filter(Boolean), partial, partialGain: h(start) - nearH, portalEdges: [...prev.keys()].length };
   }
   function walk(path, budget = 120) {
-    let t = 0, stuck = 0, last = [...pl.pos], i = 1;
+    let t = 0, stuck = 0, last = [...pl.pos], i = 1, bestI = -1, best = 1e9, noGain = 0;
     while (i < path.length && t < budget) {
       const pa = path[i].portal; if (pa && !(pa.open && pa.linked && pa.linked.open)) return { ok: false, why: 'portal closed', at: pl.pos.map(v => v | 0), t };
       // next node is on the far side of portal pa: walk into its centre until we get teleported
@@ -55,7 +55,9 @@ window.AP = (() => {
       const mv = Math.hypot(pl.pos[0] - last[0], pl.pos[1] - last[1]); last = [...pl.pos];
       if (mv > 60) { // teleported: resync to nearest remaining waypoint past the portal we were heading for
         if (path[i].portal) i++; let bj = i, bd = 1e9; for (let j = i; j < path.length && !path[j].portal; j++) { const q = path[j].p; const dd = Math.hypot(q[0] - pl.pos[0], q[1] - pl.pos[1], q[2] - pl.pos[2]); if (dd < bd) { bd = dd; bj = j; } } i = bj; }
-      stuck = mv < 0.5 ? stuck + 1 : 0; if (stuck > 120) return { ok: false, why: 'stuck', at: pl.pos.map(v => v | 0), wp: i + '/' + path.length, t };
+      // stuck: no real movement, or (jittering against a wall with a held cube) no progress towards the waypoint for 4 s
+      if (i !== bestI) { bestI = i; best = 1e9; } const dw = Math.hypot(w[0] - pl.pos[0], w[1] - pl.pos[1]); if (dw < best - 2) { best = dw; noGain = 0; } else noGain++;
+      stuck = mv < 0.5 ? stuck + 1 : 0; if (stuck > 120 || noGain > 132) return { ok: false, why: 'stuck', at: pl.pos.map(v => v | 0), wp: i + '/' + path.length, t };
     }
     return { ok: i >= path.length, t, at: pl.pos.map(v => v | 0) };
   }

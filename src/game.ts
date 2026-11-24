@@ -119,7 +119,7 @@ export class Game {
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
-      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; e.prop.restPose = true; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); }
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; e.prop.restPose = true; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); if (/^prop_dynamic/.test(c) && kv.solid !== '0') this.followerProps.push(e); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
     if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }
@@ -694,6 +694,31 @@ export class Game {
       pr.onDone = isDefault ? undefined : () => { this.io.fire(e, 'onanimationdone', e); const d = e.defaultAnim !== undefined ? e.defaultAnim : e.kv.defaultanim; /* SetDefaultAnimation with an empty value clears it */ if (d && d.toLowerCase() !== name.toLowerCase()) this.playAnim(e, d, true); }; };
     if (pr.model) apply(); else this.models.get(e.kv.model).then(apply);
   }
+  /** prop_dynamics whose model lists bone followers (box_dropper_cover's flaps and arms) */
+  followerProps: Ent[] = [];
+  /** bone followers: each listed bone's .phy piece follows the bone in the prop's current pose and blocks like a brush
+   *  (SDK 2013 CBoneFollowerManager: one static physics shadow per bone, moved to the bone every frame). Pieces are
+   *  convex: their own planes plus axial bevels of their world bounds. */
+  updateFollowers() {
+    for (const e of this.followerProps) { const pr = e.prop as PropInst | undefined, m = pr?.model; if (!pr || !m || !m.followers?.length || pr.seq === undefined) continue;
+      const on = !e.killed && pr.visible !== false && !e.noCollide;
+      const key = pr.posed + '|' + Array.from(pr.matrix).map(v => v.toFixed(2)).join(',');
+      if (e.hullKey === key) { for (const h of e.hulls) h.on = on; continue; } e.hullKey = key;
+      const fades = pr.fades?.length ? pr.fades.map(f => ({ seq: f.seq, cycle: f.cycle, weight: f.weight })) : undefined, poses = pr.poses;
+      const B = boneMatrices(m.skel, pr.seq, pr.cycle || 0, fades || poses ? { fades, poses: poses?.slice() } : undefined), P = pr.matrix;
+      if (!e.hulls) { e.hulls = []; for (const f of m.followers) for (const _ of f.pieces) { const h = { planes: [], mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e, on }; e.hulls.push(h); this.tr.hulls.push(h); } }
+      let hi = 0;
+      for (const f of m.followers) { const b = f.bone * 12;
+        // bone (3x4 row-major, model space) then the prop's matrix (column-major)
+        const W = new Float32Array(12); for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) W[r * 4 + c] = P[r] * B[b + c] + P[4 + r] * B[b + 4 + c] + P[8 + r] * B[b + 8 + c] + (c === 3 ? P[12 + r] : 0);
+        const xf = (v: number[]): V3 => [W[0] * v[0] + W[1] * v[1] + W[2] * v[2] + W[3], W[4] * v[0] + W[5] * v[1] + W[6] * v[2] + W[7], W[8] * v[0] + W[9] * v[1] + W[10] * v[2] + W[11]];
+        const rot = (n: number[]): V3 => { const v: V3 = [W[0] * n[0] + W[1] * n[1] + W[2] * n[2], W[4] * n[0] + W[5] * n[1] + W[6] * n[2], W[8] * n[0] + W[9] * n[1] + W[10] * n[2]]; const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+        for (const pc of f.pieces) { const h = e.hulls[hi++], vs = pc.verts.map(xf), mn: V3 = [1e9, 1e9, 1e9], mx: V3 = [-1e9, -1e9, -1e9];
+          for (const v of vs) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[k]); mx[k] = Math.max(mx[k], v[k]); }
+          const planes = pc.planes.map(q => { const n = rot(q.n), p0 = xf([q.n[0] * q.d, q.n[1] * q.d, q.n[2] * q.d]); return { n, d: n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2] }; });
+          for (let k = 0; k < 3; k++) { const a: V3 = [0, 0, 0], c: V3 = [0, 0, 0]; a[k] = 1; c[k] = -1; planes.push({ n: a, d: mx[k] }, { n: c, d: -mn[k] }); }
+          h.planes = planes; h.mins = mn; h.maxs = mx; h.on = on; } } }
+  }
   animateProps(dt: number) { for (const pr of this.r.props) this.animateProp(pr, dt); if (this.vm) this.animateProp(this.vm, dt); }
   animateProp(pr: PropInst, dt: number) {
     { const m = pr.model; if (!m || pr.seq === undefined) return;
@@ -763,7 +788,7 @@ export class Game {
     this.shakeOffset = off; this.shakeRoll = roll;
   }
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.updateShake(dt); this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.r.time += dt;
+    this.updateShake(dt); this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.updateFollowers(); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
       if (e.killed) continue;

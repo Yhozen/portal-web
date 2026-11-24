@@ -117,6 +117,28 @@ while still partly in the wall. The tunnel through the wall only exists while th
 player ended up inside solid and stayed there. Now the move is clipped at the rim, as Source's solid rim would do: keep
 the axis that still fits and zero the velocity along the other. Checks 37/37.
 
+**3:55 PM EST, a15 to the end, and a01 waits for GLaDOS.** Sounds now load before the first frame (84cec96), so
+scenes run at their real length. a01's entry scene is 21.0 s where it used to fall back to 4 s, and the entrance
+doors only open on its OnCompletion. The a01 script gave up on the gun before they opened. It now waits for the scene,
+and a01 clears in 112.7 s instead of 85.6 s. The same change moved a02 from 148 to 152.6 s and a14 from 109.1 to
+121.1 s.
+a15 now plays through to escape_00 in 267.1 s, along the Portal Wiki's escape route. Four gaps in the port were in
+the way:
+- trigger_push didn't exist. It now follows SDK 2013 triggers.cpp: a base velocity along pushdir, an upward push
+  lifts the player off the ground first, and the push carries on as momentum when it ends. The broken tube carries
+  you at 350 u/s, then up, then 500 u/s south into the box dropper's shaft.
+- The dropper's lid chunks are prop_physics with motion disabled. EnableMotion did nothing to a static prop, so you
+  stood on the lid after it "broke". Now it turns the prop into a physics body, and the env_physexplosion scatters
+  the chunks.
+- func_portal_detector didn't exist. a15's last shaft has a wall that blocks only the player. It drops when both
+  portals are inside portal_detector_at_exit. The detector now fires its touch outputs for the gun portals. The touch
+  test, the 64x112 portal rectangle overlapping the brush bounds, is my guess at the game's test.
+- The dropper hole is 64 units across and the last push throws you at its south wall, so the script steers back in
+  the air. A player would do the same.
+The rest is scripting: the button room's door by portal, the elevator shaft, a crouch-jump between the two pistons
+to see the low ledge's top, the sideways cylinder to the exit-sign ledge, and two portals in the exit shaft. Checks
+37/37.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

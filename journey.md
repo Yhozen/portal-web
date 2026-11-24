@@ -53,6 +53,22 @@ That broke a00, a02, a05 and a08. The longer reach snags the cube on door frames
 walk past. The patch is at portal-web-shots/wip-hold81-all.patch. It needs the scripts reworked one by one, so it's
 parked for now. a13 stops at the double door until then.
 
+**12:05 PM EST, turret damage written, parked.** The port now has player health, regen and death, and turret bullets
+do damage, all fitted to the numbers above. One turret on its own (training_turret, 200 units out) checks out against
+the original:
+- the original: health drops every 7 ticks, first hit to dead in 1.79 s and 1.68 s, shoved back 72 units into the wall;
+- the port: every 7 ticks, first hit to dead in 1.79 s, shoved into the same wall.
+
+The trouble is a11. The route the playthrough walks crosses the west room in front of the turret at (-482, -418) for
+about 1.5 s, and that's enough to kill you. I taught the autopilot to stay out of turret sight. Then there's no way
+out of the first rooms without being seen, and no portal pair it tries gets round it. A player would get behind the
+turrets or knock them over, so the script needs rewriting around that. Patch: portal-web-shots/wip-turret-damage.patch.
+
+I found a tipping difference while I was at it. In the original, stepping into trigger_knock_over_turret2 lays the
+training turret on its side straight away, and it thrashes and fires into the wall. In the port the same 189 in/s kick
+leaves it leaning on the wall at about 45 degrees (up 0.70, so not tipped, since that needs < 0.5). It only goes
+over about 20 s later. More spin doesn't help, because it's the lean against the wall that holds it up.
+
 ## 2026-11-23 to 24, oracle session (from about 11:45 PM EST)
 
 **Summary (written 8:50 AM EST).** I built an oracle out of the original Portal and measured the port against it all

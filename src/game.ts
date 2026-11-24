@@ -830,13 +830,22 @@ export class Game {
     const prev: V3 = [...c.pos] as V3;
     c.ent.box.mins = [1e9, 1e9, 1e9]; c.ent.box.maxs = [1e9, 1e9, 1e9]; // don't collide with itself
     if (c.held) {
-      const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
-      let want = ma(eye, 56, f); if (c.viaPortal) { const vp = c.viaPortal; if (vp.open && vp.linked?.open) want = xformPoint(throughPortal(vp, vp.linked), want); else c.viaPortal = null; }
+      // Where a held object goes, after CGrabController::UpdateObject (public SDK 2013 hl2/weapon_physcannon.cpp; Portal's own
+      // pickup code isn't public, so that it works the same there is a guess): view pitch clamped to +-75, the object held
+      // kept at least a radius (the player's 2D half-diagonal plus the object's extent along the view) from the player's vertical
+      // axis so it never overlaps the player, and let go when the player stands on it. The port used the unclamped view, so
+      // looking down put the cube under the player's own hull and the player could ride it (stuck in mid-air in a08).
+      const eye = this.player.eye(); const ang = this.player.ang; const { f } = angleVectors([Math.max(-75, Math.min(75, ang[0])), ang[1], 0]);
+      const radius = Math.hypot(16, 16) + c.ext * (Math.abs(f[0]) + Math.abs(f[1]) + Math.abs(f[2]));
+      let want = ma(eye, 56, f); // the SDK's 24 + radius (58 to 67 for a cube) is not used: the scripted button drops were tuned to 56 and moved off the a00 pad with it
+      { const pz = this.player.pos[2], top = pz + this.player.maxs()[2], nz = Math.max(pz, Math.min(top, want[2])); const dl: V3 = [want[0] - this.player.pos[0], want[1] - this.player.pos[1], want[2] - nz]; const L = len(dl);
+        if (L < radius) want = L > 1e-3 ? add([this.player.pos[0], this.player.pos[1], nz], scale(dl, radius / L)) : ma(want, radius, [f[0], f[1], 0]); } if (c.viaPortal) { const vp = c.viaPortal; if (vp.open && vp.linked?.open) want = xformPoint(throughPortal(vp, vp.linked), want); else c.viaPortal = null; }
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
       const t = this.tr.trace(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt);
       c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
       if (c.Rrel && !c.viaPortal) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
-      if (len(sub(c.pos, want)) > 80) { this.io.log.push(`${this.io.time.toFixed(2)} held cube snagged at ${c.pos.map(v => v | 0)} (want ${want.map(v => v | 0)}) dropped`); c.held = false; this.held = null; c.viaPortal = null; }
+      if (this.player.groundEnt === c.ent) { this.io.log.push(`${this.io.time.toFixed(2)} stood on the held cube, dropped`); c.held = false; this.held = null; c.viaPortal = null; } // UpdateObject lets go of what the player stands on
+      else if (len(sub(c.pos, want)) > 80) { this.io.log.push(`${this.io.time.toFixed(2)} held cube snagged at ${c.pos.map(v => v | 0)} (want ${want.map(v => v | 0)}) dropped`); c.held = false; this.held = null; c.viaPortal = null; }
     } else {
       const Z: V3 = [0, 0, 0]; const mask = 0x1 | 0x2 | 0x8 | 0x4000;
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
@@ -879,7 +888,7 @@ export class Game {
     if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); c.asleep = false; this.held = null; return; }
     const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
     let best: Cube | null = null, bd = 90;
-    for (const c of this.cubes) { if (!c.alive) continue; const d = sub(c.pos, eye); const along = dot(d, f); if (along < 0 || along > 100) continue; const perp = len(sub(d, scale(f, along))); if (perp < c.ext + 10 && along < bd) { bd = along; best = c; } }
+    for (const c of this.cubes) { if (!c.alive || this.player.groundEnt === c.ent) continue; /* CWeaponPhysCannon::CanPickupObject (SDK 2013): not what you stand on */ const d = sub(c.pos, eye); const along = dot(d, f); if (along < 0 || along > 100) continue; const perp = len(sub(d, scale(f, along))); if (perp < c.ext + 10 && along < bd) { bd = along; best = c; } }
     if (best) { best.Rrel = mul(invertRigid(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0])), best.R); best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
     else {
       // +use on func_button etc.

@@ -100,6 +100,54 @@ AP.approach(window.DA ?? [-1900, 448], 4, 2); // from the west, so orange lies a
     if (k % 20 === 0) tr.push(P() + '/' + game.pl.vel.map(v => v | 0)); if (G.stats.teleports - n0 >= 2 && game.pl.onGround) break; if (G.stats.teleports - n0 === 1 && game.pl.onGround && k > 66) break; }
   lg('fall loop', G.stats.teleports - n0, P(), game.pl.groundEnt ? game.pl.groundEnt.cls : 'world', tr.join(' ')); }
 if (window.STAGE === 9) throw 'stage 9';
+// the stairs room: the stairs up to the catwalk (z 512) are broken. Blue on the east wall just above the catwalk
+// (bottom at the catwalk's height), orange on the floor inside the catwalk's ring, and walk in
+lg('stairs room', JSON.stringify(AP.gotoRetry([-1200, 1200, 384], 16, 3)).slice(0, 60), P());
+{ let r = ''; for (const t of [[-903, 1300, 566], [-903, 1250, 575], [-903, 1330, 570]]) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue over the catwalk', P(), r); }
+{ let r = ''; for (const t of [[-1030, 1250, 384], [-1020, 1280, 384], [-1040, 1220, 384]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange room floor', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 8 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: Math.min(1, Math.hypot(dx, dy) / 60), side: 0, jump: false, duck: false }); }
+  // you come out going west at ~190 and the catwalk's 64 wide: brake against it (east) from the moment you're out
+  for (let k = 0; k < 66; k++) { game.pl.ang = [0, 0, 0]; game.step(T, { fwd: game.pl.pos[0] < -930 ? 1 : Math.max(0, Math.min(1, -game.pl.vel[0] / 100)), side: 0, jump: false, duck: false }); }
+  lg('through', G.stats.teleports > n0, P(), game.pl.onGround); }
+if (window.STAGE === 10) throw 'stage 10';
+for (const g of (window.G11 ?? [[-860, 1370, 640], [-420, 1400, 640]])) lg('walk', g, JSON.stringify(AP.gotoRetry(g, 16, 3)).slice(0, 90), P());
+if (window.STAGE === 11) throw 'stage 11';
+// the fenced alcove with the door (metaldoor_white01, x -445): blue on its west wall through the fence, orange on the
+// catwalk's east wall beside you, walk in
+{ let r = ''; for (const t of [[-511, 1224, 700], [-511, 1210, 690], [-511, 1224, 720]]) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue behind the fence', P(), r); }
+{ let r = ''; for (const t of [[-384, 1413, 690], [-384, 1450, 690], [-430, 1535, 690]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange beside', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); }
+  AP.wait(0.5); lg('through', G.stats.teleports > n0, P(), game.pl.onGround); }
+AP.approach([-490, 1200], 3, 2); AP.lookAt([-499, 1166, 690]); AP.wait(0.1); G.use(); AP.wait(1.5); lg('door', P(), io.log.filter(l => /d2_tc15/.test(l)).slice(-3));
+for (const g of (window.G13 ?? [[-490, 1100, 640], [-200, 1100, 640]])) lg('walk', g, JSON.stringify(AP.gotoRetry(g, 16, 3)).slice(0, 90), P());
+if (window.STAGE === 12) throw 'stage 12';
+// the big fan (rotating_fan3): blue through its blades on the wall behind it (y 1279), orange on the floor here, in
+{ let r = ''; for (let i = 0; i < 12; i++) { const t = [[-128, 1279, 700], [-128, 1279, 740], [-160, 1279, 720]][i % 3]; r = shoot(0, t); if (!/not placed/.test(r) && G.gunPortals[0].pos[1] > 1270) break; AP.wait(0.2); } lg('blue behind the fan', P(), r); }
+{ let r = ''; for (const t of [[-150, 1040, 640], [-180, 1030, 640], [-120, 1040, 640]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange floor', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: Math.min(1, Math.hypot(dx, dy) / 60), side: 0, jump: false, duck: false }); }
+  AP.wait(0.5); lg('through', G.stats.teleports > n0, P(), game.pl.onGround); }
+if (window.STAGE === 13) throw 'stage 13';
+// the duct behind the fan slopes down east into the goo room (goo up to z 512). Across it a ledge at z 768 runs along
+// the east wall: from partway down the duct, orange on the wall above the ledge (x 1151), then back up the duct and
+// into blue, which is still behind the fan
+lg('down the duct', JSON.stringify(AP.gotoRetry([60, 1235, 600], 16, 3)).slice(0, 60), P());
+{ let r = ''; for (const t of [[1148, 1100, 822], [1148, 1080, 830], [1148, 1150, 822]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange above the ledge', P(), r); }
+lg('back up', JSON.stringify(AP.gotoRetry([-111, 1225, 640], 16, 3)).slice(0, 60), P());
+{ const n0 = G.stats.teleports; for (let k = 0; k < 3 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [0, 90, 0]; game.step(T, { fwd: 1, side: (G.gunPortals[0].pos[0] - game.pl.pos[0]) / 20, jump: false, duck: false }); }
+  for (let k = 0; k < 66; k++) { game.pl.ang = [0, 180, 0]; game.step(T, idle); }
+  lg('through', G.stats.teleports > n0, P(), game.pl.onGround); }
+if (window.STAGE === 14) throw 'stage 14';
+// the stairs down from the ledge to the west catwalk (z 768, x 375..425) are broken over the goo. Blue high on the
+// goo room's west wall (x 256) so that coming out at walking speed you fall onto the catwalk ~120 units out, orange on
+// the east wall beside the ledge's door, and walk east into it
+AP.approach([1000, 640], 4, 2);
+{ let r = ''; for (const t of (window.WT ?? [[256, 700, 1020], [256, 680, 1000], [256, 720, 1040]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue west wall', P(), r); }
+{ let r = ''; for (const t of [[1151, 640, 822], [1151, 680, 822], [1151, 600, 830]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange east wall', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 3 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [0, 0, 0]; game.step(T, { fwd: 1, side: -(op[1] - game.pl.pos[1]) / 20, jump: false, duck: false }); }
+  lg('through', G.stats.teleports > n0, fly(0.05, 3), game.pl.groundEnt ? game.pl.groundEnt.cls : 'world'); AP.wait(0.5); lg('on', P()); }
+if (window.STAGE === 15) throw 'stage 15';
+for (const g of (window.G16 ?? [[400, 1230, 768], [600, 1450, 640]])) lg('walk', g, JSON.stringify(AP.gotoRetry(g, 16, 3)).slice(0, 90), P());
+if (window.STAGE === 16) throw 'stage 16';
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

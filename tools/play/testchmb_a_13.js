@@ -32,7 +32,10 @@ if (window.STAGE === 5) throw 'stage 5';
 // hallway 2 (launcher1_rm8's ball, x 1481) up the stairs and north; blue on its north wall where the ball turns
 for (const t of [[1490, -820, 64], [1490, -600, 140], [1490, 0, 192], [1490, 600, 108]]) AP.gotoRetry(t, 24, 3); lg('hallway 2 end', P() + ' held ' + !!G.held);
 // firing drops a held cube (as in the original), so pick it up again after each shot
-const pick = () => { AP.wait(1.5); for (let k = 0; k < 3 && !G.held; k++) { const a = Math.atan2(game.pl.pos[1] - box.pos[1], game.pl.pos[0] - box.pos[0]); AP.approach([box.pos[0] + 60 * Math.cos(a), box.pos[1] + 60 * Math.sin(a)], 6, 2); AP.lookAt(box.pos); AP.wait(0.2); G.use(); AP.wait(0.4); } return !!G.held + ' box ' + box.pos.map(v => v|0); };
+// run through waypoints without stopping at each (approach brakes inside 40 u); the last one is approached normally
+const run = ws => { for (let i = 0; i < ws.length; i++) { const w = ws[i]; if (i === ws.length - 1) { game.pl.ang = [0, Math.atan2(w[1] - game.pl.pos[1], w[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; AP.approach(w, 6, 3); break; }
+  for (let k = 0; k < 4 * 66 && Math.hypot(w[0] - game.pl.pos[0], w[1] - game.pl.pos[1]) > 30; k++) { const y = Math.atan2(w[1] - game.pl.pos[1], w[0] - game.pl.pos[0]); game.pl.ang = [0, y * 180 / Math.PI, 0]; game.step(1 / 66, { fwd: 1, side: 0, jump: false, duck: false }); } } return P(); };
+const pick = (settle = 1.5) => { AP.wait(settle); for (let k = 0; k < 3 && !G.held; k++) { const a = Math.atan2(game.pl.pos[1] - box.pos[1], game.pl.pos[0] - box.pos[0]); AP.approach([box.pos[0] + 60 * Math.cos(a), box.pos[1] + 60 * Math.sin(a)], 6, 2); AP.lookAt(box.pos); AP.wait(0.2); G.use(); AP.wait(0.4); } return !!G.held + ' box ' + box.pos.map(v => v|0); };
 lg('blue hallway 2 wall', shoot(0, [1481, 767, 236]), 'repick ' + pick());
 if (window.STAGE === 5.5) throw 'stage 5.5';
 // down the stairs to the ledge over the lab and drop in
@@ -104,14 +107,14 @@ lg('box on floor button', drop([fb[0], fb[1]], 10), 'door ' + E('floor_button_do
 if (window.STAGE === 13) throw 'stage 13';
 // the incinerator (trigger_killbox behind incinerator_door_1, x 1392, y -192) takes the box and opens the exit doors. Its
 // button is past the switch doors and only holds it open 13 s (wait 13), so press it while the box keeps those doors
-// open, run back for the box and drop it in. Coming down the ramp, go south first and then straight west at it: cutting
+// open, run back for the box (no settle wait: it's been resting on the button) and drop it in. Coming down the ramp, go south first and then straight west at it: cutting
 // the corner puts the held box on the incinerator's side wall
 const ib = C(E('button_incineratordoor_a13'));
 lg('to incinerator button', JSON.stringify(AP.gotoRetry([ib[0] + 40, ib[1], -64], 16, 3)).slice(0, 60), P());
 AP.lookAt(ib); AP.wait(0.2); G.use(); AP.wait(0.3); lg('pressed', io.log.filter(l => /incinerator/.test(l)).slice(-3));
-lg('back to box', JSON.stringify(AP.gotoRetry([fb[0] - 50, fb[1], 0], 16, 2)).slice(0, 60), 'repick ' + pick());
+lg('back to box', run([[1568, -373], [1568, -192], [1568, 150], [fb[0] - 10, fb[1] - 70]]), 'repick ' + pick(0.1));
 if (window.STAGE === 14) throw 'stage 14';
-for (const w of [[1576, 200], [1576, 60], [1576, -40], [1576, -192], [1470, -192]]) { game.pl.ang = [0, Math.atan2(w[1] - game.pl.pos[1], w[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; AP.approach(w, 6, 3); }
+run([[1576, 200], [1576, -40], [1576, -192]]); run([[1470, -192]]);
 lg('to incinerator', P() + ' held ' + !!G.held, 'door ' + E('incinerator_door_1').state);
 AP.lookAt([1380, -192, -40]); AP.wait(0.6); G.use(); AP.wait(3);
 lg('box in', 'box ' + (box.alive ? box.pos.map(v => v|0) : 'gone'), io.log.filter(l => /killbox|exit_door|euthan/.test(l)).slice(-3));

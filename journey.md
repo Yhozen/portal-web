@@ -217,6 +217,40 @@ piston room (lab4a_crusherroom2, west of that wall) still needs another portal p
 arrow, put a portal on the wall across from the next ledge, and fall through a floor portal (the lower floor is visible
 through the hole from the pad). That's the next step.
 
+**6:30 PM EST, escape_00 takes the south-strip route and climbs to crusher08 (107.5 s).** The pad route works, but
+Thonky's "next ledge" is the z=320 strip south of the walkway, and that's the way on to the pistons. From the walkway I
+shoot blue high on the east wall at (895, 183, 460), hop onto the z -59 ledge at (700, 117), stand still (a running hop
+keeps 150 u/s of leftover +y and flies over the hole), and put orange on the lower floor at (700, 250, -319) so the fall
+hits the rim, not the hole centre. The landing-fast test then fires: exit (879, 183, 382) at 562 u/s west, land at
+(530, 183, 312), walk south onto the strip at (417, 119, 320) at 93.1 s. The high-speed blockers are just west of there.
+The corridor mouth is south of the y=-24 wall; hugging that corner pins you at (255, -24). Walking south to (276, -54)
+first, then west to (150, -46), blue on the wall past the pistons at (-127, -150, 384) and orange on the y=0 wall at
+(150, 0, 384), and walking into orange comes out at (-127, -144, 320) at 97.6 s. The two vertical blockers at x -64 can
+be skipped: the far north wall at y=767 is visible from the corridor, and a walk-into on the west wall at (-127, 47,
+384) lands at (-165, 750, 320) at 99.6 s. From there the "over here" climb is east-wall hops onto
+lab4a_crusherroom2_crusher01 (z 568) and crusher05 (z 698), then a west-wall hop onto crusher08 (z 826) at 107.5 s.
+The orange for a piston hop has to be on the wall at this y and eye height; walking off a moving piston to a stale
+mark comes out too low and wedges in the wall. Walking off an exit has to follow that portal's normal, or a west-wall
+hop bounces back through. Still to do: the two highest pistons (a south-wall portal at (63, 256, 1142) is the right
+spot, but the exit sits under the lip at z 1088 and sticks), the cube tube over the goo, and the changelevel at
+(576, 2176, 640). The exit-sign pad route is still in the file under window.PAD, unused.
+
+**6:45 PM EST, the original does force a duck on a wall-fling exit.** I already had the original traces from this
+morning (checks/oracle/fling-wall.json, wallfling-duck-100, and the floor flings). getpos is the client eye, so I
+compared standing wall-flings to one that starts with +duck held. In the original, a standing floor-to-wall exit
+drops the eye 37.3 / 37.6 / 37.2 units by five ticks later (drops of 100, 200, 300). That's standing view 64 minus
+ducked view 28, plus a tick or two of lerp and gravity; the client eye undershoots for a tick (down to 547.8 on the
+100 drop) and then settles. The same 100-unit drop with +duck held from the start only drops 1.4 units (gravity). So
+the 37-unit drop is the stand-to-duck view change, not exit placement. Floor-to-floor flings in the original then pop
+the eye back up 50.0 / 53.6 units (100 / 300 drops) about 0.34–0.36 s after the exit; a drop that starts ducked still
+pops, but only 27.0 units. The port does neither: the same wall-fling exits with viewOffset 64, the eye drops 1.7
+units in five ticks, and eye5 is 596.29 for all three drops (the original's is 551.878 / 578.386 / 578.721, so the
+port flies 44.4 / 17.9 / 17.6 units higher). The 200 and 300 cases are the 36-unit duck minus about 18 units of
+different first-exit placement; the 100 case also comes out of the original lower on the first tick (589 vs 616).
+Speed and drift are already within (or just next to) tolerance after this afternoon's wall-fling tick. I have not
+modelled the duck. Changing the hull on exit would touch every fling, including a14/a15, and a viewOffset-only duck
+would put the camera in a standing hull. Left recorded, not asserted, in checks/reference/fling-wall.json.
+
 
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the

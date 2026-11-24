@@ -46,8 +46,11 @@ if (window.STAGE === 6) throw 'stage 6';
 const walkTo = (x, y, pitch = 20, max = 4) => { for (let k = 0; k < max * 66; k++) { const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1]; if (Math.hypot(dx, dy) < 6) break; game.pl.ang = [pitch, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } return P(); };
 lg('to switch', JSON.stringify(AP.gotoRetry([1100, 880, 1152], 16, 3)).slice(0, 60), P());
 const wedge = io.ents.find(e => e.name === 'rotating_door_wedge');
-AP.lookAt([1136, 880, 1216]); AP.wait(0.2); G.use(); const tsw = io.time; lg('switch', io.log.filter(l => /door_piston_wedge|rotating_door_wedge/.test(l)).slice(-2));
-const piston = io.ents.find(e => e.name === 'door_piston_wedge'); AP.wait(6, () => piston.t >= 0.999); lg('piston out', (io.time - tsw).toFixed(1));
+const piston = io.ents.find(e => e.name === 'door_piston_wedge');
+walkTo(1120, 880, 10, 2);
+for (let i = 0; i < 5 && !(piston.t > 0.05); i++) { AP.lookAt([1136, 880, 1216]); AP.wait(0.15); G.use(); AP.wait(0.4); }
+const tsw = io.time; lg('switch', 't=' + (piston.t || 0).toFixed(2), io.log.filter(l => /door_piston_wedge|rotating_door_wedge|button|press|use/.test(l)).slice(-4));
+AP.wait(6, () => piston.t >= 0.999); lg('piston out', (io.time - tsw).toFixed(1), 't=' + (piston.t || 0).toFixed(2));
 for (const w of [[1095, 920], [1440, 920], [1440, 850], [1530, 850], [1580, 960]]) walkTo(w[0], w[1], 0, 2);
 lg('on the walkway', P(), (io.time - tsw).toFixed(1));
 if (window.STAGE === 7) throw 'stage 7';

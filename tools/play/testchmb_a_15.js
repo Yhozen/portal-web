@@ -164,6 +164,33 @@ AP.approach([675, 1615], 3, 2);
 { const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); }
   lg('through', G.stats.teleports > n0, fly(0.05, 3), game.pl.groundEnt ? game.pl.groundEnt.cls : 'world'); AP.wait(0.5); lg('on', P()); }
 if (window.STAGE === 18) throw 'stage 18';
+for (const g of (window.G19 ?? [[150, 1350, 960], [100, 1170, 1127]])) lg('walk', g, JSON.stringify(AP.gotoRetry(g, 16, 3)).slice(0, 90), P());
+if (window.STAGE === 19) throw 'stage 19';
+// over the handrail into the broken tube; its trigger_pushes carry you on
+// (the hole in its top is x 0..112, y 944..1024: the cover runs only to y 944 there)
+AP.approach(window.HJ ?? [56, 1110], 3, 2);
+// the ride drops you into a shaft above the box dropper; its 64-unit hole (x 1600..1664, y 480..544, rim z 928) needs
+// steering back from the shaft's south wall, where the last push's momentum throws you
+{ const tr = []; for (let k = 0; k < 25 * 66; k++) { const t = k / 66, p = game.pl.pos, drop = p[0] > 1560 && p[1] < 600 && p[2] < 1340 && p[2] > 900 && !game.pl.onGround;
+    const dx = 1632 - p[0], dy = 512 - p[1]; game.pl.ang = [0, drop ? Math.atan2(dy, dx) * 180 / Math.PI : -90, 0];
+    game.step(T, { fwd: drop ? Math.min(1, Math.hypot(dx, dy) / 8) : t < 1.5 && p[1] > (window.HY ?? 990) ? 1 : 0, side: t < 1.5 ? (56 - p[0]) / 20 : 0, jump: t < 1.5 && game.pl.onGround && p[1] < 1110, duck: (t < 1.5 && !game.pl.onGround) || drop });
+    if (k % 33 === 0) tr.push(io.time.toFixed(1) + ':' + P() + (game.pl.onGround ? '' : '*')); if (G.changedTo || window.changedTo || (t > 5 && game.pl.onGround && game.pl.pos[2] < 700)) break; }
+  lg('tube', tr.join(' '), window.changedTo || ''); }
+if (window.STAGE === 20) throw 'stage 20';
+// the a02-style room under the dropper: its floor button opens the exit door only while held, so stand on it, put
+// blue through the open doorway on the corridor's far wall (x 2495) and orange on the room's east wall beside the door
+lg('to button', JSON.stringify(AP.gotoRetry(window.BTN ?? [1891, 256, 640], 20, 5, 1)).slice(0, 120), P()); AP.wait(1);
+{ const d = E('exit_door_left_a05'); lg('door', d.state, (d.pos || d.origin).map(v => v|0)); }
+{ let r = ''; for (const t of (window.CB ?? [[2495, 256, 700], [2495, 240, 690], [2495, 270, 710]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue corridor', P(), r); }
+{ let r = ''; for (const t of (window.CO ?? [[2251, 390, 700], [2251, 380, 700], [2251, 120, 700]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange room wall', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 8 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); }
+  lg('through', G.stats.teleports > n0, P()); AP.wait(0.5); lg('on', P()); }
+if (window.STAGE === 21) throw 'stage 21';
+// past the fizzler to the old a05-a06 elevator: its car waits at the top of the shaft (path p4, z 1304), so the shaft
+// below the floor at y > 672 is open down to z -95
+lg('to shaft', JSON.stringify(AP.gotoRetry([2432, 620, 640], 10, 5, 1)).slice(0, 90), P());
+{ for (let k = 0; k < 4 * 66 && !(game.pl.pos[2] < 0 && game.pl.onGround); k++) { game.pl.ang = [0, 90, 0]; game.step(T, { fwd: game.pl.pos[1] < 768 ? 1 : 0, side: 0, jump: false, duck: false }); } lg('shaft bottom', P()); }
+if (window.STAGE === 22) throw 'stage 22';
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

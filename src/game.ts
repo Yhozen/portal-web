@@ -255,7 +255,7 @@ export class Game {
     const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
   }
   lastExit: { p: Portal; t: number } | null = null;
-  teleportPlayer(a: Portal, b: Portal, centre = false) {
+  teleportPlayer(a: Portal, b: Portal, centre = false, feetBefore = this.player.pos[2]) {
     this.lastExit = { p: b, t: this.io.time };
     const M = throughPortal(a, b); const pl = this.player; const mid = centre ? pl.maxs()[2] / 2 : pl.viewOffset;
     const c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + mid]; const nc = xformPoint(M, c);
@@ -265,6 +265,12 @@ export class Game {
     pl.pos = [nc[0], nc[1], nc[2] - mid];
     // floor/ceiling exits: put the whole hull in front of the exit plane (a ceiling exit drops the player out below it)
     if (b.f[2] < -0.7) pl.pos[2] = Math.min(pl.pos[2], b.pos[2] - pl.maxs()[2] - 1); else if (b.f[2] > 0.7) pl.pos[2] = Math.max(pl.pos[2], b.pos[2] + 1);
+    // floor to floor: the hull comes out upright and whole in front of the exit, which lifts the feet by the depth they
+    // had gone into the entry plus the clamp above. The original keeps the energy instead: dropped from h onto a floor
+    // portal, the player comes back up to within 8 units of h (measured, checks/reference/fling.json), where this port
+    // came up 37 to 41 units higher. So take the lift out of the exit speed (v'² = v² - 2g·lift).
+    if (a.f[2] > 0.7 && b.f[2] > 0.7) { const depth = Math.max(0, a.pos[2] - feetBefore), lift = pl.pos[2] - (b.pos[2] - depth), up = dot(pl.vel, b.f);
+      if (up > 0 && lift > 0) { const nu = Math.sqrt(Math.max(0, up * up - 2 * 600 * lift)); pl.vel = ma(pl.vel, nu - up, b.f); } }
     // exiting a floor portal: make sure we leave with at least a little speed so we clear the hole
     const out = dot(pl.vel, b.f); if (out < 60) pl.vel = ma(pl.vel, 60 - out, b.f);
     pl.onGround = false; this.stats.teleports++;
@@ -789,7 +795,7 @@ export class Game {
       for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open || p.f[2] < 0.7 || Math.abs(pl.pos[2] - p.pos[2]) > 4) continue;
         if (this.lastExit && this.lastExit.p === p && this.io.time - this.lastExit.t < 1.5) continue; // falling back onto the portal just left: land on it as before (a05's route relies on it)
         const d = sub(pl.pos, p.pos); if (Math.abs(dot(d, p.r)) > 32 - 8 || Math.abs(dot(d, p.u)) > 56 - 8) continue;
-        pl.vel = prevVel; pl.pos = [pl.pos[0], pl.pos[1], p.pos[2] - mid - 1]; this.teleportPlayer(p, p.linked, true); break; } }
+        const feet = pl.pos[2]; pl.vel = prevVel; pl.pos = [pl.pos[0], pl.pos[1], p.pos[2] - mid - 1]; this.teleportPlayer(p, p.linked, true, feet); break; } }
     this.tr.ignore = null;
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);

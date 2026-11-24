@@ -898,7 +898,17 @@ export class Game {
       { const pz = this.player.pos[2], top = pz + this.player.maxs()[2], nz = Math.max(pz, Math.min(top, want[2])); const dl: V3 = [want[0] - this.player.pos[0], want[1] - this.player.pos[1], want[2] - nz]; const L = len(dl);
         if (L < radius) want = L > 1e-3 ? add([this.player.pos[0], this.player.pos[1], nz], scale(dl, radius / L)) : ma(want, radius, [f[0], f[1], 0]); } if (c.viaPortal) { const vp = c.viaPortal; if (vp.open && vp.linked?.open) want = xformPoint(throughPortal(vp, vp.linked), want); else c.viaPortal = null; }
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
-      const t = this.traceFree(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000); // a held cube pulled out of a stack starts touching its neighbours
+      let t = this.traceFree(c.pos, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000); // a held cube pulled out of a stack starts touching its neighbours
+      // stuck a little into a brush (its box is the unrotated ±ext, a turned cube can end up overlapping a step's edge): the
+      // SDK's held object is a physics shadow that pushes out of the overlap, so go to the wanted spot if the box fits
+      // there and the centre's path to it is clear (never through a wall)
+      if (t.startsolid && !t.ent?.cube) { const skip = new Set<any>([this.playerEnt, c.ent]), fit = this.tr.trace(want, want, mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000, skip), path = this.tr.trace(c.pos, want, [0, 0, 0], [0, 0, 0], 0x1 | 0x2 | 0x8 | 0x4000, skip);
+        if (!fit.startsolid && !path.startsolid && path.fraction >= 1) t = { ...t, end: [...want] as V3, startsolid: false, fraction: 1 }; }
+      // blocked part way: slide the rest along what it hit (the physics shadow slides; a straight sweep stopped dead
+      // against a step's edge and the cube couldn't be lifted past it)
+      for (let k = 0; k < 3 && !t.startsolid && t.fraction < 1; k++) { const rest = sub(want, t.end), n = t.normal; const moves: V3[] = len(n) > 0.5 ? [sub(rest, scale(n, dot(rest, n)))] : [[0, 0, rest[2]], [rest[0], rest[1], 0]];
+        let moved = false; for (const m of moves) { if (len(m) < 0.1) continue; const t2 = this.traceFree(t.end, add(t.end, m), mins, maxs, 0x1 | 0x2 | 0x8 | 0x4000); if (t2.startsolid || t2.fraction <= 0) continue; t = { ...t2, fraction: 0 }; moved = true; if (t2.fraction >= 1) t.fraction = 0.999; break; }
+        if (!moved) break; }
       c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
       if (c.Rrel && !c.viaPortal) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
       if (this.player.groundEnt === c.ent) { this.io.log.push(`${this.io.time.toFixed(2)} stood on the held cube, dropped`); c.held = false; this.held = null; c.viaPortal = null; } // UpdateObject lets go of what the player stands on

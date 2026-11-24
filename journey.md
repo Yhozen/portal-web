@@ -73,6 +73,89 @@ ledge takes no portal, but through the open door the exit room's ceiling does. T
 seconds and 3 s of wall time. The first version took over 8 minutes of wall time, all of it in the autopilot's
 portal search for the ledge, so that step is now written out in the script.
 
+**4:07 AM EST, entity positions from the original with ent_text.** getpos only tells me where I am. With `developer 1`
+and `ent_text NAME`, the original draws each named entity's position, speed and model over the view, so a screenshot of
+it gives positions I can compare against. Notes are in docs/oracle.md. The screenshots stay in portal-web-shots.
+
+**4:15 AM EST, template copies go to their own offsets.** ent_text put a09's spawned cube on the top step at (1083.2,
+-771.2, 500.4) and a02's box_2 at (953, 779). Both are what CPointTemplate::CreateInstance in the public SDK 2013 does:
+each copy keeps its offset from the template origin, moved and turned with the maker. The port had put single-entity
+templates at the maker's origin. A copy that would start inside a wall still goes to the maker's origin, because a02's
+cube ends up in its glass drop tube in the original and the port has no vphysics push-out. That part is a guess.
+
+**4:15 AM EST, a09 plays through (118.7 game s).** A fling from the west wall onto the cube's steps (blue high on the wall,
+orange on the floor, drop back in once and come out at about 600 u/s east). Then the cube down and onto the button, across
+the goo room by portal, a portal on the wall the energy ball hits to send it up to the ceiling over the catcher, then the
+lift and the elevator to a10.
+
+**4:21 AM EST, floor-to-wall flings measured.** checks/oracle/fling-wall.json drops the player 100, 200 and 300 units onto a
+floor portal in a09's box room with the exit on a wall. The original comes out at 391, 527 and 626 u/s, the port at 409,
+536 and 636, which is 2 to 5% high. The sideways drift agrees within 8 units, but the port flies 18 to 44 units higher.
+Those are recorded in checks/reference and not asserted yet.
+
+**5:00 AM EST, where the extra height comes from (not solved).** I ran the 300-unit drop again in the original holding
+duck. Ducked, the exit is smooth: the eye comes out at x 641.6, z 582, and the player stays ducked. Standing, the eye
+comes out at x 656.75, z 589, drops about 41 units in two ticks, bounces back 4.6, and then follows a smooth arc to land
+standing. The ceiling there is at 640, so nothing is in the way. My guesses are that it's the client blending the view
+across the teleport, or that the original pushes a standing hull out of the portal tunnel. I haven't modelled either. The
+speed gap is within about one tick of sampling, as I found before.
+
+**5:08 AM EST, the cleanser stops portal shots.** In a10 the original fizzles shots fired across an enabled
+trigger_portal_cleanser, and the port let them through. Now they fizzle. a05 relied on the old behaviour, so its blue now
+goes through the window above the cleanser instead (51.9 game s, same as before). a10's first energy ball launcher sits
+flush with its wall, and the ball now gets pushed out of the wall on spawn. That one's a guess.
+
+**5:15 AM EST, a10 rooms 1 to 3.** A fall-loop fling over the first glass. Room 2's ball is redirected into its catcher
+(27.4 s). The upper hall's floor and ceiling take no portals, so the field there is crossed with a double fling: a fall
+into the stair pit and out of the south wall's block, then again. Room 3's field takes the same double fling off the
+west block, and the ball goes off the scorch mark on the north wall into ball_trap_11.
+
+**5:48 AM EST, a10's conveyor carts and the run to a11 (198.2 game s).** The carts across the goo never showed up.
+They're env_entity_maker copies of a template holding a func_tracktrain, and the port moved the template train instead of
+copying it. Now each member is copied at the maker, and the train snaps to its first path corner and starts at its speed,
+as in SDK 2013 trains.cpp Find(). A cart spawns every 15 s and is killed at node 8. Killed brushes also kept drawing;
+they're hidden now, and KillHierarchy takes the parented children with it. The route boards two carts across, stepping on
+when the cart's centre is within 4 units behind and 12 ahead of the player, or you drop through it. Then into the final
+room. Shots from the top of lift a fizzled on the lift itself, so the script steps to its north edge first. Orange goes
+on the floor at (-36, 1195), since x -28 doesn't fit a portal. From there a west-moving fling out of orange at (-97, -8,
+574) lands on the exit lift, and the elevator goes to a11. All 35 checks pass.
+
+**6:20 AM EST, cubes were too small.** Every cube used a fixed ±12-unit box, but metal_box.mdl's hull is ±20.25, so
+cubes sat 8 units into floors and could fall into gaps between other boxes. a11's stacked boxes showed it: in the port the
+top ones dropped through to the floor, inside the boxes below. ent_text in the original puts a11's floor boxes at z 20.4 on
+a z-0 floor, a09's spawned cube at 500.4 and a02's box_2 at 468.4 once settled. The port now gives 20.4, 500.3 and 468.3.
+I'd written a02's down as 460.4 before; that was read while it was still falling. Cubes take their size from the model
+hull now, kept per model, so template copies made in the middle of a tick get it too. The bigger boxes showed up three
+other problems, all fixed:
+- A trace that starts inside another cube's box (cube AABBs are looser than the boxes once they turn) is retried without
+  that cube. Otherwise the centre sweep went startsolid and the cube fell through the floor, or a held cube couldn't be
+  pulled out of a pile.
+- The rigid body's position correction is swept, so a deep corner can't push the centre through a thin wall.
+- Triggers test a body's own rotated bounds, not a cube of its narrowest half-width. A turret is about four times taller
+  than its narrowest half-width, and a11's floor button never saw the turret standing on it.
+
+a02 and a08 needed new steps for a 40-unit cube. a02 walks off the pedestal holding box B with the view pitched up, and
+a08 lines up square to the portal before walking in and backs off to the pillar's edge to set the cube on the pad. a00
+to a11 play through in order: a02 176.5 s, a08 78.6 s, the rest the same as before.
+
+**6:55 AM EST, a11 plays through (69.8 game s).** The entry doors open when GLaDOS's entry scene ends. The training
+turret stands in the west doorway. Stepping in beside it fires the env_physexplosion that kicks it aside: the port's
+pushes it 189 in/s and leaves it upright against the jamb, while the original knocks it over (ent_text afterwards: on its
+side, "died"). I haven't modelled the tip. The floor button by the exit takes anything named "box", and every turret in
+the chamber is named box, so the script carries the turret nearest the button onto it. The radio fort's boxes would do,
+but walking into the fort boxes the player in, and the radio and its clutter sit on the east boxes as solid props. Past
+the exit doors a grating fence splits the room, and shots go through grating: blue on the floor beyond it, orange on the
+west wall, walk in. The last room is behind a grating window. Its floor takes no portal, so blue goes high on its far
+wall, over the turret, and orange on this room's east wall. Turrets don't hurt the player in the port yet, which the
+original's do; that's still a gap.
+
+**7:15 AM EST, a13 isn't done.** The start corridor takes no portals anywhere (I swept every direction from two spots).
+The way on is a box climb: a 64-unit step, then a ledge at 128 ("soundscape_useyourbox"). With the 40-unit cube the
+player now gets from the floor onto the box and then onto the step, which the old 24-unit cube couldn't allow. Getting
+the box up after you is the open part: from the step, the box below is 114 units from the eye, past the port's 100-unit
+grab reach. I don't know the original's reach yet. The window at the west end looks onto the exit button room
+(floor_button_lab5), and the exit needs the cube in the incinerator.
+
 ## 2026-11-21, evening (about 6:40 to 7:55 PM)
 
 **Black models on macOS.** On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except

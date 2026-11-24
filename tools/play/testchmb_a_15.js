@@ -191,6 +191,70 @@ if (window.STAGE === 21) throw 'stage 21';
 lg('to shaft', JSON.stringify(AP.gotoRetry([2432, 620, 640], 10, 5, 1)).slice(0, 90), P());
 { for (let k = 0; k < 4 * 66 && !(game.pl.pos[2] < 0 && game.pl.onGround); k++) { game.pl.ang = [0, 90, 0]; game.step(T, { fwd: game.pl.pos[1] < 768 ? 1 : 0, side: 0, jump: false, duck: false }); } lg('shaft bottom', P()); }
 if (window.STAGE === 22) throw 'stage 22';
+// behind the fence: blue on the underside of the low ledge (z 48, facing down) over a 48-unit crawl space, orange on
+// the shaft floor, and drop in ducked
+AP.wait(0.5);
+{ let r = ''; for (const t of (window.LB ?? [[2420, 500, 48], [2440, 500, 48], [2460, 490, 48]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue under the ledge', P(), r); }
+{ let r = ''; for (const t of (window.LO ?? [[2440, 730, -95], [2420, 740, -95], [2460, 760, -95]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange shaft floor', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 6 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: Math.min(1, Math.hypot(dx, dy) / 40), side: 0, jump: false, duck: true }); }
+  lg('through', G.stats.teleports > n0, P()); for (let k = 0; k < 66; k++) game.step(T, { fwd: 0, side: 0, jump: false, duck: true }); lg('crawl space', P(), game.pl.ducked); }
+if (window.STAGE === 23) throw 'stage 23';
+// the two pistons west of the crawl space: from the short one's top crouch-jump onto the tall one as it bottoms out
+// (top z ~10, a 54-unit climb), ride it up to z 80 and put blue on the low ledge's top (z 96); then back to the shaft
+// and run into its orange: out of blue on the ledge top with the walking speed still on
+{ const a = E('mini_crusher_1_a15'), p = game.pl; let mode = 0, jt = 0, prev = a.pos[2];
+  lg('to piston', JSON.stringify(AP.gotoRetry([2232, 464, -43], 6, 4, 1)).slice(0, 60), P());
+  for (let j = 0; j < 66 * 30; j++) { let inp = { fwd: 0, side: 0, jump: false, duck: false }; const da = a.pos[2] - prev; prev = a.pos[2];
+    if (mode === 0) { const dx = 2214 - p.pos[0], dy = 464 - p.pos[1]; p.ang = [0, 180, 0]; inp.fwd = -Math.max(-1, Math.min(1, dx / 10)); inp.side = Math.max(-1, Math.min(1, dy / 10)); if (p.onGround && da < 0 && a.pos[2] < (window.PTH ?? -62) && Math.abs(dx) < 4 && p.pos[2] > -50) { mode = 1; jt = j; } }
+    else if (mode === 1) { p.ang = [0, 180, 0]; const t = j - jt; inp = { fwd: p.pos[0] > 2160 ? 1 : 0, side: 0, jump: t < 3, duck: t > 0 && t < 70 }; if (t > 70) mode = 2; }
+    else if (a.pos[2] > -20 && Math.abs(da) < 0.01) break;
+    game.step(T, inp); }
+  lg('on the tall piston', P()); }
+{ let r = ''; for (const t of (window.PT ?? [[2520, 450, 96], [2560, 420, 96], [2480, 460, 96]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue ledge top', P(), r); }
+lg('back to the shaft', JSON.stringify(AP.gotoRetry([2419, 610, -63], 6, 5, 1)).slice(0, 60), P());
+{ const n0 = G.stats.teleports; for (let k = 0; k < 5 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [0, 90, 0]; game.step(T, { fwd: 1, side: (2419 - game.pl.pos[0]) / 20, jump: false, duck: false }); }
+  AP.wait(1.5); lg('ledge top', G.stats.teleports > n0, P()); }
+if (window.STAGE === 24) throw 'stage 24';
+// the sideways cylinder (crusher01_tc15, y 272..720): around the blue portal on the ledge top to its east edge, jump
+// onto the cylinder as it slides past, keep to its south end and step up onto the exit-sign ledge (z 128) as it retracts
+{ const c = E('crusher01_tc15'), p = game.pl; let mode = 0, jt = 0; const wp = [[2470, 345], [2610, 345], [2610, 440]]; let wi = 0;
+  for (let j = 0; j < 66 * 30; j++) { let inp = { fwd: 0, side: 0, jump: false, duck: false }; const cy = c.pos[1];
+    if (mode === 0) { const w = wp[wi], dx = w[0] - p.pos[0], dy = w[1] - p.pos[1]; if (Math.hypot(dx, dy) < 6 && wi < 2) wi++; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 10); if (Math.hypot(dx, dy) < 6) { p.ang = [0, 0, 0]; inp.fwd = 0; } if (cy > 560 && cy < 640 && c.moving && wi === 2 && Math.hypot(dx, dy) < 6) { mode = 1; jt = j; } }
+    else if (mode === 1) { p.ang = [0, 0, 0]; const t = j - jt; inp = { fwd: p.pos[0] < 2760 ? 1 : 0, side: 0, jump: t < 3 && p.onGround, duck: false }; if (t > 40 && p.onGround) mode = 2; }
+    else if (mode === 2) { const ty = cy - 400 + 24, dx = 2764 - p.pos[0], dy = ty - p.pos[1]; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 20); if (cy < 300 && p.pos[1] < 40) { mode = 3; jt = j; } }
+    else { p.ang = [0, -90, 0]; const t = j - jt; inp = { fwd: 1, side: (2764 - p.pos[0]) / 20, jump: t < 3, duck: t > 1 && t < 30 }; if (t > 60) break; }
+    game.step(T, inp); }
+  lg('exit-sign ledge', P()); }
+if (window.STAGE === 25) throw 'stage 25';
+// the dead end's grate looks into the exit shaft (x 3216..3343, y -111..15, floor z -191): blue on its far wall, orange
+// on the ledge floor, and in. From the shaft floor orange goes high on the west wall: with blue still on the east wall
+// both portals are in portal_detector_at_exit, which drops the player-only wall at the top (x 3324..3360); then blue low
+// on the east wall and a running jump into it flies out of orange onto the exit ledge (z 192)
+lg('dead end', JSON.stringify(AP.gotoRetry([3100, -50, 128], 6, 4, 1)).slice(0, 60), P());
+{ let r = ''; for (const t of (window.GB ?? [[3343, -50, 160], [3343, -40, 150], [3343, -60, 170]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue past the grate', P(), r); }
+lg('back to the ledge edge', JSON.stringify(AP.gotoRetry([2770, -30, 128], 6, 4, 1)).slice(0, 60), P());
+{ let r = ''; for (const t of (window.GO ?? [[2600, 383, 96], [2560, 420, 96], [2600, 400, 96]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange ledge top', P(), r); }
+// back onto the cylinder as it retracts, walk it north to the orange's y as it slides out, and a running jump west
+{ const c = E('crusher01_tc15'), p = game.pl, op = G.gunPortals[1].pos, n0 = G.stats.teleports, ctr = []; let mode = 0, jt = 0;
+  for (let j = 0; j < 66 * 30 && G.stats.teleports === n0; j++) { let inp = { fwd: 0, side: 0, jump: false, duck: false }; const cy = c.pos[1];
+    if (mode === 0) { p.ang = [0, 90, 0]; if (cy < 290) { mode = 1; } }
+    else if (mode === 1) { const dx = 2764 - p.pos[0], dy = op[1] - p.pos[1]; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 20); if (Math.hypot(dx, dy) < 8 && p.onGround) { mode = 2; jt = j; } }
+    else { const t = j - jt, dx = op[0] - p.pos[0], dy = op[1] - p.pos[1]; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp = { fwd: 1, side: 0, jump: t < 3, duck: false }; }
+    game.step(T, inp); if (j % 15 === 0) ctr.push(mode + ':' + P() + (p.onGround ? '' : '*') + ':' + (cy | 0)); }
+  lg('cylinder back', ctr.slice(-4).join(' '));
+  lg('through', G.stats.teleports > n0, P()); AP.wait(2); lg('shaft floor', P()); }
+{ let r = ''; for (const t of (window.HW ?? [[3216, -50, 352], [3216, -50, 345], [3216, -50, 335]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange high west wall', P(), r, 'wall', E('stop_player_from_transitioning_without_using_both_portals_here').enabled); }
+// blue is still on the east wall (z 138) right above the ledge you land on (z 64): back off west and jump into it
+lg('back west', JSON.stringify(AP.gotoRetry([window.BX ?? 3232, -50, 66], 4, 3, 1)).slice(0, 60), P());
+{ let r = ''; for (const t of (window.LB2 ?? [[3343, -50, 120], [3343, -50, 124], [3343, -50, 130]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue low on the east wall', P(), r, 'wall', E('stop_player_from_transitioning_without_using_both_portals_here').enabled); }
+{ const n0 = G.stats.teleports, tr = []; for (let k = 0; k < 4 * 66; k++) { const p = game.pl, before = G.stats.teleports === n0; if (before) p.ang = [0, 0, 0];
+    game.step(T, { fwd: before || !p.onGround ? 1 : 0, side: before ? Math.max(-1, Math.min(1, (p.pos[1] - G.gunPortals[0].pos[1]) / 20)) : 0, jump: before && p.onGround && p.pos[0] > (window.JX ?? 3300), duck: false });
+    if (k % 15 === 0) tr.push(P() + (p.onGround ? '' : '*')); if (G.stats.teleports > n0 && p.onGround) break; }
+  lg('fly', G.stats.teleports > n0, tr.join(' ')); AP.wait(0.5); lg('top ledge', P()); }
+if (window.STAGE === 26) throw 'stage 26';
+const cl = io.ents.find(e => e.cls === 'trigger_changelevel' && (e.kv.map || '').toLowerCase() === 'escape_00');
+lg('to escape_00', JSON.stringify(AP.gotoRetry(AP.floorUnder(cl), 10, 5, 1)).slice(0, 90), P()); AP.wait(10, () => window.changedTo);
+lg('changedTo', window.changedTo + ' pos ' + P());
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

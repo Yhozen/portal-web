@@ -1,5 +1,6 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
+import { phyPieces, massProps } from './phy.ts';
 import { findSeq, skinModel, type GLModel } from './models.ts';
 import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, type TurretState } from './npc.ts';
@@ -15,7 +16,7 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
 
-interface Cube extends Body { /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
+interface Cube extends Body { /** .phy mass (kg), when read: turrets */ mass?: number; /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
 
 interface Turret { state: TurretState; next: number; shot: number; lastSight: number; thrash: number; eyes: number; shots: number; seen: boolean; }
 
@@ -142,13 +143,30 @@ export class Game {
     if (!this.cubeHull.has(mdl)) this.models.get(mdl).then(m => { const d = m?.data; if (!d || !d.hullMaxs || d.hullMaxs[0] <= d.hullMins[0]) return;
       const h = Math.min(...[0, 1, 2].map(k => (d.hullMaxs[k] - d.hullMins[k]) / 2)); if (h > 4 && h < 64) { this.cubeHull.set(mdl, h); for (const c of this.cubes) if (!c.turret && (c.ent.kv.model || 'models/props/metal_box.mdl').toLowerCase() === mdl) { c.h = c.ext = h; if (c.alive) this.updateCubeBox(c); } } });
   }
+  massCache = new Map<string, { com: V3; meanI: number }>();
   /** floor turret: a physics box sized from the model's hull, standing on its origin; behaviour in updateTurret */
   spawnTurret(e: Ent) {
     const kv = e.kv; kv.model ||= 'models/props/turret_01.mdl';
     const prop = e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); prop.poses = [0, 0];
-    this.models.get(kv.model).then(m => { if (!m) return; const d = m.data, he = [0, 1, 2].map(k => (d.hullMaxs[k] - d.hullMins[k]) / 2) as V3, off = [0, 1, 2].map(k => (d.hullMaxs[k] + d.hullMins[k]) / 2) as V3;
+    Promise.all([this.models.get(kv.model), this.models.assets.read(kv.model.replace(/\.mdl$/i, '.phy')).catch(() => null)]).then(([m, phy]) => { if (!m) return; const d = m.data;
+      // the body: the .phy's convex pieces when there is one (turret_01: three thin legs and a 20-unit-wide shell, 100 kg),
+      // so it stands on its tripod and goes over sideways as easily as the original; else the model's hull box
+      const pc = phy ? phyPieces(new Uint8Array(phy)) : null; let lo: V3 = [...d.hullMins] as V3, hi: V3 = [...d.hullMaxs] as V3, pts: V3[] | undefined, com: V3 | undefined, invI: number | undefined;
+      if (pc && pc.convexes.length) { const box = (c: V3[]) => [[0, 1, 2].map(k => Math.min(...c.map(v => v[k]))), [0, 1, 2].map(k => Math.max(...c.map(v => v[k])))] as [V3, V3];
+        let pieces = pc.convexes as V3[][]; const all = box(pieces.flat()), last = box(pieces[pieces.length - 1]);
+        // the last piece of a multi-piece solid spanning the whole model is the hull the ledge tree is built on, not a piece
+        // (the other seven of turret_01 add up to the text section's volume, 8655)
+        if (pieces.length > 1 && [0, 1, 2].every(k => Math.abs(last[0][k] - all[0][k]) < 0.1 && Math.abs(last[1][k] - all[1][k]) < 0.1)) pieces = pieces.slice(0, -1);
+        [lo, hi] = box(pieces.flat()); const ctr = [0, 1, 2].map(k => (lo[k] + hi[k]) / 2) as V3, seen = new Set<string>(); pts = [];
+        // centre of mass and inertia of the pieces (turret_01: centre at 4.5, 0, 35.8, as the .phy's own header has it)
+        let mp = this.massCache.get(kv.model); if (!mp) this.massCache.set(kv.model, mp = massProps(pieces)); com = sub(mp.com, ctr); invI = 1 / mp.meanI;
+        // contact points: a small piece's box corners; a big one (the shell) its extreme points along 14 directions
+        const dirs: V3[] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) dirs.push([x, y, z]);
+        for (const c of pieces) { const [a, b] = box(c), cand: V3[] = c.length <= 16 ? [0, 1, 2, 3, 4, 5, 6, 7].map(i => [i & 1 ? b[0] : a[0], i & 2 ? b[1] : a[1], i & 4 ? b[2] : a[2]] as V3) : dirs.map(dd => c.reduce((m, v) => dot(v, dd) > dot(m, dd) ? v : m));
+          for (const p of cand) { const q = sub(p, ctr), key = q.map(v => v.toFixed(1)).join(); if (!seen.has(key)) { seen.add(key); pts.push(q); } } } }
+      const he = [0, 1, 2].map(k => (hi[k] - lo[k]) / 2) as V3, off = [0, 1, 2].map(k => (hi[k] + lo[k]) / 2) as V3;
       const R = entityMatrix([0, 0, 0], e.angles), pos = add(e.origin, xformDir(R, off)), ext = Math.min(...he);
-      const cube: Cube = { ent: e, pos, vel: [0, 0, 0], held: false, prop, ext, h: ext, he, off, onGround: false, spawn: [...pos] as V3, alive: true, tunnel: null, R, w: [0, 0, 0], sleep: 0, asleep: true,
+      const cube: Cube = { ent: e, pos, vel: [0, 0, 0], held: false, prop, ext, h: ext, he, off, pts, com, invI, mass: pc?.mass || undefined, onGround: false, spawn: [...pos] as V3, alive: true, tunnel: null, R, w: [0, 0, 0], sleep: 0, asleep: true,
         turret: { state: 'idle', next: 0, shot: 0, lastSight: 0, thrash: 0, eyes: d.attachments.findIndex(a => a.name.toLowerCase() === 'eyes'), shots: 0, seen: false } };
       e.cube = cube; this.cubes.push(cube); this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
       e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
@@ -547,13 +565,15 @@ export class Game {
       if (from) { this.hud.fade = 1; this.hud.fadeTarget = 0; this.hud.fadeRate = 1 / Math.max(0.01, dur); this.hud.fadeHoldUntil = io.time + hold; } else { this.hud.fadeTarget = 1; this.hud.fadeRate = 1 / Math.max(0.01, dur); } return true; });
     // env_physexplosion (SDK 2013 physobj.cpp, CPhysExplosion::Explode): every physics body named by targetentityname, or
     // within radius (0: any distance), is pushed away from the explosion with damage magnitude − 0.4 × distance (at least
-    // 1), applied at the explosion point so it also spins. There is no mass model here: 8 in/s per damage point is tuned so
-    // a11's magnitude-30 kicks tip the 64-unit turret over, as they are placed to.
+    // 1). A body with a .phy mass gets the SDK's impulse, 300 kg·in/s per damage point (CalculateExplosiveDamageForce: 75 kg
+    // pushed 4 in/s; ±15% random left out), along the line through its BodyTarget. BodyTarget is a random point between
+    // low on the body and the eyes; it's taken here as the body's centre, so the kick doesn't spin it (a guess). Bodies
+    // without a mass keep the old tuned kick: 8 in/s per damage point, applied at the explosion point so it also spins.
     H.set('env_physexplosion', (e, i) => { if (i !== 'explode') return false; const o = e.pos || e.origin, rad = +(e.kv.radius || 0), tgt = (e.kv.targetentityname || '').toLowerCase(), mag = +(e.kv.magnitude || 0);
       for (const c of this.cubes) { if (!c.alive || c.held || (tgt && c.ent.name !== tgt)) continue; const spot = [...c.pos] as V3, from = [...o] as V3; if (+(e.kv.spawnflags || 0) & 4) from[2] = spot[2];
-        const d = sub(spot, from), dist = len(d); if (rad && dist > rad) continue; const dmg = Math.max(1, mag - dist * 0.4), j = scale(d, 8 * dmg / (dist || 1));
+        const d = sub(spot, from), dist = len(d); if (rad && dist > rad) continue; const dmg = Math.max(1, mag - dist * 0.4), j = scale(d, (c.mass ? 300 / c.mass : 8) * dmg / (dist || 1));
         const r = sub(o, c.pos), he = c.he, invI = he ? 9 / (2 * (he[0] ** 2 + he[1] ** 2 + he[2] ** 2)) : 6 / ((2 * c.h) ** 2);
-        c.vel = add(c.vel, j); c.w = add(c.w, scale(cross(r, j), invI)); c.asleep = false; c.sleep = 0; this.io.log.push(`${this.io.time.toFixed(2)} ${e.name} pushed ${c.ent.name} ${len(j).toFixed(0)} in/s`); }
+        c.vel = add(c.vel, j); if (!c.mass) c.w = add(c.w, scale(cross(r, j), invI)); c.asleep = false; c.sleep = 0; this.io.log.push(`${this.io.time.toFixed(2)} ${e.name} pushed ${c.ent.name} ${len(j).toFixed(0)} in/s`); }
       return true; });
     H.set('trigger_portal_cleanser', (e, i) => { if (i === 'fizzleTouchingPortals'.toLowerCase()) this.fizzleGunPortals(); return false; });
     // Known no-ops, so io.unhandled lists only real gaps: the renderer is LDR (no auto-exposure or bloom to drive), and

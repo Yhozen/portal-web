@@ -21,6 +21,32 @@ export function parsePhy(b: Uint8Array): PhySolid[] {
   return solids;
 }
 
+/** a single-solid model's convex pieces and mass (prop .phy files such as turret_01's). Each compact ledge is followed
+ *  by its triangles (16 bytes each), and the ledges by a shared point pool, so the walk steps 16 + 16 × triangles and stops at
+ *  the first point. The text section's solid "mass" comes too. */
+export function phyPieces(b: Uint8Array): { convexes: [number, number, number][][]; mass: number } | null {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength), i32 = (o: number) => dv.getInt32(o, true), u32 = (o: number) => dv.getUint32(o, true), f = (o: number) => dv.getFloat32(o, true);
+  if (b.byteLength < 64) return null; const hs = i32(0), size = i32(hs), base = hs + 4, end = base + size; if (i32(base) !== 0x59485056) return null;
+  const surf = base + 28, treeRoot = surf + i32(surf + 32); let L = surf + 48, pool = Infinity; const convexes: [number, number, number][][] = [];
+  while (L + 16 <= Math.min(treeRoot, end, pool)) { const pts = L + i32(L), nt = dv.getInt16(L + 12, true); if (nt <= 0) break; pool = Math.min(pool, pts);
+    const idx = new Set<number>(); for (let t = 0; t < nt; t++) { const T = L + 16 + t * 16; for (let e = 0; e < 3; e++) idx.add(u32(T + 4 + e * 4) & 0xffff); }
+    const vs: [number, number, number][] = []; for (const k of idx) { const p = pts + k * 16; if (p + 12 <= b.byteLength) vs.push([f(p) / 0.0254, f(p + 8) / 0.0254, -f(p + 4) / 0.0254]); }
+    if (vs.length) convexes.push(vs); L += 16 + nt * 16; }
+  const m = /"mass"\s*"([\d.]+)"/.exec(new TextDecoder('latin1').decode(b.subarray(end))); return { convexes, mass: m ? +m[1] : 0 };
+}
+
+/** centre of mass and mean moment of inertia (per unit mass, about that centre) of solid convex pieces of uniform
+ *  density, by sampling each piece on a 1-unit grid */
+export function massProps(pieces: [number, number, number][][]): { com: [number, number, number]; meanI: number } {
+  const pts: [number, number, number][] = [];
+  for (const c of pieces) { const pl = hullPlanes(c), lo = [0, 1, 2].map(k => Math.min(...c.map(v => v[k]))), hi = [0, 1, 2].map(k => Math.max(...c.map(v => v[k])));
+    for (let x = lo[0] + 0.5; x < hi[0]; x++) for (let y = lo[1] + 0.5; y < hi[1]; y++) for (let z = lo[2] + 0.5; z < hi[2]; z++)
+      if (pl.every(q => q.n[0] * x + q.n[1] * y + q.n[2] * z <= q.d + 1e-6)) pts.push([x, y, z]); }
+  const n = pts.length || 1, com = [0, 1, 2].map(k => pts.reduce((s, p) => s + p[k], 0) / n) as [number, number, number];
+  // mean of the three principal moments = (2/3) × mean squared distance from the centre
+  const r2 = pts.reduce((s, p) => s + (p[0] - com[0]) ** 2 + (p[1] - com[1]) ** 2 + (p[2] - com[2]) ** 2, 0) / n; return { com, meanI: 2 * r2 / 3 };
+}
+
 /** the planes of a small convex point set (brute force over triples; the pieces have 8 to 12 points) */
 export function hullPlanes(vs: [number, number, number][]): { n: [number, number, number]; d: number }[] {
   const out: { n: [number, number, number]; d: number }[] = [];

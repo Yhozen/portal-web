@@ -4,12 +4,18 @@
 // (turrets) use the mean of their three moments, which keeps the scalar form.
 import { V3, add, sub, scale, dot, cross, len, ma } from './math';
 
-/** a box body: half-size h on every axis, or he per local axis when set */
-export interface Body { pos: V3; vel: V3; R: Float32Array; w: V3; h: number; he?: V3; sleep: number; asleep: boolean; }
+/** a box body: half-size h on every axis, or he per local axis when set. pts, when set, replaces the 8 box corners as the
+ *  contact points (body axes, relative to pos): a turret's three feet and its body, so it stands on a tripod as in its .phy */
+export interface Body { pos: V3; vel: V3; R: Float32Array; w: V3; h: number; he?: V3; sleep: number; asleep: boolean; pts?: V3[];
+  /** centre of mass (body axes, relative to pos) and inverse mean moment of inertia per unit mass, when known: else the box's centre and inertia */
+  com?: V3; invI?: number; }
 export interface TraceFn { (a: V3, b: V3): { fraction: number; end: V3; normal: V3; startsolid: boolean; ent?: any } }
 
 export const CORNERS: V3[] = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) CORNERS.push([x, y, z]);
 export function cornerOf(b: Body, s: V3, shrink = 1): V3 { if (b.he) return cornerOfBox(b, s, shrink); const R = b.R, h = b.h * shrink; return [b.pos[0] + h * (s[0] * R[0] + s[1] * R[4] + s[2] * R[8]), b.pos[1] + h * (s[0] * R[1] + s[1] * R[5] + s[2] * R[9]), b.pos[2] + h * (s[0] * R[2] + s[1] * R[6] + s[2] * R[10])]; }
+function ptOf(b: Body, p: V3): V3 { const R = b.R; return [b.pos[0] + p[0] * R[0] + p[1] * R[4] + p[2] * R[8], b.pos[1] + p[0] * R[1] + p[1] * R[5] + p[2] * R[9], b.pos[2] + p[0] * R[2] + p[1] * R[6] + p[2] * R[10]]; }
+/** world contact points: the body's own points, else its 8 corners */
+export function contactPoints(b: Body): V3[] { return b.pts ? b.pts.map(p => ptOf(b, p)) : CORNERS.map(s => cornerOf(b, s)); }
 function cornerOfBox(b: Body, s: V3, shrink: number): V3 { const R = b.R, e = b.he!, x = s[0] * e[0] * shrink, y = s[1] * e[1] * shrink, z = s[2] * e[2] * shrink;
   return [b.pos[0] + x * R[0] + y * R[4] + z * R[8], b.pos[1] + x * R[1] + y * R[5] + z * R[9], b.pos[2] + x * R[2] + y * R[6] + z * R[10]]; }
 /** world AABB half-extent of the rotated box */
@@ -28,11 +34,11 @@ export function rotateBy(R: Float32Array, w: V3, dt: number) {
 
 /** one physics step. trace(a,b) is a point trace (world + other solids). Returns contact normals seen. */
 export function stepBody(b: Body, dt: number, trace: TraceFn, gravity = 600): V3[] {
-  const he = b.he, invM = 1, invI = he ? 9 / (2 * (he[0] ** 2 + he[1] ** 2 + he[2] ** 2)) : 6 / ((2 * b.h) ** 2), /* the box's mean moment of inertia; exact for a cube */ e = 0.15, mu = 0.55;
+  const he = b.he, invM = 1, invI = b.invI ?? (he ? 9 / (2 * (he[0] ** 2 + he[1] ** 2 + he[2] ** 2)) : 6 / ((2 * b.h) ** 2)), /* the box's mean moment of inertia; exact for a cube */ e = 0.15, mu = 0.55;
   const normals: V3[] = [];
   if (b.asleep) {
     // stay asleep while at least 3 corners are still supported
-    let sup = 0; for (const s of CORNERS) { const c = cornerOf(b, s); const t = trace(c, [c[0], c[1], c[2] - 2]); if (t.fraction < 1 || t.startsolid) sup++; }
+    let sup = 0; for (const c of contactPoints(b)) { const t = trace(c, [c[0], c[1], c[2] - 2]); if (t.fraction < 1 || t.startsolid) sup++; }
     if (sup >= 3) return [[0, 0, 1]];
     b.asleep = false; b.sleep = 0;
   }
@@ -44,12 +50,12 @@ export function stepBody(b: Body, dt: number, trace: TraceFn, gravity = 600): V3
   rotateBy(b.R, b.w, dt);
   for (let it = 0; it < 4; it++) {
     let any = false; let push: V3 = [0, 0, 0];
-    for (const s of CORNERS) {
-      const c = cornerOf(b, s); const t = trace(b.pos, c);
+    for (const c of contactPoints(b)) {
+      const t = trace(b.pos, c);
       if (t.fraction >= 1 || t.startsolid) continue;
       const n = t.normal; const depth = dot(sub(t.end, c), n); if (depth <= 0) continue;
       any = true; if (it === 0) normals.push(n);
-      const r = sub(c, b.pos);
+      const r = sub(c, b.com ? ptOf(b, b.com) : b.pos);
       const vp = add(b.vel, cross(b.w, r)); const vn = dot(vp, n);
       // positional correction: largest penetration per axis
       for (let k = 0; k < 3; k++) { const want = n[k] * depth; if (Math.abs(want) > Math.abs(push[k])) push[k] = want; }

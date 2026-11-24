@@ -67,9 +67,14 @@ const toPillar = (cb, btn, stand) => {
   const top = C(E('floor_' + btn + '_trigger_box_lvl7'));
   lg(btn + ' blue ceiling', shoot(0, [top[0], top[1], 383])); lg(btn + ' orange wall', lowWall(stand));
   lg(btn + ' pick', AP.pickUp(cb)); const O = G.gunPortals[1].pos;
+  AP.approach([O[0], O[1] - 100], 4, 3); // line up square to the portal first: walking in at an angle puts the (40-unit) cube against the wall beside it
   lg(btn + ' in', through([O[0], O[1] + 40, O[2]]) + ' held ' + !!G.held);
   for (let i = 0; i < 200 && !game.pl.onGround; i++) idle(1);
-  lg(btn + ' on pillar', P() + ' held ' + !!G.held); lg(btn + ' place', G.held ? AP.placeCube(G.held, top) : 'not held');
+  lg(btn + ' on pillar', P() + ' held ' + !!G.held); // the pad is in the middle of the pillar top, where the player lands: back off to the top's south edge, so the held cube
+  // (56 ahead) is over the pad, lower it and let go
+  if (G.held) { AP.approach([top[0], top[1] - 54], 3, 3); for (let k = 0; k < 6; k++) { AP.lookAt([top[0], top[1], top[2]]); AP.wait(0.3); const c = G.held; if (!c || Math.hypot(c.pos[0] - top[0], c.pos[1] - top[1]) < 4) break; AP.approach([game.pl.pos[0] + top[0] - c.pos[0], game.pl.pos[1] + top[1] - c.pos[1]], 2, 1); }
+    const c = G.held; if (c) { AP.lookAt([c.pos[0], c.pos[1], top[2] - 24]); AP.wait(0.3); G.use(); AP.wait(1.5); } }
+  lg(btn + ' place', G.held ? 'still held' : cb.pos.map(v => v|0) + ' pad ' + top.map(v => v|0));
   lg(btn + ' door', E('floor_' + btn + '_door_rm7').state + ' cube ' + cb.pos.map(v => v|0)); };
 toPillar(cube, 'buttonb', [-35, 150, 0]);
 lg('off b', AP.reach([-35, 120, 0], 24));

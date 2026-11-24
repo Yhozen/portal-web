@@ -22,7 +22,11 @@ const ra = AP.placeCube(boxA, C(E('floor_buttonb_trigger_box_a02_2'))); lg('box 
 lg('back into pit', AP.reach([960, 830, 448], 40));
 lg('to left pedestal', AP.reach([704, 1080, 704], 40));
 lg('blue above right pedestal', shoot(0, [window.BX || 760, 512, 762]));
-const rb = AP.placeCube(boxB, C(E('floor_buttona_trigger_box_a02_2'))); lg('box B on button a', rb);
+{ // take box B and walk off the pedestal toward button a with the view pitched up, so the (40-unit) cube clears the edge
+  lg('pick pedestal box', AP.pickUp(boxB)); const ba = C(E('floor_buttona_trigger_box_a02_2'));
+  for (let i = 0; i < 240; i++) { game.pl.ang = [-40, Math.atan2(ba[1] - game.pl.pos[1], ba[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); if (game.pl.onGround && game.pl.pos[2] < 650) break; }
+  AP.wait(0.3); lg('off pedestal', game.pl.pos.map(v => v|0) + ' held ' + !!G.held + ' ' + io.log.filter(l => /snag|stood/.test(l)).slice(-1)); }
+const rb = AP.placeCube(G.held || boxB, C(E('floor_buttona_trigger_box_a02_2'))); lg('box B on button a', rb);
 AP.wait(2); lg('exit doors', E('exit_door_left_a02_2').state + ' counter ' + (E('counter_buttons_rm3a').value ?? E('counter_buttons_rm3a').counter));
 if (window.STOP_EXIT) { AP.reach([700, 750, 584], 40); AP.lookAt([150, 832, 640]); AP.wait(0.3); throw 'stopped for screenshot'; }
 lg('through exit doors', AP.reach([150, 832, 576], 40)); AP.wait(3);

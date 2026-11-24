@@ -148,6 +148,13 @@ AP.approach([1000, 640], 4, 2);
 if (window.STAGE === 15) throw 'stage 15';
 for (const g of (window.G16 ?? [[400, 1230, 768], [600, 1450, 640]])) lg('walk', g, JSON.stringify(AP.gotoRetry(g, 16, 3)).slice(0, 90), P());
 if (window.STAGE === 16) throw 'stage 16';
+// down the stairs; the platform up north-east (z 960, a strip y 1600..1660 along the shaft) is reached through blue on
+// the east wall at its end (x 896) and orange on the floor here
+{ let r = ''; for (const t of [[896, 1630, 1030], [896, 1625, 1035], [896, 1635, 1040]]) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue over the platform', P(), r); }
+{ let r = ''; for (const t of [[540, 1440, 640], [520, 1450, 640], [560, 1460, 640]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange floor', P(), r); }
+{ const op = G.gunPortals[1].pos, n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: Math.min(1, Math.hypot(dx, dy) / 60), side: 0, jump: false, duck: false }); }
+  lg('through', G.stats.teleports > n0, fly(0.05, 3), game.pl.groundEnt ? game.pl.groundEnt.cls : 'world'); AP.wait(0.5); lg('on', P()); }
+if (window.STAGE === 17) throw 'stage 17';
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

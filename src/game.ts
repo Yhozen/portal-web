@@ -305,6 +305,10 @@ export class Game {
     const matName = texd >= 0 ? this.bsp.texdata[texd].name : '';
     const mat = texd >= 0 ? this.r.world.mats[texd] : null;
     if (flags & SURF.NOPORTAL || mat?.noportal || /toolsnodraw|toolsblack|toolsclip/.test(matName)) return this.fizzleShot(which, 'noportal ' + matName);
+    // glass: the original won't put a portal on a08's frosted window glass (world brush) or on the glass top of the cube's rail
+    // platform (func_brush), measured with tools/oracle-ctl.mjs. Taken here as "translucent material takes no portal"; whether the
+    // original decides by translucency, surface property or something else is a guess.
+    if (mat?.translucent) return this.fizzleShot(which, 'glass ' + matName);
     let up: V3;
     if (Math.abs(n[2]) > 0.7) { const pf = angleVectors([0, this.player.ang[1], 0]).f; up = n[2] > 0 ? pf : scale(pf, -1); up = norm(sub(up, scale(n, dot(up, n)))); }
     else up = norm(sub([0, 0, 1], scale(n, n[2])));
@@ -314,7 +318,7 @@ export class Game {
     const other = this.gunPortals[1 - which];
     // the face a trace hit carries a no-portal material (or the NOPORTAL surface flag)
     const noportal = (q: any) => { if (q.hit < 0) return false; const br = this.bsp.brushes[q.hit]; for (let i = 0; i < br.numSides; i++) { const sd = this.bsp.brushSides[br.firstSide + i]; const pl = this.bsp.planes[sd.plane];
-      if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; return !!(ti.flags & SURF.NOPORTAL || this.r.world.mats[ti.texdata]?.noportal); } } return false; };
+      if (dot(pl.n, n) > 0.99 && sd.texinfo >= 0 && Math.abs(dot(pl.n, sub(q.end, off)) - pl.d) < 2) { const ti = this.bsp.texinfo[sd.texinfo]; const m = this.r.world.mats[ti.texdata]; return !!(ti.flags & SURF.NOPORTAL || m?.noportal || m?.translucent); } } return false; }; // glass too, see above
     const fits = (c: V3) => {
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
         const pt = add(add(c, scale(rr, a * (PW - 1))), scale(up, b * (PH - 1)));

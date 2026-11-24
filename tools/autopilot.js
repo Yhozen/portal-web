@@ -76,7 +76,7 @@ window.AP = (() => {
     for (const which of [0, 1]) { if (!G.canFire[which]) continue; r = portalSolve(target, R, which, { vantage: true, spacing: 200, pitches: [-30, -15, 0, 15, 30, 60, 89], ...opts }); if (r.ok) return r; }
     return r; }
   // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
-  // a cube up to ~150 units above the floor (on a pedestal) can still be grabbed: the use() ray reaches 100 units from the eye
+  // use() is the SDK's FindUseEntity: 80 units from the eye, height counted from the player's body, so a cube on a pedestal or below a step still grabs
   function pickUp(cube) { let r = gotoRetry([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) { ZT.lo = -150; try { r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 72); } finally { ZT.lo = -64; } } if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
     if (pl.groundEnt === cube.ent) { const a = Math.atan2(pl.pos[1] - cube.pos[1], pl.pos[0] - cube.pos[0]); approach([cube.pos[0] + Math.cos(a) * 44, cube.pos[1] + Math.sin(a) * 44], 4, 2); wait(0.3); } // standing on it: step off first (it can't be picked up from on top)
     lookAt(cube.pos); wait(0.1); if (!G.held) G.use(); wait(0.3); return { ok: !!G.held, why: G.held ? '' : 'use() did not grab' }; }

@@ -951,11 +951,38 @@ export class Game {
       c.asleep = false; c.sleep = 0;
     }
   }
+  /** +use on a cube or turret, after CBasePlayer::FindUseEntity (SDK 2013 baseplayer_shared.cpp): a ray along the view,
+   *  then 16-unit hulls 72 long swept at 45..-15 degrees below it; a hit counts if it's within PLAYER_USE_RADIUS (80) of
+   *  the eye, with the height measured from the player's own body (so something at your feet, or just below a step you
+   *  stand on, is close); failing those, the nearest box within 80 of the eye inside a cos 0.8 cone, by distance from the
+   *  view line. Measured in the original on a02's box_2 (checks/use-reach.ctl): looking at its centre it grabs from 98
+   *  units and refuses from 104, 112 and 120, standing or ducked; looking just over its top it grabs from 104. The SDK's
+   *  hulls would take the box at 104 either way, so here a view ray that hits the cube out of reach finds nothing (a
+   *  guess at Portal's own player code, which isn't public, fitted to those 7 readings). Not what you stand on
+   *  (CWeaponPhysCannon::CanPickupObject). */
+  findUseCube(eye: V3, f: V3, u: V3): Cube | null {
+    const R = 80, mask = 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000, pl = this.player, z0 = pl.pos[2], z1 = z0 + pl.maxs()[2];
+    const ok = (c: any): c is Cube => !!c && c.alive && !c.held && pl.groundEnt !== c.ent;
+    const iv = (x: number) => x < z0 ? z0 - x : x > z1 ? x - z1 : 0;
+    const dist = (end: V3) => Math.hypot(end[0] - eye[0], end[1] - eye[1], iv(end[2]));
+    this.tr.ignore = null; let near: Cube | null = null;
+    { const t = this.tr.trace(eye, ma(eye, 1024, f), [0, 0, 0], [0, 0, 0], mask, this.playerEnt); const c = t.ent?.cube; if (ok(c)) return dist(t.end) < R ? c : null; }
+    for (const tan of [1, 0.57735026919, 0.3639702342, 0.267949192431, 0.1763269807, -0.1763269807, -0.267949192431]) {
+      const t = this.tr.trace(eye, ma(eye, 72, norm(ma(f, -tan, u))), [-16, -16, -16], [16, 16, 16], mask, this.playerEnt);
+      const c = t.ent?.cube; if (ok(c) && dist(t.end) < R) near = c; }
+    const nearest = (c: Cube): V3 => { const b = c.ent.box; return [0, 1, 2].map(k => Math.min(Math.max(eye[k], b.mins[k]), b.maxs[k])) as V3; };
+    const lineDist = (p: V3) => { const d = sub(p, eye); return len(sub(d, scale(f, dot(d, f)))); };
+    let nd = near ? lineDist(nearest(near)) : Infinity;
+    for (const c of this.cubes) { if (!ok(c) || !c.ent.box) continue; const p = nearest(c), d = sub(p, eye), l = len(d);
+      if (l >= R || (l > 1e-6 && dot(d, f) / l < 0.8)) continue; const ld = lineDist(p); if (ld >= nd) continue;
+      const t = this.tr.trace(eye, p, [0, 0, 0], [0, 0, 0], mask, this.playerEnt); if (t.fraction < 1 && t.ent !== c.ent) continue;
+      near = c; nd = ld; }
+    return near;
+  }
   use() {
     if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); c.asleep = false; this.held = null; return; }
-    const eye = this.player.eye(); const { f } = angleVectors(this.player.ang);
-    let best: Cube | null = null, bd = 90;
-    for (const c of this.cubes) { if (!c.alive || this.player.groundEnt === c.ent) continue; /* CWeaponPhysCannon::CanPickupObject (SDK 2013): not what you stand on */ const d = sub(c.pos, eye); const along = dot(d, f); if (along < 0 || along > 100) continue; const perp = len(sub(d, scale(f, along))); if (perp < c.ext + 10 && along < bd) { bd = along; best = c; } }
+    const eye = this.player.eye(); const { f, u } = angleVectors(this.player.ang);
+    const best = this.findUseCube(eye, f, u);
     if (best) { best.Rrel = mul(invertRigid(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0])), best.R); best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
     else {
       // +use on func_button etc.

@@ -55,7 +55,16 @@ export function attachFrame(m: GLModel, att: number, poses: number[]): { x: V3; 
 // applies a third less, diff / 1.5) and fire whenever the muzzle is within 10° of the target, one shot per 0.1 s
 // think; lose the player and search for 5 s sweeping ±60° yaw / ±15° pitch, then retire. Up · z < 0.5 is tipped:
 // thrash and fire for 2–2.5 s, then close and die.
-export const TURRET = { range: 1200, cone: 0.4, maxWait: 5, thinkActive: 0.1, think: 0.05, turnPerThink: 0.05 * 360, aimDot: 0.9848 };
+// Damage, measured in the original (a11, standing 200 units in front of training_turret, the only one that sees that
+// spot, ent_dump !player every tick, Nov 24 11:20 AM EST): health drops every 7 ticks (one volley per 0.1 s think), by
+// 4.5 per bullet (4 or 5, the fraction carries), one bullet or two each volley (1.33 on average, never none), first hit
+// to dead 1.79 s and 1.68 s in two runs. Each hit shoves the player back about 110 in/s (216 -> 193 in the 0.1 s after
+// a two-bullet volley, with ground friction). Two bullets a volley, the first straight at the player and the second
+// spread uniformly over a cone of tan 0.26 (a third of those hit at 200 units), is my fit to that, not Valve's numbers.
+export const TURRET = { range: 1200, cone: 0.4, maxWait: 5, thinkActive: 0.1, think: 0.05, turnPerThink: 0.05 * 360, aimDot: 0.9848, bullets: 2, spread: 0.26, damage: 4.5 };
+/** player health in the original: 100, regenerates 1 per tick (66/s) once 1 s (sv_regeneration_wait_time) has passed
+ *  without damage (hurtme 50 → 75 on this skill, back to 100 in 0.4 s) */
+export const PLAYER_HP = { regenWait: 1.0, regenPerSec: 66, push: 110 };
 export type TurretState = 'idle' | 'deploy' | 'search' | 'active' | 'retire' | 'tipped' | 'dead';
 const DEG = 180 / Math.PI;
 /** Source VectorAngles for a direction: [pitch (down positive), yaw] in degrees */

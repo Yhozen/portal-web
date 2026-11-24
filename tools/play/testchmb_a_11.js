@@ -7,6 +7,8 @@ lg('entry', AP.gotoRetry([480, -960, 0], 20, 2)); AP.wait(30, () => E('exit_door
 // The training turret stands in the west doorway; stepping in beside it fires the env_physexplosion that kicks it out of the way.
 lg('beside turret', AP.gotoRetry([460, -630, 0], 20, 2)); { const t = G.cubes.find(c => c.ent.name === 'training_turret');
   for (let i = 0; i < 200; i++) { const p = game.pl.pos; game.pl.ang = [0, Math.atan2(-655 - p[1], 420 - p[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: i < 90 ? 1 : 0, side: 0, jump: false, duck: false }); }
+  // the kick lays it on its side in about 0.7 s (it thrashes and fires into the wall for 2-2.5 s, then dies)
+  AP.wait(40, () => t.turret.state === 'tipped' || t.turret.state === 'dead');
   lg('turret kicked', t.pos.map(v => v|0) + ' ' + t.turret.state + ' ' + io.log.filter(l => /knock_over_turret\d pushed/.test(l)).slice(-1)); }
 // Turret room. The button's filter takes anything named "box", and the turrets are named box too, so carry the turret
 // that stands nearest the button onto it (the radio fort's boxes would do as well, but they box the player in).

@@ -3,7 +3,7 @@ import { Body, stepBody, halfExtent } from './rigid';
 import { phyPieces, massProps } from './phy.ts';
 import { findSeq, skinModel, type GLModel } from './models.ts';
 import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
-import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, type TurretState } from './npc.ts';
+import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, PLAYER_HP, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -29,6 +29,11 @@ function segHitsBox(a: V3, b: V3, lo: V3, hi: V3): boolean {
   return true;
 }
 export class Game {
+  /** player health (the original's: 100, see PLAYER_HP) and death; onDeath is the page's (reload, like loading the autosave) */
+  health = 100; dmgAcc = 0; lastHurt = -9; dead = false; god = false; onDeath: (() => void) | null = null;
+  /** turret bullets hurt only with ?damage=1 for now: a11's route walks through the turret room's sight lines for
+   *  seconds (and its north corridor is covered by two turrets end to end), so its playthrough needs reworking first */
+  damage = false;
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
@@ -202,6 +207,42 @@ export class Game {
       if (both && !e.both) io.fire(e, 'onstarttouchbothlinkedportals', null); else if (!both && e.both) io.fire(e, 'onendtouchbothlinkedportals', null);
       e.both = both; }
   }
+  /** whether turret c sees a point (the player's centre): in its 0.4-dot cone on the ground plane, in range, and a clear
+   *  line from its eyes (also used by the autopilot to keep out of sight) */
+  turretSees(c: Cube, target: V3, eye?: V3): boolean {
+    const T = c.turret, pr = c.prop, m = pr?.model; if (!T || !m || T.eyes < 0) return false;
+    eye ??= xformPoint(pr.matrix, attachFrame(m, T.eyes, pr.poses ??= [0, 0]).pos);
+    const to = sub(target, eye), dist = len(to), R = c.R; if (dist >= TURRET.range) return false;
+    const fl = Math.hypot(R[0], R[1]) || 1, d2 = Math.hypot(to[0], to[1]) || 1;
+    if ((R[0] * to[0] + R[1] * to[1]) / (fl * d2) <= TURRET.cone) return false;
+    const ig = this.tr.ignore; this.tr.ignore = null; const f = this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, c.ent).fraction; this.tr.ignore = ig;
+    return f > 0.98;
+  }
+  /** One turret volley (one per 0.1 s think, as in the original). Bullets go at the player's centre when it's in sight,
+   *  along the muzzle otherwise: the first straight, the rest spread uniformly over a cone. One that reaches the player's
+   *  box before the world hits it. */
+  turretBullets(c: Cube, eye: V3, muzzle: V3, aimAtPlayer: boolean) {
+    const pl = this.player, mn: V3 = add(pl.pos, HULL.mins), mx: V3 = add(pl.pos, pl.maxs()), ctr: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + pl.maxs()[2] / 2];
+    const base = aimAtPlayer ? norm(sub(ctr, eye)) : muzzle; const up: V3 = Math.abs(base[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+    const r = norm(cross(base, up)), u = cross(r, base);
+    for (let k = 0; k < TURRET.bullets; k++) {
+      const a = Math.random() * 2 * Math.PI, d = k === 0 ? 0 : TURRET.spread * Math.sqrt(Math.random());
+      const dir = norm(add(base, add(scale(r, Math.cos(a) * d), scale(u, Math.sin(a) * d))));
+      let t0 = 0, t1 = TURRET.range; for (let i = 0; i < 3 && t0 <= t1; i++) { if (Math.abs(dir[i]) < 1e-9) { if (eye[i] < mn[i] || eye[i] > mx[i]) t0 = 1e9; continue; }
+        const ta = (mn[i] - eye[i]) / dir[i], tb = (mx[i] - eye[i]) / dir[i]; t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); }
+      if (t0 > t1) continue;
+      this.tr.ignore = null; const w = this.tr.trace(eye, ma(eye, t0, dir), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, new Set<any>([this.playerEnt, c.ent]));
+      if (w.fraction < 1) continue;
+      this.hurtPlayer(TURRET.damage, dir);
+    }
+  }
+  /** damage with the fraction carried over (health is whole numbers in the original), a push along `dir`, and death at 0 */
+  hurtPlayer(dmg: number, dir: V3) {
+    if (this.dead || this.god || !this.damage) return;
+    this.dmgAcc += dmg; const n = Math.floor(this.dmgAcc); this.dmgAcc -= n; this.health = Math.floor(this.health) - n; this.lastHurt = this.io.time;
+    this.player.vel = ma(this.player.vel, PLAYER_HP.push, [dir[0], dir[1], 0]);
+    if (this.health <= 0) { this.dead = true; this.io.log.push(`${this.io.time.toFixed(2)} player died`); if (this.held) this.use(); setTimeout(() => this.onDeath?.(), 0); }
+  }
   turretSay(c: Cube, what: string) { this.snd?.play('npc_floorturret.' + what, c.pos); }
   turretAct(c: Cube, seq: string) { const pr = c.prop, m = pr.model; if (!m) return; const si = findSeq(m, seq); if (si >= 0 && pr.seq !== si) { this.startSeq(pr, m, si); pr.onDone = undefined; } }
   /** a turret think, at the SDK's think rates (0.05 s, 0.1 s while active) */
@@ -213,11 +254,9 @@ export class Game {
     const W = pr.matrix, Wi = invertRigid(W), toModel = (v: V3) => xformDir(Wi, v);
     const f = attachFrame(m, T.eyes, P), eye = xformPoint(W, f.pos), muzzle = norm(xformDir(W, f.x));
     const target: V3 = add(this.player.pos, [0, 0, 36]), to = sub(target, eye), dist = len(to), dir = scale(to, 1 / (dist || 1));
-    const fwd: V3 = [R[0], R[1], 0], fl = Math.hypot(fwd[0], fwd[1]) || 1, d2 = Math.hypot(dir[0], dir[1]) || 1;
-    const inCone = (fwd[0] * dir[0] + fwd[1] * dir[1]) / (fl * d2) > TURRET.cone;
-    this.tr.ignore = null; const vis = dist < TURRET.range && inCone && this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, c.ent).fraction > 0.98; T.seen = vis;
+    const vis = this.turretSees(c, target, eye); T.seen = vis;
     const face = (goal: V3) => turretFace(m, T.eyes, P, toModel(goal), 0, 1);
-    const shoot = () => { this.turretAct(c, 'fire'); pr.cycle = 0; this.snd?.play('npc_floorturret.shotsounds', eye); T.shots++; };
+    const shoot = () => { this.turretAct(c, 'fire'); pr.cycle = 0; this.snd?.play('npc_floorturret.shotsounds', eye); T.shots++; this.turretBullets(c, eye, muzzle, !!vis); };
     T.next = now + TURRET.think;
     if (c.held) { if (T.state !== 'tipped') { /* carried: keeps its state but doesn't shoot */ } }
     if (T.state !== 'tipped' && !c.held && up < 0.5) { T.state = 'tipped'; T.thrash = now + 2 + Math.random() * 0.5; this.snd?.play('npc_floorturret.alarm', eye); this.turretSay(c, 'talktipped'); this.io.fire(c.ent, 'ontipped', c.ent); return; }
@@ -956,6 +995,8 @@ export class Game {
     // player
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
     const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
+    if (this.dead) { input = { fwd: 0, side: 0, jump: false, duck: false }; this.player.viewOffset = Math.max(14, this.player.viewOffset - 170 * dt); } // the original's eye drops to 14 in about 0.3 s
+    else if (this.health < 100 && this.io.time - this.lastHurt > PLAYER_HP.regenWait) this.health = Math.min(100, this.health + PLAYER_HP.regenPerSec * dt);
     this.player.move(input, dt);
     // a wall portal's hole is carved out of the wall only while the hull fits inside it (tunnelFor), so a move that takes
     // the hull past the hole's rim while it's still partly in the wall ends up inside solid (seen coming out of a14's door

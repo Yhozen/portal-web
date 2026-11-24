@@ -18,7 +18,9 @@ G.use(); AP.wait(1); lg('blue east wall', shoot(0, [256, -161, 49])); lg('re-pic
 drive([256, -161, 49], 6, n0 => tele() > n0); for (let i = 0; i < 20; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
 lg('on platform', P() + ' held ' + !!G.held);
 G.use(); AP.wait(1); AP.approach([-70, -183], 6, 3); let bf = 'none'; for (const t of [[64, 450, 0], [40, 420, 0], [90, 480, 0], [64, 380, 0], [20, 500, 0]]) { const r = shoot(0, t); if (G.gunPortals[0].pos[1] > 200) { bf = t + ' -> ' + r; break; } } lg('blue button room floor', bf + ' from ' + P()); lg('re-pick', AP.pickUp(box)); lg('pos', P() + ' box ' + box.pos.map(v=>v|0));
-drive([-128, -191, 160], 6, n0 => tele() > n0); for (let i = 0; i < 60; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
+// Walking up to the box for the re-pick can already carry the player through orange (seen since walk speed went to 150; why exactly not dug into), so
+// only drive into orange if still on the platform side.
+if (game.pl.pos[1] < 200) drive([-128, -191, 160], 6, n0 => tele() > n0); for (let i = 0; i < 60; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
 lg('in button room', P() + ' held ' + !!G.held);
 lg('box on button', AP.placeCube(G.held || box, C(E('floor_buttona_trigger_box_a02_2')))); AP.wait(2);
 lg('doors', E('exit_door_left_a05').state + ' box ' + box.pos.map(v => v|0));

@@ -38,6 +38,41 @@ entry/exit speeds differ by about 30 because the original starts falling during 
 carries the player through orange into the button room, and the script then drove back into the floor portal. The script
 now only drives into orange if the player is still on the platform side, and a05 goes to a06 again (48.6 s, was 46.4 s).
 
+**1:15 AM EST, floor fling sideways.** Two more fling scenarios drop the player onto the a08 floor portal while moving 60
+u/s east or north. The original turns 60 east into (31, 51) and 60 north into (51, -31) out of the exit, and the port
+matches to within 0.03.
+
+**1:40 AM EST, glass takes no portal.** Probing a08 in the original, shots at the start room's frosted window and at the rail
+platform's glass top fizzle, and the port was placing portals on both. Translucent materials now reject portals
+(checks/glass-noportal.ctl).
+
+**2:00 AM EST, a08 has two cubes.** box_maker's point_template lists two cubes, and the port only spawned the first. The
+second sits on the start room's grating roof, and the chamber needs both. Templates with several entities now spawn
+each one at its offset from the template, moved to the maker. A single-entity template still spawns at the maker's
+origin, because that's where a02's cube shows up in the original. That's not what the SDK 2013 code reads like, so it's a
+measured behaviour, not a derived one (checks/template-cubes.ctl).
+
+**2:45 AM EST, the held cube, after the SDK's grab controller.** Carrying cubes in a08 kept snagging or leaving the player
+standing on the cube in mid-air. The held cube now follows CGrabController from the public SDK 2013
+weapon_physcannon.cpp more closely: the view pitch used to place it is clamped to ±75, it's kept out of the player's
+hull, it's let go when the player stands on it, and a cube you stand on can't be picked up. I kept the hold distance at
+56 instead of the SDK's 24 plus the object's radius, because the a00 to a07 scripts are tuned to it and I haven't
+measured the original's yet. The autopilot steps off a cube before picking it up and lowers it onto a button before
+letting go. a00 to a07 still play through and all 34 checks pass.
+
+**3:55 AM EST, a08 plays through.** The route, all through normal input and portal shots: hold the start room's button,
+put portals on a start-room wall and above the roof to get onto it, take the roof cube out through a portal behind the
+roof, and leave it on button a so the high door stays open. Then blue through that door onto the main room's ceiling,
+take the cube through, and park it. The fling is orange on the floor under the ceiling blue, a fall loop up to about 940
+u/s, then blue moved to the floor just north of the platform. Out of it at 918 u/s up, the air steering toward the
+platform's centre is enough, and the player lands on the platform (rail_cart_brush_lvl7) at z 172. Walking off with the
+cube snagged it on the platform's lip, so the script turns north with the view pitched up 40° and jumps off. Each pillar
+button gets blue on the ceiling over it and orange low on the north wall. The player walks in carrying a cube, drops onto
+the pillar and places the cube (b at z 236, c at z 140). The exit door is up on a grating ledge and the ceiling over the
+ledge takes no portal, but through the open door the exit room's ceiling does. The elevator goes to a09 after 80.7 game
+seconds and 3 s of wall time. The first version took over 8 minutes of wall time, all of it in the autopilot's
+portal search for the ledge, so that step is now written out in the script.
+
 ## 2026-11-21, evening (about 6:40 to 7:55 PM)
 
 **Black models on macOS.** On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except

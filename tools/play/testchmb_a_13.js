@@ -83,6 +83,40 @@ lg('to button a', JSON.stringify(AP.gotoRetry([ta[0], ta[1] + 34, -256], 12, 4))
 lg('double door', caught('ball_trap_11', 30, n11), 'box ' + box.pos.map(v => v|0));
 lg('lifts', ['lift1_rm5', 'lift2_rm5', 'lift3_rm5'].map(n => n + ' ' + E(n).state).join(', '));
 if (window.STAGE === 11) throw 'stage 11';
+// the lifts are up now, one per catcher, and they're the way to the exit's floor button (x 1541..1601, y 248..306, z 0):
+// from the upper room hop lift 1, 2, 3, then jump down east onto the corridor at -128 and walk up its ramp to the button.
+// The box comes too: off button b (the doors don't matter once ball_trap_11 has its ball), up through the portals.
+const leap = (from, to, edge, pitch = 10) => { AP.approach(from, 3, 2); const d = [to[0] - from[0], to[1] - from[1]], L = Math.hypot(...d), u = [d[0] / L, d[1] / L], yaw = Math.atan2(u[1], u[0]) * 180 / Math.PI; game.pl.ang = [pitch, yaw, 0]; AP.wait(0.3);
+  let jumped = false; for (let k = 0; k < 200; k++) { const s = (game.pl.pos[0] - from[0]) * u[0] + (game.pl.pos[1] - from[1]) * u[1]; const j = !jumped && s >= edge; if (j) jumped = true; game.pl.ang = [pitch, yaw, 0]; game.step(T, { fwd: 1, side: 0, jump: j, duck: jumped }); if (jumped && game.pl.onGround) break; }
+  for (let k = 0; k < 20; k++) game.step(T, { fwd: 0, side: 0, jump: false, duck: false }); return P() + ' held ' + !!G.held + ' box ' + box.pos.map(v => v|0); };
+lg('to pedestal east', JSON.stringify(AP.gotoRetry([-36, 66, -256], 12, 3)).slice(0, 60)); AP.approach([-40, box.pos[1]], 3, 2); AP.lookAt(box.pos); AP.wait(0.2); G.use(); AP.wait(0.6); AP.lookAt([box.pos[0], box.pos[1], -110]); AP.wait(0.8); for (let k = 0; k < 66; k++) game.step(T, { fwd: -1, side: 0, jump: false, duck: false }); AP.wait(0.5); lg('box off b', P() + ' held ' + !!G.held + ' box ' + box.pos.map(v => v|0));
+lg('to 880,300', JSON.stringify(AP.gotoRetry([880, 300, -256], 16, 3)).slice(0, 60), AP.approach([880, 300], 4, 3) + ' ' + P() + ' held ' + !!G.held);
+lg('blue up 2', shoot(0, [1407, 300, 190]), 'repick ' + (G.held || pick()));
+AP.approach([880, 300], 4, 3); for (let k = 0; k < 66 * 6 && game.pl.pos[2] < -100; k++) { game.pl.ang = [0, Math.atan2(254 - game.pl.pos[1], 1175 - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } AP.wait(1.5); lg('walk in 2', P() + ' held ' + !!G.held + ' box ' + box.pos.map(v => v|0));
+lg('to lift 1', JSON.stringify(AP.gotoRetry([1100, 448, 0], 16, 3)).slice(0, 60), P());
+lg('on lift 1', leap([1110, 448], [960, 448], 14)); lg('lift 2', leap([960, 400], [960, 672], 108)); lg('lift 3', leap([960, 630], [960, 896], 104)); lg('corridor', leap([910, 896], [1300, 896], 112));
+if (window.STAGE === 12) throw 'stage 12';
+// up the ramp into the button room, the box on the floor button (it opens switch_door_*_a11 by the exit), then out
+const fb = C(E('floor_button_trigger_box_lab5'));
+lg('to button room', JSON.stringify(AP.gotoRetry([fb[0] - 60, fb[1], 0], 16, 3)).slice(0, 60), P() + ' held ' + !!G.held);
+if (!G.held) lg('repick 3', pick());
+lg('box on floor button', drop([fb[0], fb[1]], 10), 'door ' + E('floor_button_door_lab5').state, 'switch door ' + E('switch_door_left_a11').state);
+if (window.STAGE === 13) throw 'stage 13';
+// the incinerator (trigger_killbox behind incinerator_door_1, x 1392, y -192) takes the box and opens the exit doors. Its
+// button is past the switch doors and only holds it open 13 s (wait 13), so press it while the box keeps those doors
+// open, run back for the box and drop it in. Coming down the ramp, go south first and then straight west at it: cutting
+// the corner puts the held box on the incinerator's side wall
+const ib = C(E('button_incineratordoor_a13'));
+lg('to incinerator button', JSON.stringify(AP.gotoRetry([ib[0] + 40, ib[1], -64], 16, 3)).slice(0, 60), P());
+AP.lookAt(ib); AP.wait(0.2); G.use(); AP.wait(0.3); lg('pressed', io.log.filter(l => /incinerator/.test(l)).slice(-3));
+lg('back to box', JSON.stringify(AP.gotoRetry([fb[0] - 50, fb[1], 0], 16, 2)).slice(0, 60), 'repick ' + pick());
+if (window.STAGE === 14) throw 'stage 14';
+for (const w of [[1576, 200], [1576, 60], [1576, -40], [1576, -192], [1470, -192]]) { game.pl.ang = [0, Math.atan2(w[1] - game.pl.pos[1], w[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; AP.approach(w, 6, 3); }
+lg('to incinerator', P() + ' held ' + !!G.held, 'door ' + E('incinerator_door_1').state);
+AP.lookAt([1380, -192, -40]); AP.wait(0.6); G.use(); AP.wait(3);
+lg('box in', 'box ' + (box.alive ? box.pos.map(v => v|0) : 'gone'), io.log.filter(l => /killbox|exit_door|euthan/.test(l)).slice(-3));
+lg('to elevator', JSON.stringify(AP.gotoRetry(F('a13_a14_trigger_elevator_move'), 40, 4)).slice(0, 160));
+AP.wait(40, () => window.changedTo); lg('changedTo', window.changedTo + ' pos ' + P());
 lg('aplog', AP.LOG.slice(-10)); lg('io', io.log.filter(l => !/teleport|fizzle|setanimation|energy ball|ball_/.test(l)).slice(-25));
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());

@@ -139,6 +139,28 @@ The rest is scripting: the button room's door by portal, the elevator shaft, a c
 to see the low ledge's top, the sideways cylinder to the exit-sign ledge, and two portals in the exit shaft. Checks
 37/37.
 
+**4:20 PM EST, escape_00 to the east ledge, then parked.** The script rides the middle piston up, puts blue on the
+east ledge's wall, and comes out of an orange on the south wall at the bottom. That gets to the east ledge in 55 s
+(committed). The next room has two pistons under a ledge, and the walkthrough's "wall up above the ledge" didn't turn
+up: I scanned portal shots from the floor and from the x 520 slot, and none landed above z -300 except one far wall
+at (479, -31, 136). I parked it there to get to turrets.
+
+**4:30 PM EST, the training turret falls over now.** I watched a11's two knock-over kicks in the original at
+host_timescale 0.25 (sheets 0.085 s apart). Either kick leaves the turret standing for about 0.3 s, past 60 degrees by
+about 0.6 s, and on its side by 0.7 s. The port leaned it on the wall at 45 degrees for 20 s. Two things were wrong:
+- The body. The port used the model's hull, a 32x32x64 box. turret_01.phy is seven convex pieces: three thin legs
+  (the back one 2.6 units wide), the leg tops and a 20-unit-wide shell, 100 kg. Its eighth piece spans the whole model.
+  The other seven add up to the volume in the text section (8655), so the eighth is the hull the tree is built on, not
+  part of the body. Sideways, the centre of mass is only 7 units inside the line between a front foot and the back
+  foot, and the box had 16. The body now uses the pieces' corners and extreme points as contacts, and its centre of mass and
+  inertia come from sampling the pieces. The centre comes out at (4.5, 0, 35.8), the same as the .phy header's own.
+- The kick. SDK 2013's CalculateExplosiveDamageForce gives 300 kg·in/s per damage point (75 kg at 4 in/s), so 71 in/s
+  on 100 kg, not the port's tuned 189. It goes along the line through BodyTarget, a random point between low on the
+  body and the eyes. I apply it at the centre, so it doesn't spin the turret (a guess). It's the feet catching on the
+  floor that tip it, as in the original.
+Now the kicks put it past up 0.5 at 0.73 s (kick 1) and 0.65 s (kick 2). checks/turret-tip-time asserts it stands at 0.3
+and 0.6 s and is over at 1.0 s. a10, a11, a13 and a15 still clear (a11 86.5 s).
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

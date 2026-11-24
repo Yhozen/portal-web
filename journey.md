@@ -104,6 +104,19 @@ the panel, which is only 119 units long; from P4's side it didn't fit. That a 45
 the player's yaw, like a floor, is the port's existing rule (|n.z| > 0.7). I haven't checked that against the original.
 The run is deterministic (143.0 s twice). Checks 37/37, and a00 to a13 run at the same times.
 
+**2:40 PM EST, doors go back on their own, and a13 and a14 had to get faster.** The SDK's func_door and
+func_door_rotating go back after `wait` seconds when wait is 0 or more and the toggle flag (32) isn't set. The port
+left them open. Now they return, button-style rotating doors included. Two scripts depended on the old behaviour. In
+a13, the incinerator door now really closes after its 13 s, so the box run had to be quicker. Full speed between
+waypoints with the view level got it there; looking down had made the held box catch on a step. a13 now clears in
+290.9 s. In a14, the wedge swings back after its wait of 9 s, and its OnFullyClosed shuts the piston, so the lane I had
+used for the cube was gone. The cube now comes back through a portal in the alcove. The steps there need duck-jumps,
+with a pause between them to let the unduck finish. a14 now clears in 109.1 s.
+That route turned up a stuck bug. Coming out of the door's wall portal while rising, the hull passed the hole's rim
+while still partly in the wall. The tunnel through the wall only exists while the hull fits inside the hole, so the
+player ended up inside solid and stayed there. Now the move is clipped at the rim, as Source's solid rim would do: keep
+the axis that still fits and zero the velocity along the other. Checks 37/37.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

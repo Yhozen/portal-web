@@ -33,29 +33,29 @@
    "value": 0.345,
    "tol": 0.035,
    "scenario": "fling-drop-100",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling100_eye_pop": {
    "value": 47.438,
    "tol": 0.949,
    "scenario": "fling-drop-100",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling100_entry_vz": {
    "value": -433.719,
    "tol": 8.674,
    "scenario": "fling-drop-100",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling100_exit_vz": {
    "value": 362.783,
    "tol": 7.256,
    "scenario": "fling-drop-100",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling150_apex_feet_gain": {
    "value": -3.319,
@@ -67,29 +67,29 @@
    "value": 0.36,
    "tol": 0.035,
    "scenario": "fling-drop-150",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling150_eye_pop": {
    "value": 47.418,
    "tol": 0.948,
    "scenario": "fling-drop-150",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling150_entry_vz": {
    "value": -498.549,
    "tol": 9.971,
    "scenario": "fling-drop-150",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling150_exit_vz": {
    "value": 441.953,
    "tol": 8.839,
    "scenario": "fling-drop-150",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling200_apex_feet_gain": {
    "value": 2.067,
@@ -101,29 +101,29 @@
    "value": 0.36,
    "tol": 0.035,
    "scenario": "fling-drop-200",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling200_eye_pop": {
    "value": 47.422,
    "tol": 0.948,
    "scenario": "fling-drop-200",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling200_entry_vz": {
    "value": -560.686,
    "tol": 11.214,
    "scenario": "fling-drop-200",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling200_exit_vz": {
    "value": 509.052,
    "tol": 10.181,
    "scenario": "fling-drop-200",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling300_apex_feet_gain": {
    "value": -5.643,
@@ -135,29 +135,69 @@
    "value": 0.375,
    "tol": 0.035,
    "scenario": "fling-drop-300",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling300_eye_pop": {
    "value": 47.416,
    "tol": 0.948,
    "scenario": "fling-drop-300",
-   "assert": false,
-   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)"
+   "note": "original eye rises ~47 units ~0.35 s after the exit; port does not model it yet, cause unknown (eye-only data)",
+   "assert": false
   },
   "fling300_entry_vz": {
    "value": -651.476,
    "tol": 13.03,
    "scenario": "fling-drop-300",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
   },
   "fling300_exit_vz": {
    "value": 613.026,
    "tol": 12.261,
    "scenario": "fling-drop-300",
-   "assert": false,
-   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30"
+   "note": "depends on how long the player fell during setup; the original starts falling during the setup sleep so its entry differs from the port by ~30",
+   "assert": false
+  },
+  "east_entry_vx": {
+   "value": 60,
+   "tol": 1.2,
+   "scenario": "fling-lat-east"
+  },
+  "east_entry_vy": {
+   "value": 0,
+   "tol": 0.5,
+   "scenario": "fling-lat-east"
+  },
+  "east_exit_vx": {
+   "value": 31.063,
+   "tol": 0.621,
+   "scenario": "fling-lat-east"
+  },
+  "east_exit_vy": {
+   "value": 51.334,
+   "tol": 1.027,
+   "scenario": "fling-lat-east"
+  },
+  "north_entry_vx": {
+   "value": 0,
+   "tol": 0.5,
+   "scenario": "fling-lat-north"
+  },
+  "north_entry_vy": {
+   "value": 60,
+   "tol": 1.2,
+   "scenario": "fling-lat-north"
+  },
+  "north_exit_vx": {
+   "value": 51.333,
+   "tol": 1.027,
+   "scenario": "fling-lat-north"
+  },
+  "north_exit_vy": {
+   "value": -31.063,
+   "tol": 0.621,
+   "scenario": "fling-lat-north"
   }
  }
 }

@@ -77,6 +77,8 @@ const METRICS = {
   entry_vz: (r, dt) => { const k = tpIndex(r); return k > 6 ? vz(r, k - 5, dt) - 600 * dt * 5 : NaN; },
   exit_vz0: (r, dt) => { const k = tpIndex(r); return k > 0 && k + 4 < r.length ? vz(r, k + 4, dt) + 600 * dt * 4 : NaN; },
   // apex of the feet after the exit (eye minus the standing view, so after the original's eye pop) over the drop height
+  // horizontal velocity along an axis (0 x, 1 y): median over ticks [k+a, k+b] around the teleport tick k (negative = before)
+  tp_vel: (r, dt, [axis, a, b]) => { const k = tpIndex(r); if (k < 0 || k + a < 1 || k + b >= r.length) return NaN; return median(range(k + a, k + b).map(j => (r[j].eye[axis] - r[j - 1].eye[axis]) / dt)); },
   apex_feet_gain: (r, dt, [h]) => { const k = tpIndex(r); return k > 0 ? Math.max(...r.slice(k).map(x => x.eye[2])) - STAND_VIEW - h : NaN; },
   apex_eye: (r, dt) => { const k = tpIndex(r); return k > 0 ? Math.max(...r.slice(k).map(x => x.eye[2])) : NaN; },
   // the eye's jump of more than 25 units in one tick after the exit (the original unducks then)

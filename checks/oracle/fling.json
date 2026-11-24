@@ -1,5 +1,5 @@
 {
- "about": "Floor-portal flings in testchmb_a_08's main room, run the same way in the original and the port (tools/parity.mjs). Orange is shot onto the floor at (-115, 94), blue onto the floor at (-58, -149), both from (-60, 60, 0). The player is dropped from 100 to 400 units over orange, falls in and comes out of blue going up. Same setup as checks/floor-fling.ctl.",
+ "about": "Floor-portal flings in testchmb_a_08's main room, run the same way in the original and the port (tools/parity.mjs). Orange is shot onto the floor at (-115, 94), blue onto the floor at (-58, -149), both from (-60, 60, 0). The player is dropped from 100 to 400 units over orange, falls in and comes out of blue going up. Same setup as checks/floor-fling.ctl. The fling-lat scenarios hold forward for the first 50 ticks of the drop (east or north) to see how the horizontal speed maps from one floor portal to the other.",
  "scenarios": [
   {
    "name": "fling-drop-100",
@@ -246,6 +246,164 @@
     ],
     "fling300_exit_vz": [
      "exit_vz0"
+    ]
+   }
+  },
+  {
+   "name": "fling-lat-east",
+   "map": "testchmb_a_08",
+   "pos": [
+    -167,
+    94,
+    300
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 150,
+   "settle": 0,
+   "portals": [
+    {
+     "color": "orange",
+     "from": [
+      -60,
+      60,
+      0
+     ],
+     "at": [
+      -115,
+      94,
+      0
+     ]
+    },
+    {
+     "color": "blue",
+     "from": [
+      -60,
+      60,
+      0
+     ],
+     "at": [
+      -58,
+      -149,
+      0
+     ]
+    }
+   ],
+   "events": [
+    [
+     0,
+     "+forward"
+    ],
+    [
+     50,
+     "-forward"
+    ]
+   ],
+   "metrics": {
+    "east_entry_vx": [
+     "tp_vel",
+     0,
+     -10,
+     -3
+    ],
+    "east_entry_vy": [
+     "tp_vel",
+     1,
+     -10,
+     -3
+    ],
+    "east_exit_vx": [
+     "tp_vel",
+     0,
+     3,
+     12
+    ],
+    "east_exit_vy": [
+     "tp_vel",
+     1,
+     3,
+     12
+    ]
+   }
+  },
+  {
+   "name": "fling-lat-north",
+   "map": "testchmb_a_08",
+   "pos": [
+    -115,
+    42,
+    300
+   ],
+   "ang": [
+    0,
+    90
+   ],
+   "ticks": 150,
+   "settle": 0,
+   "portals": [
+    {
+     "color": "orange",
+     "from": [
+      -60,
+      60,
+      0
+     ],
+     "at": [
+      -115,
+      94,
+      0
+     ]
+    },
+    {
+     "color": "blue",
+     "from": [
+      -60,
+      60,
+      0
+     ],
+     "at": [
+      -58,
+      -149,
+      0
+     ]
+    }
+   ],
+   "events": [
+    [
+     0,
+     "+forward"
+    ],
+    [
+     50,
+     "-forward"
+    ]
+   ],
+   "metrics": {
+    "north_entry_vx": [
+     "tp_vel",
+     0,
+     -10,
+     -3
+    ],
+    "north_entry_vy": [
+     "tp_vel",
+     1,
+     -10,
+     -3
+    ],
+    "north_exit_vx": [
+     "tp_vel",
+     0,
+     3,
+     12
+    ],
+    "north_exit_vy": [
+     "tp_vel",
+     1,
+     3,
+     12
     ]
    }
   }

@@ -484,7 +484,7 @@ export class Game {
         const cur = e.curPath && len(sub(e.curPath.origin, e.pos)) < 4 ? e.curPath : io.find(e.pathName, null, e)[0]; if (cur && len(sub(cur.origin, e.pos)) < 4) { const prev = this.prevPath(cur); if (prev) e.pathName = prev.name; else e.speedNow = 0; } } else if (i === 'setspeed') { } return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
     H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
-    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) { this.respawnTemplate(t, e); this.placeTemplateGroup(t, e); } } return true; });
+    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) { if (!this.spawnTrainTemplate(t, e)) { this.respawnTemplate(t, e); this.placeTemplateGroup(t, e); } } } return true; });
     H.set('point_energy_ball_launcher', (e, i) => { if (i === 'enable') { e.enabled = true; e.nextBall = Math.min(e.nextBall ?? 0, io.time + 0.1); } else if (i === 'disable') e.enabled = false; else if (i === 'launchball') this.launchBall(e); else return false; return true; });
     H.set('filter_combineball_type', () => false);
     H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
@@ -513,6 +513,30 @@ export class Game {
     // func_noportal_volume takes Activate, Deactivate and Toggle (a02's noportal_door_rm3a is deactivated when its door opens)
     H.set('func_noportal_volume', (e, i) => { if (i === 'activate') e.enabled = true; else if (i === 'deactivate') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; return true; });
     H.set('logic_auto', () => true);
+  }
+  /** env_entity_maker whose template holds a func_tracktrain that has a speed keyvalue (a10's conveyor carts: a logic_timer
+   *  ForceSpawns one every 15 s): each ForceSpawn makes a fresh copy of every member, as CPointTemplate::CreateInstance
+   *  does (SDK 2013 point_template.cpp), with names fixed up (&0001, &0002, ...) unless the template preserves names, placed
+   *  at the maker (maker origin + maker rotation of each member's offset from the template origin). The copy's train
+   *  snaps to its first path_track and leaves at its speed keyvalue (CBaseEntity's "speed" is m_flSpeed, and
+   *  CFuncTrackTrain::Find starts it moving when that is not 0). Returns false for other templates. */
+  trainSpawns = 0;
+  spawnTrainTemplate(t: Ent, maker: Ent): boolean {
+    const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
+    const srcs = names.flatMap(n => (this.io.byName.get(n) || []).filter(e => !e.isCopy));
+    if (!srcs.some(e => e.cls === 'func_tracktrain' && +(e.kv.speed || 0) !== 0)) return false;
+    const fix = +(t.kv.spawnflags || 0) & 2 ? '' : '&' + String(++this.trainSpawns).padStart(4, '0');
+    const R = entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]); const made: Ent[] = [];
+    for (const src of srcs) { const kv: Record<string, string> = { ...src.kv };
+      const o = add(maker.origin, xformDir(R, sub(src.origin, t.origin))); kv.origin = o.join(' ');
+      if (kv.targetname) kv.targetname += fix;
+      if (kv.parentname && names.includes(kv.parentname.split(',')[0].toLowerCase())) kv.parentname = kv.parentname.split(',')[0] + fix;
+      const n0 = this.io.ents.length; this.spawn(kv); const e = this.io.ents[n0]; if (!e) continue; e.isCopy = true; made.push(e); }
+    for (const e of made) if (e.cls === 'func_tracktrain') { const p0 = this.io.find(e.pathName, null, e)[0]; if (!p0) continue;
+      const np = add(p0.origin, [0, 0, +(e.kv.height || 0)]); e.pos = np; e.curPath = p0; e.pathName = (p0.kv.target || '').toLowerCase(); if (e.inst) e.inst.matrix = entityMatrix(e.pos, e.angles);
+      e.speedNow = +(e.kv.speed || 0); this.io.fire(p0, 'onpass', e); }
+    this.io.log.push(`${this.io.time.toFixed(2)} spawned train template ${t.name}${fix} (${made.length} members)`);
+    return true;
   }
   /** env_entity_maker for non-cube templates (energy-ball catchers): the template's own copies were removed at load, so the first ForceSpawn
    *  brings them back placed relative to the maker (maker origin + maker rotation applied to each member's offset from the template origin).

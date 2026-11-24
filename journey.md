@@ -88,6 +88,22 @@ it instead, the way a player would:
   them holds the incinerator open for 13 s (wait 13). So: press it, run back for the box (the doors close behind,
   which doesn't matter now), and drop it in. trigger_killbox opens the exit doors and the elevator takes you to a14.
 
+**1:45 PM EST, a14 plays through, 143 s.** a14's shortcut (the Portal Wiki lists it under chamber 18's alternative
+solutions) starts with a portal on the wedge: a func_brush parented to rotating_door_wedge, which the switch swings to
+45 degrees. The port turned down every rotated brush entity with "nothing", because shootPortal only knew how to look
+up surface flags and the wall behind a portal on an unrotated collider. Now it does those lookups in the entity's own
+frame: world point minus origin, times the transpose of the rotation, the same way the trace already handles rotated
+colliders. A portal on a brush that turns fizzles, the same as one on a brush that moves. Blue goes on the wedge face
+from the walkway; then I step off the walkway's end and put orange on the 576 platform under me while I fall. I come
+out of the wedge at about 830 u/s, half east and half up, and land in the cube room at 2635, 899, 1216. Landing there
+starts the scaffold. I ride it back with the cube and walk it under the pushed-out wedge to the floor button. The exit
+climb uses the wiki's bounce: you come out of a floor portal going up as fast as you went in. Swapping the other portal
+onto the next higher platform each time you fall back gains that platform's height. Every exit is 1175 u/s, so from the
+top over P3 I can put the last portal straight on the angled panel and skip P4. That angle also lays the portal along
+the panel, which is only 119 units long; from P4's side it didn't fit. That a 45-degree face takes its portal's up from
+the player's yaw, like a floor, is the port's existing rule (|n.z| > 0.7). I haven't checked that against the original.
+The run is deterministic (143.0 s twice). Checks 37/37, and a00 to a13 run at the same times.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

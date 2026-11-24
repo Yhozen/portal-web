@@ -188,6 +188,18 @@ like the un-duck. That fits Portal ducking the player through portals. I haven't
 can't tell when the duck ends in the wall case (it hasn't ended 0.75 s later), and a change to the player's hull
 touches every fling the playthroughs use.
 
+**5:40 PM EST, escape_00 past the two pistons (84.6 s).** GameFAQs (arandomgamer02) has the step the Portal Wiki
+leaves vague. Stand west of the pistons, look straight up and back off until a grey wall shows high above, put one
+portal there and the other on the dark mark crusher_room_2_0 hits on the ledge's underside, then ride the piston up
+into the mark. The wall is the one my scan had found and I'd written off: (479, -31, 138), facing north, high over
+the walkway. I'd discarded it because AP.lookAt at that point hit a metal wall at (572, 360, -212) instead, so the
+script now sets the scan's own angles (pitch -55, yaw 270, from 528, 450). One port bug was in the way. The crusher
+carried the player up to the mark with the head through the portal, but there was no teleport: the crossing test
+compared the eye before and after the player's own move, and the crusher had moved the eye across the plane before
+that. It now compares from the eye at the start of the tick when the movers only shifted it by under 64 units. The
+script rides the piston up, comes out of the wall and lands on the walkway at (479, 22, -63), at 84.6 s. The rest of the
+map (the exit-sign ledge, the fast pistons, the horizontal pistons and the cube tube over the goo) is still to do.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

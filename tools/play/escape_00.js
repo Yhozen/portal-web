@@ -24,6 +24,21 @@ lg('off', JSON.stringify(AP.gotoRetry([60, -960, -831], 6, 4, 1)).slice(0, 60), 
 lg('orange east wall', P(), tryShoot(1, window.EO ?? [[60, -1040, -780], [40, -1040, -780], [20, -1040, -780]]));
 lg('through', walkInto(1), P()); AP.wait(1); lg('east ledge', P());
 if (window.STAGE === 1) throw 'stage 1';
+// two pistons under a ledge (GameFAQs, arandomgamer02): one portal on the dark mark crusher_room_2_0 leaves on the ledge's
+// underside, the other high on the grey wall seen looking up from the floor west of the pistons (y -31, facing north,
+// over the walkways); ride the piston up into the mark and come out over the walkway
+const cr = E('crusher_room_2_0'), ctop = () => cr.pos[2] + cr.bmaxs[2] - cr.origin[2];
+lg('two-piston room', JSON.stringify(AP.gotoRetry([528, 450, -576], 20, 6, 1)).slice(0, 90), P());
+AP.approach([528, 450], 2, 3); AP.wait(0.3); lg('orange high wall', P(), (() => { game.pl.ang = [-55, 270, 0]; AP.wait(0.2); lastFail = null; G.shootPortal(1); AP.wait(0.15); const Q = G.gunPortals[1]; return Q.open && !lastFail ? Q.pos.map(v => v|0) + ' f ' + Q.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail; })());
+lg('to the mark', JSON.stringify(AP.gotoRetry([660, 224, -576], 12, 6, 1)).slice(0, 60), P());
+AP.wait(20, () => ctop() < -530); lg('crusher down', ctop() | 0);
+lg('blue on the mark', P(), tryShoot(0, window.MK ?? [[784, 224, -352], [784, 210, -352], [784, 240, -352]]));
+AP.wait(20, () => ctop() > -400); AP.wait(20, () => ctop() < -538); lg('crusher down again', ctop() | 0, P());
+{ const n0 = G.stats.teleports; let k = 0; for (; k < 3 * 66; k++) { const dx = 784 - game.pl.pos[0], dy = 224 - game.pl.pos[1]; game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: Math.min(1, Math.hypot(dx, dy) / 10), side: 0, jump: k < 3, duck: k > 1 && k < 30 }); if (Math.hypot(dx, dy) < 4 && game.pl.onGround && k > 30) break; }
+  lg('on crusher 2_0', P(), game.pl.groundEnt && game.pl.groundEnt.name, ctop() | 0);
+  const tr2 = []; for (k = 0; k < 8 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [-80, 270, 0]; game.step(T, idle); if (k % 33 === 0) tr2.push((ctop() | 0) + '/' + (game.pl.pos[2] | 0) + '/' + cr.state); } lg('ride', tr2.join(' '));
+  lg('rode into the mark', G.stats.teleports > n0, P(), game.pl.vel.map(v => v | 0)); lg('landed', fly(0.2, 4)); }
+if (window.STAGE === 2) throw 'stage 2';
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

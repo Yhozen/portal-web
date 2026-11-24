@@ -918,7 +918,7 @@ export class Game {
   }
   lastDt = 1 / 66; /** the floor-into-wall gravity tick above (a switch, so scripts can be compared with it off) */ wallFlingTick = true;
   update(dt: number, input: { fwd: number; side: number; jump: boolean; duck: boolean }) {
-    this.lastDt = dt;
+    this.lastDt = dt; const eyeAtStart: V3 = this.player.eye();
     this.updateShake(dt); this.updateCameras(dt); this.updateViewModel(); this.animateProps(dt); this.updateFollowers(); this.r.time += dt;
     const io = this.io; io.update(dt);
     for (const e of io.ents) {
@@ -1002,7 +1002,9 @@ export class Game {
     }
     // player
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
-    const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
+    // the eye from before the movers ran this tick, when they only nudged it: a crusher that lifts the player head-first
+    // into a ceiling portal (escape_00's crusher_room_2_0 into its dark mark) moves the eye across the plane, not the player
+    const pushedC: V3 = this.player.eye(), prevC: V3 = len(sub(pushedC, eyeAtStart)) < 64 ? eyeAtStart : pushedC; const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
     if (this.dead) { input = { fwd: 0, side: 0, jump: false, duck: false }; this.player.viewOffset = Math.max(14, this.player.viewOffset - 170 * dt); } // the original's eye drops to 14 in about 0.3 s
     else if (this.health < 100 && this.io.time - this.lastHurt > PLAYER_HP.regenWait) this.health = Math.min(100, this.health + PLAYER_HP.regenPerSec * dt);
     this.player.move(input, dt);

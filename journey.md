@@ -173,6 +173,21 @@ route, and pricing it in makes the planner give up. The two floors I tried for a
 finding cover. That's more than this session has left, so damage stays behind ?damage=1 (game.damage, off by default),
 and the autopilot only avoids turret sight when it's on. a10, a11, a13 and a15 clear as before.
 
+**5:15 PM EST, wall flings come out at the original's speed.** I put the 8:35 AM change back in. For a fling in through
+a floor and out of a wall, it takes the tick's gravity out of the velocity before the portal turns it sideways. The
+exits are 400.0, 527.3 and 627.3 u/s against the original's 391.5, 526.5 and 625.5. They were 409.1, 536.4 and 636.4.
+Last time it broke a10's second cart hop. This time I ran a10 with it on and off and compared the logs. The player
+comes out of the channel orange 0.1 s later, and by then the cart is 13 units east of the window the script waited
+for, so it never boarded. The hops now walk onto the cart wherever it is within 24 units. a10 clears in 197.3 s, and
+a05 to a09 are unchanged. The fling parity checks and floor-fling and fling-pillars pass.
+The flight height is still open, but the original's eye track shows where it comes from. One to two ticks after
+leaving the wall portal, the eye drops 36 to 41 units at once (589.2 -> 547.8 at the 100 drop, 616.0 -> 574.4 at the
+300 drop). Then it flies on smoothly. 36 is standing eye 64 less ducked eye 28, so the player is ducked in place on the
+way out. Floor-to-floor flings show the other half: the eye pops up about 47 units 0.35 s after the exit, which looks
+like the un-duck. That fits Portal ducking the player through portals. I haven't modelled it: with eye-only data I
+can't tell when the duck ends in the wall case (it hasn't ended 0.75 s later), and a change to the player's hull
+touches every fling the playthroughs use.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

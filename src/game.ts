@@ -1099,6 +1099,12 @@ export class Game {
         else if (e.cls === 'trigger_changelevel' && !(sf & 2) && a === this.playerEnt) this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase());
       }
       for (const a of [...e.touching]) if (!now.has(a)) { e.touching.delete(a); io.fire(e, 'onendtouch', a); if (!e.touching.size) io.fire(e, 'onendtouchall', a); }
+      // trigger_push (SDK 2013 triggers.cpp, CTriggerPush::Touch): a player in it gets pushspeed along pushdir as base
+      // velocity, added up over every push it's in; pushing up off the ground lifts it a unit and ungrounds it first.
+      // Once flag (128): one push of the speed as velocity, then the trigger goes away. Physics objects aren't pushed here.
+      if (e.cls === 'trigger_push' && now.has(this.playerEnt)) { const d = angleVectors(parseV3(e.kv.pushdir || '0 0 0')).f, sp = +(e.kv.speed || 40);
+        if (sf & 128) { pl.vel = add(pl.vel, scale(d, sp)); e.killed = true; }
+        else { if (!pl.pushed) pl.baseVel = [0, 0, 0]; /* first push this tick */ if (d[2] * sp > 0 && pl.onGround) { pl.onGround = false; pl.groundEnt = null; pl.pos[2] += 1; } pl.baseVel = add(pl.baseVel, scale(d, sp)); pl.pushed = true; } }
       // trigger_multiple keeps firing OnTrigger while something stays in it, once per `wait` (SDK 2013 triggers.cpp: Touch
       // runs every frame and ActivateMultiTrigger only waits out the reset time). Firing only on a new touch lost a box
       // that left and came back inside the wait: a00's button stayed up under a box that settled on it 0.2 s later.

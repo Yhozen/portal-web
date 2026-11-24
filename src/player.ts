@@ -21,7 +21,7 @@ const duckEye = (f: number) => HULL.duckView * f + HULL.view * (1 - f);
 export interface Input { fwd: number; side: number; jump: boolean; duck: boolean; }
 export class Player {
   pos: V3 = [0, 0, 0]; vel: V3 = [0, 0, 0]; ang: V3 = [0, 0, 0]; onGround = false; ducked = false; groundEnt: any = null; viewOffset = HULL.view;
-  noclip = false; jumpHeld = false; ducking = false; duckHeld = false; duckTime = 0; tr: Tracer; ignoreFn: (() => void) | null = null; landed = 0;
+  noclip = false; baseVel: V3 = [0, 0, 0]; pushed = false; jumpHeld = false; ducking = false; duckHeld = false; duckTime = 0; tr: Tracer; ignoreFn: (() => void) | null = null; landed = 0;
   constructor(tr: Tracer) { this.tr = tr; }
   maxs(): V3 { return this.ducked ? HULL.duckMaxs : HULL.maxs; }
   trace(a: V3, b: V3, maxs = this.maxs()): Trace { this.ignoreFn?.(); return this.tr.trace(a, b, HULL.mins, maxs, MASK_PLAYERSOLID, this); }
@@ -45,8 +45,14 @@ export class Player {
     const wish: V3 = [f[0] * fm + r[0] * sm, f[1] * fm + r[1] * sm, 0];
     let ws = Math.hypot(wish[0], wish[1]); const wdir: V3 = ws > 0 ? [wish[0] / ws, wish[1] / ws, 0] : [0, 0, 0];
     ws = Math.min(ws, CV.maxspeed);
+    // base velocity (trigger_push): when nothing pushed last tick, what's left of it becomes the player's own velocity
+    // (CBasePlayer's "apply momentum", 1 + half a frame of it), else the vertical part is added as acceleration
+    // (StartGravity) and the horizontal part rides along with the move and is taken back off after it (WalkMove/AirMove)
+    if (!this.pushed && (this.baseVel[0] || this.baseVel[1] || this.baseVel[2])) { const k = 1 + dt * 0.5; for (let i = 0; i < 3; i++) this.vel[i] += this.baseVel[i] * k; this.baseVel = [0, 0, 0]; }
+    const bv: V3 = [this.baseVel[0], this.baseVel[1], 0]; this.pushed = false;
     // half gravity before, half after (as in the SDK)
     if (!this.onGround) this.vel[2] -= CV.gravity * dt * 0.5;
+    this.vel[2] += this.baseVel[2] * dt; this.baseVel = [bv[0], bv[1], 0];
     if (inp.jump && !this.jumpHeld && this.onGround && !(this.ducking && this.ducked)) {
       // CheckJumpButton: StartGravity has already taken half a tick of gravity (on the ground too), the jump adds
       // 160 (sets it when ducking), HL2's forward boost, then FinishGravity, and the air move below.
@@ -63,10 +69,10 @@ export class Player {
     if (this.onGround) {
       this.vel[2] = 0; this.friction(dt); this.accel(wdir, ws, CV.accelerate, dt);
       if (Math.hypot(this.vel[0], this.vel[1]) < 1) { this.vel[0] = this.vel[1] = 0; }
-      this.walkMove(dt);
+      this.vel[0] += bv[0]; this.vel[1] += bv[1]; this.walkMove(dt); this.vel[0] -= bv[0]; this.vel[1] -= bv[1];
     } else {
       this.accel(wdir, Math.min(ws, CV.airCap), CV.airaccelerate, dt, ws);
-      this.tryMove(dt);
+      this.vel[0] += bv[0]; this.vel[1] += bv[1]; this.tryMove(dt); this.vel[0] -= bv[0]; this.vel[1] -= bv[1];
     }
     this.categorize();
     if (!this.onGround) this.vel[2] -= CV.gravity * dt * 0.5; else if (this.vel[2] < 0) this.vel[2] = 0;

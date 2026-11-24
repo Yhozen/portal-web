@@ -1,6 +1,9 @@
 (() => { const G = game.game, io = G.io, out = [], P = () => game.pl.pos.map(v => v|0), C = AP.centre, E = AP.ent;
 const lg = (k, v) => out.push(io.time.toFixed(1) + ' ' + k + ' ' + JSON.stringify(v));
 lg('start', P() + ' hasGun ' + G.hasGun);
+// The entrance doors only open when GLaDOS's entry scene ends (OnCompletion; 21 s now that scene lengths load before the first frame).
+const sc = E('choreo_ai_01_a_entry'); lg('out of elevator', AP.gotoRetry(C(E('trigger_elevator_ent_close_rm1_2')), 10, 5, 1));
+AP.wait(5, () => sc.playing); AP.wait(40, () => !sc.playing); lg('entry scene done', P());
 const gun = E('portalgun'); lg('to gun', AP.gotoRetry(gun.origin, 40, 40, 1));
 lg('gun?', G.hasGun + ' guns ' + G.guns.length + ' pos ' + P());
 const m = C(E('a01-middletrigger_elevator_move')); lg('to mid elevator', AP.gotoRetry([m[0], m[1], m[2] - 40], 30, 40, 1));

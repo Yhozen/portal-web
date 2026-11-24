@@ -156,6 +156,54 @@ the box up after you is the open part: from the step, the box below is 114 units
 grab reach. I don't know the original's reach yet. The window at the west end looks onto the exit button room
 (floor_button_lab5), and the exit needs the cube in the incinerator.
 
+**7:40 AM EST, a held cube stuck on a step's edge.** Lifting the box over a13's step, the held cube's sweep stopped
+dead against the step's top edge. The trace came back blocked at fraction 0, not startsolid, so nothing could get it
+unstuck. The SDK's held object is a physics shadow that slides, so the held move now slides the rest of the way along
+what it hit. If it's caught a little inside a brush, it goes straight to the wanted spot when the box fits there and
+the centre's path is clear, never through a wall. a00–a11 play the same (a02 is 8 s quicker, 168.3 s).
+
+**7:45 to 8:00 AM EST, +use reach, measured.** The port grabbed a cube if its centre was less than 100 units along
+the view. The public SDK's FindUseEntity measures something else. It checks the view ray, then 16-unit hulls swept
+below it, and takes a hit if it's within 80 units of the eye, where the height counts only outside the player's own
+body. So a box at your feet, or just below the step you stand on, is close. I measured it in the original with
+sv_debug_player_use 1 and ent_text on a02's box_2, the player on its floor (distances are box centre to player):
+- Looking at the centre, standing: 98 grabs (green cross, held mass 1 kg). 104, 112 and 120 don't (red cross).
+- Looking at the centre, ducked: 90 and 98 grab, 104 doesn't.
+- Looking just over its top: 104 grabs.
+
+The near face is 20.25 closer than the centre, so 98 and 104 are 77.75 and 83.75, either side of 80. The SDK's hulls
+would take the box from 104 even looking at its centre. So the port does the SDK search, except that a view ray that
+hits the cube out of reach finds nothing. That last part is my guess at Portal's own player code, which isn't public,
+and it fits all seven readings. My first reading (104 refused) was taken ducked without my noticing; getpos said
+476, and the real-time clip then grabbed from 104. checks/use-reach.ctl holds the six port cases.
+
+**7:50 AM EST, a13: the box climb works.** With the SDK's reach, the box can be picked up from the step, 113 units from
+the eye to its centre but only 24 below the player's feet. Place it below the 64 step, climb it, step up, grab it,
+set it on the step, climb it, jump onto the 128 ledge, grab it again. The script gets that far (26 s). Two things
+left: the way from the ledge down to the exit button's room (floor_button_lab5, x 1300 to 1410, below and west), and
+the box's start. In the original, box_dropper_model_cover holds the box at z 186.6 until GLaDOS's entry speech ends
+(logic_drop_box). In the port the cover isn't solid, so the box drops at once. It lands in the same place.
+
+**8:25 AM EST, a13 mapped past the climb, not finished.** From the 128 ledge a corridor runs south along x 1604 into
+the ball hallway (x 1360 to 1680, y -712 to -1030), where the three energy ball launchers start as you walk in. Carrying
+the box through the corridor's end fires create_steps_for_beginning_puzzle, which only lets boxes through, and that
+opens door_create_steps_for_first_puzzle, the steps back up. The script gets this far with the box in hand (43.7 s).
+The exit button (floor_button_lab5) is in a room with glass on both sides: the start room on the east and the room by
+the lifts on the west, which is how you see it from the start. You reach it only from the lower level south of it,
+where the incinerator is. That level ties in with the three lifts (lift1..3_rm5, raised one at a time by
+relay_lift1..3_up), which the three ball_trap catchers raise. So the rest of a13 is a portal puzzle that steers energy
+balls into catchers. That's the next session's work.
+
+**8:22 AM EST, held distance, measured, not changed.** The original holds the box further out than the port. Eye at
+(870, 779, 513), ent_text after the box settles:
+- view level: 81.3 units from the eye;
+- 24.5 down: 81.7;
+- 30 up: 87.9.
+
+The port holds it 56 out. The SDK's UpdateObject gives 24 + radius, which is 67 at level for this box. So Portal holds
+further than the SDK too. Three readings don't pin down a rule, and the scripted button drops in a00–a11 are tuned to
+56, so I've written this down and left the code alone.
+
 ## 2026-11-21, evening (about 6:40 to 7:55 PM)
 
 **Black models on macOS.** On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except

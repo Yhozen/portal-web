@@ -2,7 +2,7 @@
 # Sequential playthrough in one persistent harness session: each chamber script in turn, one line per chamber.
 # usage: tools/play/seq.sh SOCKET [MAP...]   (start the session first: node tools/portal-ctl.mjs serve SOCKET &)
 sock=$1; shift; cd "$(dirname "$0")/../.."
-maps=${*:-"testchmb_a_00 testchmb_a_01 testchmb_a_02 testchmb_a_03 testchmb_a_04 testchmb_a_05 testchmb_a_06 testchmb_a_07 testchmb_a_08"}
+maps=${*:-"testchmb_a_00 testchmb_a_01 testchmb_a_02 testchmb_a_03 testchmb_a_04 testchmb_a_05 testchmb_a_06 testchmb_a_07 testchmb_a_08 testchmb_a_09"}
 for m in $maps; do
   node tools/play/ctl.mjs "$m" > "/tmp/play-$m.ctl"; s=$(date +%s)
   node tools/portal-ctl.mjs --attach "$sock" script "/tmp/play-$m.ctl" > "/tmp/play-$m.out"; rc=$?

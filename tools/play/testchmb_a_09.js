@@ -33,7 +33,23 @@ AP.wait(2); lg('stairs with cube off its spot', stairsZ() + ' ' + io.log.filter(
 lg('to landing', AP.gotoRetry([476, -839, 264], 30, 2)); lg('held', !!G.held + ' cube ' + cube.pos.map(v => v|0) + ' ' + io.log.filter(l => /snag|dropped/.test(l)).slice(-1));
 lg('cube on button', AP.placeCube(cube, C(E('floor_button_trigger_box_rm7a')))); AP.wait(1.5);
 lg('door', E('door_left_a08').state + ' ' + P());
-if (window.PROBE) eval(window.PROBE);
+// Goo room. The ball launcher sits in a walled-off alcove past the goo, reached from the west ledge through a doorway.
+// Orange on the east floor's wall, blue on the ledge's wall, walk across; from the doorway, blue on the alcove wall the
+// ball hits. The way back (the autopilot finds it) is through that blue and out of orange.
+lg('east floor', AP.gotoRetry([803, 1780, 0], 20, 3));
+lg('orange east wall', shoot(1, [960, 1780, 56]));
+lg('blue ledge wall', shoot(0, [-64, 1850, 56]));
+{ const O = G.gunPortals[1]; lg('in', through([O.pos[0] - O.f[0] * 40, O.pos[1] - O.f[1] * 40, O.pos[2]])); }
+lg('doorway', AP.gotoRetry([-20, 1786, 0], 6, 3)); AP.approach([-20, 1786], 3);
+for (let i = 0; i < 200 && game.pl.pos[0] > -130; i++) { game.pl.ang = [0, Math.atan2(1786 - game.pl.pos[1], -140 - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, IN(1)); } idle(20);
+lg('in alcove', P() + ' balls ' + G.balls.map(b => b.pos.map(v => v|0)));
+lg('blue ball wall', shoot(0, [-224, 1548, 61]) + ' ' + io.log.filter(l => /portal 0 failed/.test(l)).slice(-1));
+// the catcher stands on the landing, mouth up: orange on the ceiling over it, so the ball out of orange drops straight in
+lg('to landing', AP.gotoRetry([494, -790, 264], 30, 3));
+lg('orange over catcher', shoot(1, [512, -862, 511]));
+lg('caught', AP.wait(30, () => io.log.some(l => /lift_lvl7a\.open/.test(l))) + ' ' + io.log.filter(l => /energy ball|ball_trap_10\.|lift_lvl7a/.test(l)).slice(-5));
+lg('to exit', AP.gotoRetry(F('a09_a10_trigger_elevator_move'), 30, 20));
+AP.wait(40, () => window.changedTo || io.log.some(l => /changelevel/.test(l))); lg('end', P() + ' ' + (window.changedTo || ''));
 } catch (e) { lg('ERROR', String(e.stack || e)); }
 out.push(AP.LOG.slice(-(window.NLOG || 6)).join('\n'));
 return out.join('\n'); })()

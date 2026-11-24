@@ -1,5 +1,5 @@
 (() => { const G = game.game, io = G.io, out = [], P = () => game.pl.pos.map(v => v|0), C = AP.centre, E = AP.ent, F = n => AP.floorUnder(E(n));
-const lg = (k, v) => out.push(io.time.toFixed(1) + ' ' + k + ' ' + JSON.stringify(v));
+const w0 = performance.now(), lg = (k, v) => out.push(io.time.toFixed(1) + ' ' + k + ' ' + JSON.stringify(v) + (window.WALL ? ' [' + ((performance.now() - w0) / 1000).toFixed(0) + 's]' : ''));
 const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.15); G.shootPortal(which); AP.wait(0.15); const Pp = G.gunPortals[which]; return Pp.open ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed'; };
 const tele = () => G.stats.teleports; const IN = (fwd, jump = false) => ({ fwd, side: 0, jump, duck: false });
 const idle = n => { for (let i = 0; i < n; i++) game.step(1/66, IN(0)); };
@@ -75,6 +75,13 @@ toPillar(cube, 'buttonb', [-35, 150, 0]);
 lg('off b', AP.reach([-35, 120, 0], 24));
 toPillar(C2, 'buttonc', [285, 40, 0]);
 lg('exit doors', E('exit_door_left_a08').state);
+// The exit door is up on a grating ledge (z 128) in the east wall and the ceiling over the ledge takes no portal. Through the
+// open door the exit room's north wall does: blue there from the floor south-west of the ledge, orange low on the north wall,
+// walk in. (Found by portalSolve; spelled out here because the search takes minutes.)
+lg('vantage', AP.reach([359, -150, 0], 12));
+lg('blue exit room', shoot(0, [614, 63, 255]));
+lg('orange wall', lowWall([300, 0, 0]));
+{ const O = G.gunPortals[1].pos; lg('in', through([O[0], O[1] + 40, O[2]])); for (let i = 0; i < 200 && !game.pl.onGround; i++) idle(1); lg('in exit room', P()); }
 lg('to exit', AP.reach(F('a08_09_trigger_elevator_move'), 30));
 AP.wait(40, () => window.changedTo || io.log.some(l => /changelevel/.test(l))); lg('end', P() + ' ' + (window.changedTo || ''));
 } catch (e) { lg('ERROR', String(e.stack || e)); }

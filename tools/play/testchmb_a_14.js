@@ -39,54 +39,66 @@ if (window.STAGE === 5) throw 'stage 5';
 lg('blue high panel', shoot(0, [128, 672, 1474])); AP.approach([375, 672], 4, 3); lg('orange 576 platform', shoot(1, [540, 672, 576]));
 { const n0 = G.stats.teleports; for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [0, 0, 0]; game.step(T, { fwd: game.pl.onGround ? 1 : 0, side: 0, jump: false, duck: false }); } lg('fling to button ledge', G.stats.teleports > n0, fly(0.3)); }
 if (window.STAGE === 6) throw 'stage 6';
-// the switch by the ledge (1136, 880) runs door_piston_wedge, which swings rotating_door_wedge open into the next room
+// the switch by the ledge (1136, 880) runs door_piston_wedge, which pushes rotating_door_wedge out into the turret
+// room and swings it to 45 degrees. The wedge has wait 9: it's fully over 4.5 s after the press and starts back at 13.3
+// (doors.cpp DoorHitTop), and the piston follows it in, so the shortcut has to be quick: under the wedge along the lane
+// it opens (y 870..925), blue on its face from the walkway, then off the walkway's south end with orange under you
+const walkTo = (x, y, pitch = 20, max = 4) => { for (let k = 0; k < max * 66; k++) { const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1]; if (Math.hypot(dx, dy) < 6) break; game.pl.ang = [pitch, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } return P(); };
 lg('to switch', JSON.stringify(AP.gotoRetry([1100, 880, 1152], 16, 3)).slice(0, 60), P());
-AP.lookAt([1136, 880, 1216]); AP.wait(0.2); G.use(); AP.wait(1.5); lg('switch', io.log.filter(l => /door_piston_wedge|rotating_door_wedge/.test(l)).slice(-3));
-lg('into the wedge room', JSON.stringify(AP.gotoRetry([1392, 1232, 1152], 16, 3)).slice(0, 80), P());
+const wedge = io.ents.find(e => e.name === 'rotating_door_wedge');
+AP.lookAt([1136, 880, 1216]); AP.wait(0.2); G.use(); const tsw = io.time; lg('switch', io.log.filter(l => /door_piston_wedge|rotating_door_wedge/.test(l)).slice(-2));
+const piston = io.ents.find(e => e.name === 'door_piston_wedge'); AP.wait(6, () => piston.t >= 0.999); lg('piston out', (io.time - tsw).toFixed(1));
+for (const w of [[1095, 920], [1440, 920], [1440, 850], [1530, 850], [1580, 960]]) walkTo(w[0], w[1], 0, 2);
+lg('on the walkway', P(), (io.time - tsw).toFixed(1));
 if (window.STAGE === 7) throw 'stage 7';
-// the shortcut (Portal Wiki / Prima): blue on the wedge's 45-degree face from the walkway, then step off the walkway's
-// south end and put orange on the 576 platform under you while falling; ~580 units of fall come out of the wedge at 45
-// degrees up and east, over the wall into the cube room (x 2600.., floor 1216)
-lg('to wedge view', JSON.stringify(AP.gotoRetry([1560, 960, 1152], 16, 3)).slice(0, 60), P());
-AP.approach([1580, 960], 3, 3); let bw = ''; for (const z of [1273, 1265, 1280, 1258]) { bw = shoot(0, [1412, 960, z]); if (!/not placed/.test(bw)) break; } lg('blue wedge', P(), bw);
-lg('to walkway end', JSON.stringify(AP.gotoRetry([1440, 690, 1152], 16, 3)).slice(0, 60), P());
+// ~580 units of fall come out of the wedge at 45 degrees up and east, over the wall into the cube room (x 2600..)
+AP.approach([1580, 960], 3, 1); let bw = ''; for (const z of [1273, 1265, 1280, 1258]) { bw = shoot(0, [1412, 960, z]); if (!/not placed/.test(bw)) break; } lg('blue wedge', P(), bw, (io.time - tsw).toFixed(1));
+for (const w of [[1470, 760], [1440, 712]]) walkTo(w[0], w[1], 0, 2);
+lg('walkway end', P(), (io.time - tsw).toFixed(1));
 { const n0 = G.stats.teleports; let shot = '';
   for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [0, -90, 0]; const air = !game.pl.onGround || game.pl.pos[2] < 1140; game.step(T, { fwd: !air ? 1 : game.pl.vel[1] < -20 ? -1 : 0, side: 0, jump: false, duck: false }); // air-brake once off the edge
     if (!shot && game.pl.pos[2] < 1000) { const v = game.pl.vel, g = 600, h = game.pl.pos[2] - 576, tl = (v[2] + Math.sqrt(v[2] * v[2] + 2 * g * h)) / g;
       const lx = game.pl.pos[0] + v[0] * tl, ly = game.pl.pos[1] + v[1] * tl; // nudged in from the platform's north edge (y 700) so it fits
       for (const d of [[0, 0], [0, -20], [0, -40], [10, -50]]) { shot = shoot(1, [lx + d[0], Math.min(ly, 650) + d[1], 576]); if (!/not placed/.test(shot)) break; } } }
-  lg('orange under, falling', shot, 'through', G.stats.teleports > n0, 'vel', game.pl.vel.map(v => v | 0)); lg('fling', fly(0.3)); }
+  lg('orange under, falling', shot, 'through', G.stats.teleports > n0, 'vel', game.pl.vel.map(v => v | 0), (io.time - tsw).toFixed(1)); lg('fling', fly(0.3)); }
 if (window.STAGE === 8) throw 'stage 8';
-// landing in the cube room starts the scaffold (func_tracktrain_b00, x 1736..2336 along y 832, top z 1150). Take the
-// nearer cube, hop down onto the scaffold at its east end, ride it west and hop off onto the walkway (1152, x < 1600)
-const train = G.io.ents.find(e => e.cls === 'func_tracktrain' && e.kv.targetname === 'func_tracktrain_b00').col;
+// the cube comes back the way the wiki's main route brings it: down behind switch3, into the low room under the cube
+// room's west edge (z 896). The wedge has gone back by now and the piston with it, which shuts the lane under the wedge.
+// Put the cube down (firing drops it anyway), orange low on the turret room's west wall just over the walkway (x 1280,
+// y 1088), blue in the alcove at the top of the two 32-unit steps on the room's north side (y 1088), press the switch
+// (it runs the piston and wedge again), pick the cube up and duck-jump up the steps into blue; out onto the walkway,
+// and west along the lane once the piston's out
 const until = (f, max = 30) => { for (let k = 0; k < max * 66 && !f(); k++) game.step(T, idle); return f(); };
-{ const pp = game.pl.pos, cube = G.cubes.filter(c => c.alive && c.ent.name === 'box').sort((a, b) => Math.hypot(a.pos[0] - pp[0], a.pos[1] - pp[1]) - Math.hypot(b.pos[0] - pp[0], b.pos[1] - pp[1]))[0];
-  lg('cube', cube && cube.pos.map(v => v | 0), JSON.stringify(AP.pickUp(cube)), 'held', !!G.held); }
-AP.approach([2560, 832], 4, 3); lg('ledge edge', P(), 'train', train.offset.map(v => v | 0));
-lg('train at east end', until(() => train.offset[0] > 2330), train.offset.map(v => v | 0));
-// hop: run along dir, jump at `edge`, stop pushing once down again
-const hop = (from, dir, edge, max = 2) => { AP.approach(from, 3, 3); const yaw = Math.atan2(dir[1], dir[0]) * 180 / Math.PI; let ph = 0;
-  for (let k = 0; k < max * 66; k++) { game.pl.ang = [0, yaw, 0]; const s = (game.pl.pos[0] - from[0]) * dir[0] + (game.pl.pos[1] - from[1]) * dir[1]; const j = ph === 0 && s >= edge; if (j) ph = 1; else if (ph === 1 && !game.pl.onGround) ph = 2; else if (ph === 2 && game.pl.onGround) break;
-    game.step(T, { fwd: ph < 2 ? 1 : 0, side: 0, jump: j, duck: false }); } return P(); };
-lg('hop on', hop([2560, 832], [-1, 0], 30)); until(() => game.pl.onGround, 2); lg('on scaffold', P(), game.pl.groundEnt && game.pl.groundEnt.cls, 'held', !!G.held);
+const nearestCube = () => { const pp = game.pl.pos; return G.cubes.filter(c => c.alive && c.ent.name === 'box').sort((a, b) => Math.hypot(a.pos[0] - pp[0], a.pos[1] - pp[1]) - Math.hypot(b.pos[0] - pp[0], b.pos[1] - pp[1]))[0]; };
+lg('cube', nearestCube() && nearestCube().pos.map(v => v | 0), JSON.stringify(AP.pickUp(nearestCube())), 'held', !!G.held);
+AP.approach([2530, 880], 3, 3);
+for (let k = 0; k < 3 * 66; k++) { game.pl.ang = [0, 180, 0]; const air = !game.pl.onGround; if (!air && game.pl.pos[2] < 1000) break; game.step(T, { fwd: !air ? 1 : game.pl.vel[0] < 30 ? -1 : 0, side: 0, jump: false, duck: false }); } // off the edge, then back east under it
+until(() => game.pl.onGround, 2); lg('behind the switch', P(), 'held', !!G.held);
 if (window.STAGE === 9) throw 'stage 9';
-lg('ride west', until(() => train.offset[0] < 1745), P());
-lg('hop off', hop([game.pl.pos[0], 832], [-1, 0], 25), 'held', !!G.held);
+AP.approach([2560, 900], 4, 2); if (G.held) { AP.lookAt([2600, 900, 896]); AP.wait(0.2); G.use(); AP.wait(0.8); }
+{ let r = ''; for (const t of [[1280, 1088, 1210], [1280, 1080, 1215], [1280, 1070, 1220]]) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange over the walkway', r); }
+{ let r = ''; for (const t of [[2688, 1088, 1010], [2680, 1088, 1014], [2696, 1088, 1014]]) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue in the alcove', r); }
+const piston2 = io.ents.find(e => e.name === 'door_piston_wedge');
+AP.approach([2550, 930], 4, 2); AP.lookAt([2512, 944, 976]); AP.wait(0.2); G.use(); const ts3 = io.time; AP.wait(0.2);
+lg('switch3', io.log.filter(l => /door_piston_wedge|rotating_door_wedge/.test(l)).slice(-2));
+lg('repick', JSON.stringify(AP.pickUp(nearestCube())), 'held', !!G.held, (io.time - ts3).toFixed(1));
+walkTo(2688, 960, 0, 3); game.pl.ang = [0, 90, 0]; AP.approach([2688, 990], 3, 2);
+// two 32-unit steps: a ducked jump clears each, and the duck has to come off (0.2 s) before the next jump
+{ const n0 = G.stats.teleports; let jt = -99;
+  for (let k = 0; k < 5 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [-35, 90, 0]; // looking up keeps the held cube clear of the steps
+    const pl = game.pl, j = pl.onGround && !pl.ducked && !pl.ducking && k - jt > 15;
+    if (j) jt = k; game.step(T, { fwd: 1, side: (2688 - pl.pos[0]) / 30, jump: j, duck: k - jt > 1 && k - jt < 22 }); }
+  lg('through to the walkway', G.stats.teleports > n0, P(), 'cube ' + (G.held ? G.held.pos.map(v => v | 0) : '-'), fly(0.2), 'held', !!G.held, (io.time - ts3).toFixed(1)); }
+AP.wait(6, () => piston2.t >= 0.999); lg('piston out again', (io.time - ts3).toFixed(1));
+for (const w of [[1420, 1060], [1420, 912], [1300, 915], [1240, 918], [1180, 905]]) walkTo(w[0], w[1], 20, 3);
+for (let k = 0; k < 20; k++) game.step(T, idle); lg('through', P(), 'held', !!G.held, (io.time - ts3).toFixed(1));
 if (window.STAGE === 10) throw 'stage 10';
-// back through the wedge room and the crawl space to the box button on the ledge (803, 674, 1156)
-// back west under the pushed-out wedge (a clear lane along y 920 at standing height, x 1100..1440); the planner
-// won't take it with the cube in hand, so walk it
-const walkTo = (x, y, pitch = 20, max = 4) => { for (let k = 0; k < max * 66; k++) { const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1]; if (Math.hypot(dx, dy) < 6) break; game.pl.ang = [pitch, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } return P(); };
-lg('to lane', JSON.stringify(AP.gotoRetry([1440, 870, 1152], 16, 3)).slice(0, 60), P());
-for (const w of [[1310, 870], [1290, 925], [1240, 925], [1180, 900], [1090, 900]]) walkTo(w[0], w[1]);
-for (let k = 0; k < 20; k++) game.step(T, idle); lg('through', P(), 'held', !!G.held, G.cubes.filter(c => c.alive).map(c => c.pos.map(v => v | 0)));
 { const cube = G.held; lg('to button', JSON.stringify(cube ? AP.placeCube(cube, [803, 674, 1156]) : 'no cube'), P(), cube && cube.pos.map(v => v | 0));
   lg('button', G.io.log.filter(l => /button|door_b00|exit/i.test(l)).slice(-4)); }
 if (window.STAGE === 11) throw 'stage 11';
 // out through the open exit door (x 48, y 612..668): blue low on the door wall (x 64, faces east), hop down onto the
 // 576 platform, orange on the floor beside you and walk into it; you come out of the wall over the 1024 ledge
-{ let r = ''; for (const z of [1230, 1250, 1280]) { r = shoot(0, [64, 690, z]); if (!/not placed/.test(r)) break; } lg('blue door wall', r); }
+{ let r = ''; for (const t of [[64, 720, 1230], [64, 700, 1240], [64, 690, 1250]]) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue door wall', r); }
 lg('round the cube', JSON.stringify(AP.gotoRetry([735, 625, 1152], 12, 3)).slice(0, 50), P()); for (let k = 0; k < 4 * 66; k++) { game.pl.ang = [0, 180, 0]; const vx = game.pl.vel[0]; if (game.pl.onGround && game.pl.pos[2] < 600) break;
   game.step(T, { fwd: game.pl.pos[0] > 560 ? 1 : vx < -40 ? -1 : 0, side: 0, jump: false, duck: false }); } // walk off, brake over the platform
 lg('step down', P());

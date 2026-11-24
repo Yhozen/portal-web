@@ -905,6 +905,14 @@ export class Game {
     // teleport when the eye crosses the portal plane inside the hole (feet-first floor portals: eye crosses last)
     const prevC: V3 = this.player.eye(); const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
     this.player.move(input, dt);
+    // a wall portal's hole is carved out of the wall only while the hull fits inside it (tunnelFor), so a move that takes
+    // the hull past the hole's rim while it's still partly in the wall ends up inside solid (seen coming out of a14's door
+    // wall portal rising: stuck for good). In Source the rim is solid and the move is clipped there: keep the axis that
+    // still fits and drop the velocity along the other
+    if (!this.player.noclip) { const pl = this.player, stuck = (q: V3) => { const keep = pl.pos; pl.pos = q; const r = pl.trace(q, q).startsolid; pl.pos = keep; return r; }; // the tunnel is worked out from pl.pos
+      if (stuck(pl.pos) && !stuck(prevPos)) { const tries: V3[] = [[pl.pos[0], pl.pos[1], prevPos[2]], [prevPos[0], prevPos[1], pl.pos[2]]]; let fixed = false;
+        for (let i = 0; i < 2 && !fixed; i++) if (!stuck(tries[i])) { pl.pos = tries[i]; if (i === 0) pl.vel[2] = 0; else pl.vel[0] = pl.vel[1] = 0; fixed = true; }
+        if (!fixed) pl.pos = prevPos; } }
     const nowC: V3 = this.player.eye();
     let tp = false; for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); tp = true; break; }
     // floor portals: a shallow hole under the portal can stop the player before the eye crosses, so the hull centre counts there too

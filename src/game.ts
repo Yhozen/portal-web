@@ -305,9 +305,12 @@ export class Game {
   shootPortal(which: 0 | 1, src?: { eye: V3; f: V3 }) {
     if (!src && (!this.hasGun || !this.canFire[which])) return;
     if (!src) this.vmPlay('act_vm_primaryattack');
+    // firing while holding a cube drops it and fires anyway, and the shot goes past the cube (the original, a02's box_2:
+    // held, +attack, the blue opens on the wall straight ahead and the box falls; oracle stills, Nov 24 9:40 AM EST)
+    let dropped: Ent | null = null; if (!src && this.held) { dropped = this.held.ent; this.use(); }
     const eye = src ? src.eye : this.player.eye(); const f = src ? src.f : angleVectors(this.player.ang).f;
     this.tr.ignore = null;
-    const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
+    const t = this.tr.trace(eye, ma(eye, 8192, f), [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, dropped ? new Set<any>([this.playerEnt, dropped]) : this.playerEnt);
     // brush entities (func_brush / func_door, e.g. a06's fling pillars) take portals while they hold still; the portal fizzles if they move
     const R0 = t.col?.rot; const onCol = t.ent && t.col && (!R0 || (R0[0] > 0.999 && R0[5] > 0.999 && R0[10] > 0.999)) && /^func_(brush|door|wall)$/.test(t.ent.cls) ? t.col : null; // unrotated only
     if (t.fraction >= 1 || (t.ent && !onCol)) return this.fizzleShot(which, 'nothing');

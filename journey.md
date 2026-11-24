@@ -23,6 +23,36 @@ in the cube's own frame. Holding the box turned 45 degrees in launcher3's path s
 up in ball_trap_10. That a ball leaves a cube's face as a mirror bounce is my guess at what vphysics gives; I haven't
 measured it.
 
+**9:50 AM EST, firing while holding a cube drops it.** I checked this in the original, in a02 with box_2: pick it up,
+look at the wall, +attack. The blue opens on the wall straight ahead, behind where the box was, and the box falls.
+The port now does the same thing: the cube is let go and the shot goes past it. Before, the shot hit the held cube and
+fizzled, which is why a13's script kept saying "nothing". a02's script fires its blue at the pit wall while holding box A. Now that drops the box, and placeCube picks it up
+again. Fired before the pickup, the box sat in the way and the shot didn't place, so the order stays. What did change:
+the pickup of box B on the right pedestal failed once, just after arriving through the portal, so the script tries
+a second time. a02 now clears in 148 s, down from 174.6, because box A goes on its button faster than it did when it
+was carried and shot around.
+
+**10:00 AM EST, turret numbers from the original.** These were measured in a11 by standing 200 units in front of a
+deployed turret and reading `ent_dump !player` once a tick:
+- Health: 100. Each bullet takes 4 or 5 off, so 4.5 with the fraction carried over. Some ticks take 9 or 18 (two or four hits).
+- Damage arrives every 3 to 4 ticks (about 0.05 s) once the turret has turned to the player.
+- First hit to dead: 0.84 s at 200 units, 1.2 s at 450.
+- Pushback: about 100 units in that second.
+- Regen: `hurtme 50` takes 25 off on this skill. After about a second, health climbs back 1 per tick, so 25 takes about 0.4 s.
+- `sk_npc_dmg_ar2` is 3, `sk_dmg_take_scale1` is 0.5 and `sv_regeneration_wait_time` is 1.0.
+
+**10:15 AM EST, held distance tried at 81, not kept.** a13 has a hard reason to change it. Button b's trigger is 8
+units across, on a 64-unit pedestal the player can't climb. With the box held 56 out, from the pedestal's edge it
+gets no further than y 19, and the trigger is at y 64 to 72. The original holds it 81 out, which puts it right on
+the button. So I put in the original's distance, plus two things from CGrabController in the public SDK 2013 that go
+with it:
+- the wall check: with a wall closer than half the traced length, the object is pulled in;
+- the smoothed error: the cube is dropped past 12, rather than the port's instant drop at 80 off.
+
+That broke a00, a02, a05 and a08. The longer reach snags the cube on door frames and on portal edges the scripts
+walk past. The patch is at portal-web-shots/wip-hold81-all.patch. It needs the scripts reworked one by one, so it's
+parked for now. a13 stops at the double door until then.
+
 ## 2026-11-23 to 24, oracle session (from about 11:45 PM EST)
 
 **Summary (written 8:50 AM EST).** I built an oracle out of the original Portal and measured the port against it all

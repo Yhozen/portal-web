@@ -69,6 +69,17 @@ training turret on its side straight away, and it thrashes and fires into the wa
 leaves it leaning on the wall at about 45 degrees (up 0.70, so not tipped, since that needs < 0.5). It only goes
 over about 20 s later. More spin doesn't help, because it's the lean against the wall that holds it up.
 
+**12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
+cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
+new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on
+the button. In SDK 2013 (triggers.cpp, ActivateMultiTrigger) Touch runs every frame and only waits out the reset
+time, so a trigger_multiple keeps firing OnTrigger once per wait for as long as something is in it. The port does that
+now. a00 to a11 clear at exactly the same times as before and checks are 37/37.
+
+The 81 hold itself goes back on the shelf. With the button fix, a wall pull-in like CGrabController's and a turn limit
+on the carry walk it still fails a00, a01, a02 and a08 (it clears a03 and a05). The scripts were all tuned around 56,
+so this needs a script-by-script retune, not a one-number change. Patch: portal-web-shots/wip-hold81-v3.patch.
+
 ## 2026-11-23 to 24, oracle session (from about 11:45 PM EST)
 
 **Summary (written 8:50 AM EST).** I built an oracle out of the original Portal and measured the port against it all

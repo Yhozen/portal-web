@@ -214,6 +214,11 @@ export class Game {
     for (const e of map) e.portal.linked = null; for (const p of g) p.linked = null;
     if (blue && orange) { blue.linked = orange; orange.linked = blue; }
   }
+  /** SDK 2013 doors.cpp CBaseDoor::DoorHitTop: at the top, a door without "Toggle" (no auto-return, spawnflag 32) goes
+   *  back down after `wait` seconds; wait -1 stays. "Top" is the open end, or the closed end for a start-open door (its
+   *  positions are swapped at spawn). Covers func_door and func_door_rotating (both CBaseDoor). */
+  doorArrived(e: Ent, at: number) { const sf = +(e.kv.spawnflags || 0), top = sf & 1 ? 0 : 1, w = +(e.kv.wait ?? 0);
+    if (at === top && !(sf & 32) && w >= 0 && /^func_door/.test(e.cls)) e.returnAt = this.io.time + Math.max(w, 1e-3); }
   /** a point / direction in a brush entity's own frame (Collider.rot is local->world, column-major; offset is its origin) */
   colLocal(c: any, p: V3): V3 { const R = c.rot, v = sub(p, c.offset); return R ? [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[4] * v[0] + R[5] * v[1] + R[6] * v[2], R[8] * v[0] + R[9] * v[1] + R[10] * v[2]] : v; }
   colLocalDir(c: any, d: V3): V3 { const R = c.rot; return R ? [R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[4] * d[0] + R[5] * d[1] + R[6] * d[2], R[8] * d[0] + R[9] * d[1] + R[10] * d[2]] : d; }
@@ -440,10 +445,10 @@ export class Game {
       if (i === 'open') { this.activatePortal(e, true); return true; }
       return true;
     });
-    const doorMove = (e: Ent, open: boolean) => { if (e.locked) return; this.wakeCubes(e); const target = open ? 1 : 0; if (e.state === target && e.moving !== true) return; e.state = target; e.moving = true; io.fire(e, open ? 'onopen' : 'onclose', null); };
-    H.set('func_door', (e, i) => {
+    const doorMove = (e: Ent, open: boolean) => { if (e.locked) return; this.wakeCubes(e); const target = open ? 1 : 0; if (e.state === target && e.moving !== true) return; e.state = target; e.moving = true; e.returnAt = 0; e.moveSpeed = e.speed; io.fire(e, open ? 'onopen' : 'onclose', null); };
+    H.set('func_door', (e, i, param) => {
       if (i === 'open') doorMove(e, true); else if (i === 'close') doorMove(e, false); else if (i === 'toggle') doorMove(e, e.state === 0);
-      else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') { /* ignore */ }
+      else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') e.speed = +param || e.speed; // the next move's speed (SDK InputSetSpeed: m_flSpeed, read when a move starts)
       return true;
     });
     // named lights switch their own light style in the lightmaps (Valve Developer Wiki, "light": TurnOn, TurnOff, Toggle)
@@ -494,7 +499,7 @@ export class Game {
       const a = this.player.pos, o = e.pos || e.origin; const np = [Math.max(e.bmins[0], Math.min(e.bmaxs[0], a[0])), Math.max(e.bmins[1], Math.min(e.bmaxs[1], a[1]))];
       const ox = o[0] - a[0], oy = o[1] - a[1], nx = np[0] - a[0], ny = np[1] - a[1]; return ox * ny - oy * nx > 0 ? -1 : 1; };
     const rotDoor = (e: Ent, i: string, param: string) => { if (i === 'open' && !e.locked && e.rotAx !== undefined && (e.t || 0) === 0) e.openAng[e.rotAx] = e.closedAng[e.rotAx] + e.rotDist * awaySign(e);
-      if (i === 'open' && !e.locked) { e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; io.fire(e, 'onclose', null); }
+      if (i === 'open' && !e.locked) { if (e.state !== 1) e.returnAt = 0; e.state = 1; e.moving = true; io.fire(e, 'onopen', null); } else if (i === 'close') { e.state = 0; e.moving = true; e.returnAt = 0; io.fire(e, 'onclose', null); }
       else if (i === 'toggle') { e.state = 1 - e.state; e.moving = true; } else if (i === 'lock') e.locked = true; else if (i === 'unlock') e.locked = false; else if (i === 'setspeed') e.speed = +param || e.speed; else return false; return true; };
     H.set('func_door_rotating', rotDoor); H.set('prop_door_rotating', rotDoor);
     H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath && e.curPath.kv.target) e.pathName = e.curPath.kv.target.toLowerCase(); if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') { e.speedNow = -e.startspeed;
@@ -822,7 +827,7 @@ export class Game {
       if (e.cls === 'logic_timer' && e.enabled) { e.next -= dt; if (e.next <= 0) { io.fire(e, 'ontimer', null); const lo = +(e.kv.lowerrandombound || 0), hi = +(e.kv.upperrandombound || 0);
         e.next = e.kv.userandomtime === '1' ? lo + Math.random() * (hi - lo) : +(e.kv.refiretime || 1); if (e.next <= 0) e.next = 1; } }
       if (e.cls === 'func_door' && e.moving) {
-        const dist = len(sub(e.openPos, e.closedPos)) || 1; const step = e.speed * dt / dist; const tgt = e.state;
+        const dist = len(sub(e.openPos, e.closedPos)) || 1; const step = (e.moveSpeed ?? e.speed) * dt / dist; const tgt = e.state;
         const before = e.t; e.t = tgt ? Math.min(1, e.t + step) : Math.max(0, e.t - step);
         // don't crush: if the door would move into the player, stop for this tick
         // a door riding a parent (e.g. a10's pillar lifts) has its world position from the hierarchy pass; step that by
@@ -831,8 +836,9 @@ export class Game {
         const np = riding ? add(e.pos, scale(sub(e.openPos, e.closedPos), e.t - before)) : add(e.closedPos, scale(sub(e.openPos, e.closedPos), e.t)); const old = e.pos.slice(); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2];
         this.tr.ignore = null; const pt = this.tr.trace(this.player.pos, this.player.pos, HULL.mins, this.player.maxs(), 0xffffffff, this.playerEnt);
         if (pt.startsolid && pt.ent === e) { const d = sub(np, old as V3); if (d[2] > 0 && Math.abs(d[2]) > Math.abs(d[0]) + Math.abs(d[1])) { this.player.pos = add(this.player.pos, d); } else { e.pos[0] = old[0]; e.pos[1] = old[1]; e.pos[2] = old[2]; e.t = before; } }
-        if (e.t === tgt) { e.moving = false; io.fire(e, tgt ? 'onfullyopen' : 'onfullyclosed', null); }
+        if (e.t === tgt) { e.moving = false; io.fire(e, tgt ? 'onfullyopen' : 'onfullyclosed', null); this.doorArrived(e, tgt); }
       }
+      if (e.returnAt && io.time >= e.returnAt && !e.moving) { e.returnAt = 0; this.wakeCubes(e); e.state = 1 - e.state; e.moving = true; e.moveSpeed = e.speed; io.fire(e, e.state ? 'onopen' : 'onclose', null); }
       if (e.cls === 'func_tracktrain' && e.speedNow) {
         const path = io.find(e.pathName, null, e)[0];
         if (!path) e.speedNow = 0; else {
@@ -847,7 +853,7 @@ export class Game {
         e.spinSpeed += Math.sign(target - e.spinSpeed) * Math.min(Math.abs(target - e.spinSpeed), acc); e.ang[e.axis] = (e.ang[e.axis] + e.spinSpeed * e.spinDir * dt) % 360; }
       if (e.closedAng && e.moving) { const span = Math.max(...e.openAng.map((v: number, k: number) => Math.abs(v - e.closedAng[k]))) || 1;
         const st = e.speed * dt / span; e.t = e.state ? Math.min(1, e.t + st) : Math.max(0, e.t - st);
-        if (e.t === e.state) { e.moving = false; io.fire(e, e.state ? 'onfullyopen' : 'onfullyclosed', null); } }
+        if (e.t === e.state) { e.moving = false; io.fire(e, e.state ? 'onfullyopen' : 'onfullyclosed', null); this.doorArrived(e, e.state); } }
       if (e.closedAng) for (let k = 0; k < 3; k++) e.ang[k] = e.closedAng[k] + (e.openAng[k] - e.closedAng[k]) * e.t;
       if (e.inst && e.pos) { e.inst.matrix = entityMatrix(e.pos, e.ang || e.angles); if (e.col && e.ang) e.col.rot = e.inst.matrix; }
       if (e.prop && e.ang && !e.kv.parentname) e.prop.matrix = entityMatrix(e.pos, e.ang);

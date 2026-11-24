@@ -2,6 +2,42 @@
 
 A running log of work on the port. Times are America/New_York.
 
+## 2026-11-23 to 24, oracle session (from about 11:45 PM EST)
+
+**The original runs here, natively.** Portal's Linux build (hl2_linux, 32-bit, build 19017868) runs on the box under Xvfb
+display :20 with Mesa llvmpipe, launched through the Steam client with my remembered login. It needed the i386 libraries
+and the en_US.UTF-8 locale. No password prompt and no Steam Guard came up; the game log says it's logged on to Steam.
+No Wine needed.
+
+**tools/oracle-ctl.mjs drives it through its own console.** A config binds F10 to `exec oracle/cmd`, xdotool presses F10
+on the game window, and the output is read back from console.log (-condebug). With host_framerate 0.015 one frame is one
+tick, and since the command buffer runs twice a frame, `wait 2` is one tick. A free fall gives 0.135 units per tick²
+(600 u/s²), which confirms one sample per tick. getpos reports the client view, which is blended between ticks and lags
+inputs by a tick or two, so the metrics use medians, fits and onset of motion rather than single samples. Rules and
+gotchas are in docs/oracle.md. Nothing from the game (screenshots, clips, configs) goes into git; it all lives in
+portal-web-shots/oracle/.
+
+**12:30 AM EST, movement was off in several ways.** tools/parity.mjs runs the same scenario in the original and in the
+port (checks/oracle/movement.json, ten scenarios on a09's floor) and checks/reference/movement.json holds the original's
+numbers. Before: walk 150 in the original vs 175 in the port, ducked walk 50 vs 58.3, duck eye reaching 90% in 0.345 s vs
+0.18 s, standing jump rise 20.1 vs 22.2, running jump speed 225 vs 175 (the port had no HL2 forward boost), air strafe cap
+60 vs 30, and ducking in the air made the port's eye jump 32 units where the original's moves smoothly. player.ts now follows
+the public Source SDK 2013 gamemovement.cpp for the jump order, the duck state machine and its timing, and the speed
+clamps. All 22 metrics are within tolerance now, for example walk acceleration 1099 vs 1098, stop decel 401.6 vs 400.8,
+airtime 0.518 vs 0.518, running jump distance 116.6 vs 116.6, gravity 599.6 vs 601.1.
+
+**12:55 AM EST, floor-to-floor flings came out too high.** checks/oracle/fling.json drops the player 100 to 300 units onto
+a floor portal in a08 with the exit on the floor too. In the original the feet come back up to within 8 units of the drop
+height (-7.5, -3.3, +2.1, -5.6 for 100/150/200/300). The port came up 37 to 41 units higher, because it puts the hull
+upright and whole in front of the exit. teleportPlayer now takes that lift out of the exit speed, and the port comes back to
+the drop height exactly. Two things are recorded but not asserted. The original's eye pops up about 47 units roughly 0.35 s
+after every exit, whatever the height. I can't tell from eye positions alone why, so the port doesn't copy it. And the
+entry/exit speeds differ by about 30 because the original starts falling during the setup pause.
+
+**a05 broke with the slower walk.** The scripted playthrough lost a05: picking the cube back up on the platform now already
+carries the player through orange into the button room, and the script then drove back into the floor portal. The script
+now only drives into orange if the player is still on the platform side, and a05 goes to a06 again (48.6 s, was 46.4 s).
+
 ## 2026-11-21, evening (about 6:40 to 7:55 PM)
 
 **Black models on macOS.** On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except

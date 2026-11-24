@@ -68,7 +68,7 @@ function info() {
 async function con(lines, timeoutMs = 60000, until = null) {
   if (!gamePid()) { const e = new Error('game not running (oracle-ctl up)'); e.code = 3; throw e; }
   const id = `${process.pid}_${++seq}_${Date.now() % 1e6}`;
-  const body = [`echo ORACLE_BEGIN_${id}`, ...lines, until ? '' : `echo ORACLE_END_${id}`].join('\n') + '\n';
+  const body = [`echo ORACLE_BEGIN_${id}`, ...lines, until ? '' : `wait 6`, until ? '' : `echo ORACLE_END_${id}`].join('\n') + '\n';
   fs.writeFileSync(path.join(CFG, 'cmd.cfg'), body);
   const off = logSize(), w = gameWin();
   trySh('xdotool', ['windowfocus', w]); await sleep(50); trySh('xdotool', ['key', 'F10']);
@@ -86,12 +86,14 @@ async function con(lines, timeoutMs = 60000, until = null) {
   return t.split('\n').slice(1).filter(l => !l.startsWith('ORACLE_END_')).map(l => l.replace(/\s+$/, ''));
 }
 
+async function currentMap() { const m = (await con(['status'])).join('\n').match(/^map\s+:\s+(\S+)/m); return m ? m[1] : null; }
+
 async function map(name) {
   const t0 = Date.now();
-  const out = await con([`map ${name}`], 240000, /Redownloading all lightmaps|map load failed|not found/i);
-  await sleep(1500);
+  const out = await con([`map ${name}`], 240000, /Redownloading all lightmaps|map load failed|Can't find map|couldn't find map/i);
+  await sleep(3000);
   await con(['sv_cheats 1']);
-  return { map: name, ms: Date.now() - t0, failed: out.some(l => /map load failed|not found/i.test(l)) };
+  return { map: name, ms: Date.now() - t0, failed: out.some(l => /map load failed|can't find map|couldn't find map/i.test(l)) };
 }
 
 // getpos prints "setpos X Y Z;setang P Y R" (eye position) on its own line, often split by other output.
@@ -103,9 +105,15 @@ const POS_RE = /setpos (-?[\d.]+) (-?[\d.]+) (-?[\d.]+);setang (-?[\d.]+) (-?[\d
 // trace and the exact settings are written to OUT/runs/NAME.jsonl (+ .meta.json).
 async function trace(name, ticks, setup = [], at = {}, settle = 40) {
   ticks = +ticks;
-  const lines = ['host_framerate 0.015', 'host_timescale 1', 'cl_cmdrate 100', 'cl_updaterate 66', 'rate 100000', ...setup];
+  // getpos and spec_pos report the client's view, which cl_smooth eases over 0.1 s after every landing or step (seen
+  // as a rounded take-off and landing in the first traces); cl_smooth 0 gives the raw predicted position.
+  // Setup (setpos and friends) goes in its own batch and is given wall time to land: a `wait` in the same batch
+  // didn't reliably hold the trace back, and a setpos arriving mid-trace showed up as a teleport at tick 3.
+  await con(['host_framerate 0.015', 'host_timescale 1', 'cl_cmdrate 100', 'cl_updaterate 66', 'rate 100000', 'cl_smooth 0', ...setup]);
+  await sleep(500 + settle * 30);
+  const lines = [];
   for (let i = 0; i <= ticks; i++) lines.push(`alias _ot${i} "${(at[i] || []).join(';')}${at[i] ? ';' : ''}spec_pos;getpos;wait 2;_ot${i + 1}"`);
-  lines.push(`alias _ot${ticks + 1} "echo ORACLE_TRACE_DONE;wait 5;host_framerate 0;echo ORACLE_TAIL_"`, `wait ${settle}`, '_ot0');
+  lines.push(`alias _ot${ticks + 1} "echo ORACLE_TRACE_DONE;wait 5;host_framerate 0;cl_smooth 1;echo ORACLE_TAIL_"`, '_ot0');
   const t0 = Date.now();
   const out = await con(lines, 120000 + ticks * 200, /ORACLE_TRACE_DONE[\s\S]*ORACLE_TAIL_/);
   const wall = (Date.now() - t0) / 1000;
@@ -164,4 +172,4 @@ async function main() {
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().then(r => { console.log(JSON.stringify({ cmd: process.argv[2], ok: true, ...r })); }, e => { console.log(JSON.stringify({ cmd: process.argv[2], ok: false, error: e.message })); process.exit(e.code || 1); });
 }
-export { up, down, con, map, trace, shot, record, info };
+export { up, down, con, map, currentMap, trace, shot, record, info };

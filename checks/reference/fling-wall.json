@@ -1,0 +1,126 @@
+{
+ "about": "Measured in the original Portal by tools/parity.mjs orig checks/oracle/fling-wall.json. Values are what the original did; tol is how far the port may be off. Notes say when a value is derived rather than read directly.",
+ "build": {
+  "appid": 400,
+  "buildid": "19017868",
+  "patch_version": "1745010",
+  "server_version": "9862575"
+ },
+ "settings": {
+  "host_framerate": 0.015,
+  "tick": 0.015,
+  "sampler": "getpos once per tick. It reports the client view of the eye position (cl_smooth 0 during runs), blended between ticks, so times are good to about a tick; rates, speeds and heights are medians or fits. One sample per tick checked by a free fall (0.135 units per tick squared = 600 u/s\u00b2).",
+  "cvars_after_run": {
+   "host_framerate": "0",
+   "sv_gravity": "600",
+   "cl_forwardspeed": "450",
+   "cl_sidespeed": "450",
+   "fps_max": "300"
+  },
+  "window": [
+   800,
+   500
+  ]
+ },
+ "metrics": {
+  "wf100_entry_vz": {
+   "value": -395.452,
+   "tol": 15,
+   "scenario": "wallfling-drop-100"
+  },
+  "wf100_exit_vx": {
+   "value": 391.5,
+   "tol": 20,
+   "scenario": "wallfling-drop-100",
+   "note": "original comes out ~1% slower than it went in, the port ~1% faster (one tick of gravity?)"
+  },
+  "wf100_exit_vz0": {
+   "value": 9.548,
+   "tol": 10,
+   "scenario": "wallfling-drop-100"
+  },
+  "wf100_dx": {
+   "value": 146.812,
+   "tol": 12,
+   "scenario": "wallfling-drop-100"
+  },
+  "wf100_dz": {
+   "value": -57.162,
+   "tol": 6,
+   "scenario": "wallfling-drop-100"
+  },
+  "wf100_eye5": {
+   "value": 551.878,
+   "tol": 11.038,
+   "scenario": "wallfling-drop-100",
+   "assert": false,
+   "note": "the original flies 18 units lower (44 at the 100 drop) for the same portals; cause not known (exit placement or a forced duck), not modelled"
+  },
+  "wf200_entry_vz": {
+   "value": -532.948,
+   "tol": 15,
+   "scenario": "wallfling-drop-200"
+  },
+  "wf200_exit_vx": {
+   "value": 526.501,
+   "tol": 20,
+   "scenario": "wallfling-drop-200",
+   "note": "original comes out ~1% slower than it went in, the port ~1% faster (one tick of gravity?)"
+  },
+  "wf200_exit_vz0": {
+   "value": 6.183,
+   "tol": 10,
+   "scenario": "wallfling-drop-200"
+  },
+  "wf200_dx": {
+   "value": 197.438,
+   "tol": 12,
+   "scenario": "wallfling-drop-200"
+  },
+  "wf200_dz": {
+   "value": -58.431,
+   "tol": 6,
+   "scenario": "wallfling-drop-200"
+  },
+  "wf200_eye5": {
+   "value": 578.386,
+   "tol": 11.568,
+   "scenario": "wallfling-drop-200",
+   "assert": false,
+   "note": "the original flies 18 units lower (44 at the 100 drop) for the same portals; cause not known (exit placement or a forced duck), not modelled"
+  },
+  "wf300_entry_vz": {
+   "value": -629.778,
+   "tol": 15,
+   "scenario": "wallfling-drop-300"
+  },
+  "wf300_exit_vx": {
+   "value": 625.5,
+   "tol": 20,
+   "scenario": "wallfling-drop-300",
+   "note": "original comes out ~1% slower than it went in, the port ~1% faster (one tick of gravity?)"
+  },
+  "wf300_exit_vz0": {
+   "value": 10.903,
+   "tol": 10,
+   "scenario": "wallfling-drop-300"
+  },
+  "wf300_dx": {
+   "value": 234.563,
+   "tol": 12,
+   "scenario": "wallfling-drop-300"
+  },
+  "wf300_dz": {
+   "value": -56.662,
+   "tol": 6,
+   "scenario": "wallfling-drop-300"
+  },
+  "wf300_eye5": {
+   "value": 578.721,
+   "tol": 11.574,
+   "scenario": "wallfling-drop-300",
+   "assert": false,
+   "note": "the original flies 18 units lower (44 at the 100 drop) for the same portals; cause not known (exit placement or a forced duck), not modelled"
+  }
+ }
+}

@@ -1,0 +1,233 @@
+{
+ "about": "Floor-to-wall flings in testchmb_a_09's box room (the route onto the cube's steps): blue shot onto the west wall high up (640, -805, ~570, facing east) from (900, -805, 256), orange onto the floor at (880, -805, 256) from (760, -805, 256). The player is dropped 100 to 300 units onto orange and comes out of the wall going east. Measures how the fall speed turns into the exit speed and how far the player flies in 30 ticks.",
+ "scenarios": [
+  {
+   "name": "wallfling-drop-100",
+   "map": "testchmb_a_09",
+   "pos": [
+    866,
+    -805,
+    356
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 120,
+   "settle": 0,
+   "portals": [
+    {
+     "color": "blue",
+     "from": [
+      900,
+      -805,
+      256
+     ],
+     "at": [
+      700,
+      -805,
+      560
+     ]
+    },
+    {
+     "color": "orange",
+     "from": [
+      760,
+      -805,
+      256
+     ],
+     "at": [
+      880,
+      -805,
+      256
+     ]
+    }
+   ],
+   "events": [],
+   "metrics": {
+    "wf100_entry_vz": [
+     "entry_vz"
+    ],
+    "wf100_exit_vx": [
+     "tp_vel",
+     0,
+     3,
+     8
+    ],
+    "wf100_exit_vz0": [
+     "tp_vz0",
+     6,
+     20
+    ],
+    "wf100_dx": [
+     "tp_drift",
+     0,
+     5,
+     30
+    ],
+    "wf100_dz": [
+     "tp_drift",
+     2,
+     5,
+     30
+    ],
+    "wf100_eye5": [
+     "tp_eye",
+     5
+    ]
+   }
+  },
+  {
+   "name": "wallfling-drop-200",
+   "map": "testchmb_a_09",
+   "pos": [
+    866,
+    -805,
+    456
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 120,
+   "settle": 0,
+   "portals": [
+    {
+     "color": "blue",
+     "from": [
+      900,
+      -805,
+      256
+     ],
+     "at": [
+      700,
+      -805,
+      560
+     ]
+    },
+    {
+     "color": "orange",
+     "from": [
+      760,
+      -805,
+      256
+     ],
+     "at": [
+      880,
+      -805,
+      256
+     ]
+    }
+   ],
+   "events": [],
+   "metrics": {
+    "wf200_entry_vz": [
+     "entry_vz"
+    ],
+    "wf200_exit_vx": [
+     "tp_vel",
+     0,
+     3,
+     8
+    ],
+    "wf200_exit_vz0": [
+     "tp_vz0",
+     6,
+     20
+    ],
+    "wf200_dx": [
+     "tp_drift",
+     0,
+     5,
+     30
+    ],
+    "wf200_dz": [
+     "tp_drift",
+     2,
+     5,
+     30
+    ],
+    "wf200_eye5": [
+     "tp_eye",
+     5
+    ]
+   }
+  },
+  {
+   "name": "wallfling-drop-300",
+   "map": "testchmb_a_09",
+   "pos": [
+    866,
+    -805,
+    556
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 120,
+   "settle": 0,
+   "portals": [
+    {
+     "color": "blue",
+     "from": [
+      900,
+      -805,
+      256
+     ],
+     "at": [
+      700,
+      -805,
+      560
+     ]
+    },
+    {
+     "color": "orange",
+     "from": [
+      760,
+      -805,
+      256
+     ],
+     "at": [
+      880,
+      -805,
+      256
+     ]
+    }
+   ],
+   "events": [],
+   "metrics": {
+    "wf300_entry_vz": [
+     "entry_vz"
+    ],
+    "wf300_exit_vx": [
+     "tp_vel",
+     0,
+     3,
+     8
+    ],
+    "wf300_exit_vz0": [
+     "tp_vz0",
+     6,
+     20
+    ],
+    "wf300_dx": [
+     "tp_drift",
+     0,
+     5,
+     30
+    ],
+    "wf300_dz": [
+     "tp_drift",
+     2,
+     5,
+     30
+    ],
+    "wf300_eye5": [
+     "tp_eye",
+     5
+    ]
+   }
+  }
+ ]
+}

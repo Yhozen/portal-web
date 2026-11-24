@@ -6,7 +6,8 @@ AP.wait(2); lg('start', P() + ' gun ' + G.hasGun + ' fire ' + G.canFire);
 // Portal can't fire while carrying, so drop the box for each shot and pick it back up.
 // The button room is behind a cleanser (trigger_fryer_rm5-a) that would fizzle the box. The fixed orange portal stands on a raised
 // platform (top z 128) facing +x. Carry the box through a blue portal on the west wall to come out of orange onto the platform, then
-// re-shoot blue through the window into the button room and walk back into orange with the box.
+// re-shoot blue through the small window above the cleanser (x 40..90, z 170..215) onto the button room's far wall: shots don't
+// cross the cleanser itself (measured in the original), and the strategywiki route goes through that opening and walk back into orange with the box.
 lg('toward box drop', AP.reach([-150, 20, 0], 60)); AP.wait(3);
 const box = G.cubes.filter(c => c.alive)[0]; lg('box', box && box.pos.map(v => v|0));
 lg('pick up', AP.pickUp(box)); lg('held', !!G.held);
@@ -17,7 +18,7 @@ lg('to east wall', AP.reach([170, -161, 0], 30)); lg('held', !!G.held);
 G.use(); AP.wait(1); lg('blue east wall', shoot(0, [256, -161, 49])); lg('re-pick', AP.pickUp(box));
 drive([256, -161, 49], 6, n0 => tele() > n0); for (let i = 0; i < 20; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
 lg('on platform', P() + ' held ' + !!G.held);
-G.use(); AP.wait(1); AP.approach([-70, -183], 6, 3); let bf = 'none'; for (const t of [[64, 450, 0], [40, 420, 0], [90, 480, 0], [64, 380, 0], [20, 500, 0]]) { const r = shoot(0, t); if (G.gunPortals[0].pos[1] > 200) { bf = t + ' -> ' + r; break; } } lg('blue button room floor', bf + ' from ' + P()); lg('re-pick', AP.pickUp(box)); lg('pos', P() + ' box ' + box.pos.map(v=>v|0));
+G.use(); AP.wait(1); AP.approach([-70, -183], 6, 3); let bf = 'none'; for (const t of [[64, 450, 0], [40, 420, 0], [90, 480, 0], [64, 380, 0], [20, 500, 0], ...[[60, 142, 196], [70, 142, 196], [55, 142, 200], [75, 142, 190]].map(w => { const e = game.pl.eye(), d = [w[0] - e[0], w[1] - e[1], w[2] - e[2]]; return [e[0] + d[0] * 6, e[1] + d[1] * 6, e[2] + d[2] * 6]; })]) { const r = shoot(0, t); if (G.gunPortals[0].pos[1] > 200) { bf = t + ' -> ' + r; break; } } lg('blue button room floor', bf + ' from ' + P()); lg('re-pick', AP.pickUp(box)); lg('pos', P() + ' box ' + box.pos.map(v=>v|0));
 // Walking up to the box for the re-pick can already carry the player through orange (seen since walk speed went to 150; why exactly not dug into), so
 // only drive into orange if still on the platform side.
 if (game.pl.pos[1] < 200) drive([-128, -191, 160], 6, n0 => tele() > n0); for (let i = 0; i < 60; i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });

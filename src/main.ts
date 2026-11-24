@@ -121,6 +121,9 @@ async function main() {
     if ((window as any).customRender) (window as any).customRender(); else render(); fms += performance.now() - t1;
     requestAnimationFrame(frame);
   };
+  // soundscripts, captions and scenes.image have to be in before the first tick: a scene started while scenes.image is
+  // still loading gets no length, which made a11's 18.4 s opening scene (and everything timed off it) vary run to run
+  await snd.ready.catch(e => log('sound init', String(e)));
   requestAnimationFrame(frame);
   (window as any).ready = true;
 }

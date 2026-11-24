@@ -982,7 +982,7 @@ export class Game {
       const sf = +(e.kv.spawnflags || 0); const now = new Set<Ent>();
       if (e.enabled) {
         if ((sf & 1 || sf & 64 || e.cls === 'trigger_changelevel') && overlap(pmin, pmax, e.bmins, e.bmaxs)) now.add(this.playerEnt);
-        if (sf & 8 || sf & 64 || e.cls === 'trigger_portal_cleanser') for (const c of this.cubes) if (c.alive && overlap(sub(c.pos, [c.ext, c.ext, c.ext]), add(c.pos, [c.ext, c.ext, c.ext]), e.bmins, e.bmaxs)) now.add(c.ent);
+        if (sf & 8 || sf & 64 || e.cls === 'trigger_portal_cleanser') for (const c of this.cubes) { if (!c.alive) continue; const h = halfExtent(c); /* the body's own bounds: a turret is 4 times taller than its narrowest half-width */ if (overlap(sub(c.pos, h), add(c.pos, h), e.bmins, e.bmaxs)) now.add(c.ent); }
         if (sf & 8 || sf & 64) for (const b of this.balls) if (overlap(sub(b.pos, [b.r, b.r, b.r]), add(b.pos, [b.r, b.r, b.r]), e.bmins, e.bmaxs)) now.add(b.ent);
         if (e.kv.filtername) { const f = io.find(e.kv.filtername, null, e)[0]; if (f) for (const a of [...now]) if (!this.passFilter(f, a)) now.delete(a); }
       }

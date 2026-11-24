@@ -576,17 +576,19 @@ export class Game {
   }
   prevPath(p: Ent) { return this.io.ents.find(q => q.cls === 'path_track' && !q.killed && (q.kv.target || '').toLowerCase() === p.name) || null; }
   respawnTemplate(t: Ent, maker: Ent | null) {
-    // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps). Measured in the
-    // original (oracle-ctl, ent_dump / ent_text): a08's box_maker makes BOTH of its template's cubes, the platform one and the one
-    // on the start room's grating roof, each at its own place (there the maker sits on the template's origin). a02's maker, whose
-    // template has one cube, puts it at the maker's x, y (0.4, 80.1 against the maker's 0, 80), not at the offset that
-    // CPointTemplate::CreateInstance in the public SDK 2013 point_template.cpp would give (-27, 111). So: several cubes keep their
-    // offsets from the template, moved to the maker; a single cube goes to the maker's origin. Why the original differs from the
-    // SDK for the single case is not known. The port used to make only the first cube.
+    // point_template: spawn fresh copies of the template entities (only physics cubes matter for these maps), each at its
+    // offset from the template origin, moved and turned with the maker, as CPointTemplate::CreateInstance in the public SDK
+    // 2013 point_template.cpp does. Measured in the original with oracle-ctl and ent_text: a09's box_maker puts its cube at
+    // the template cube's own place (1083.2, -771.2, 500.4; its maker sits on the template origin), and a second ForceSpawn
+    // lands on top of it and gets pushed aside; a08's maker makes both template cubes, each at its own place. a02's maker
+    // would put its cube at (-27, 111), mostly inside the walls of the glass drop tube, and in the original it ends up in
+    // the tube at the maker's x, y (0.4, 80.1); vphysics pushes it out of the walls. The port has no such push-out, so a
+    // copy that would start in solid goes to the maker's origin instead (a guess that matches a02; tested with a 40-unit box, about the cube model's size).
     const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
     const R = maker ? entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]) : null;
     const srcs = names.flatMap(n => (this.io.byName.get(n) || []).filter(e => e.cube && !e.isCopy));
-    const place = (o: V3): V3 => !maker ? [...o] as V3 : srcs.length === 1 ? [...maker.origin] as V3 : add(maker.origin, xformDir(R!, sub(o, t.origin)));
+    const solid = (q: V3) => this.tr.trace(q, q, [-20, -20, -20], [20, 20, 20], 0x1 | 0x8 | 0x4000, this.playerEnt).startsolid;
+    const place = (o: V3): V3 => { if (!maker) return [...o] as V3; const q = add(maker.origin, xformDir(R!, sub(o, t.origin))); return srcs.length === 1 && solid(q) && !solid(maker.origin) ? [...maker.origin] as V3 : q; };
     for (const n of names) for (const src of this.io.byName.get(n) || []) {
       if (src.cls === 'weapon_portalgun' && !src.picked) { src.killed = false; if (src.prop) src.prop.visible = true; this.io.log.push(`${this.io.time.toFixed(2)} spawned ${n} (portal gun)`); continue; } // a07: the next map's gun is a template spawned on new game
       if (!src.cube || src.isCopy) continue;

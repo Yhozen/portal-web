@@ -1076,7 +1076,10 @@ export class Game {
         else if (e.cls === 'trigger_changelevel' && !(sf & 2) && a === this.playerEnt) this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase());
       }
       for (const a of [...e.touching]) if (!now.has(a)) { e.touching.delete(a); io.fire(e, 'onendtouch', a); if (!e.touching.size) io.fire(e, 'onendtouchall', a); }
-      if (e.cls === 'trigger_multiple' && e.touching.size && e.waitUntil && io.time >= e.waitUntil && +(e.kv.wait ?? 0) >= 0 && false) {}
+      // trigger_multiple keeps firing OnTrigger while something stays in it, once per `wait` (SDK 2013 triggers.cpp: Touch
+      // runs every frame and ActivateMultiTrigger only waits out the reset time). Firing only on a new touch lost a box
+      // that left and came back inside the wait: a00's button stayed up under a box that settled on it 0.2 s later.
+      if (e.cls === 'trigger_multiple' && now.size && +(e.kv.wait ?? 0.2) > 0 && e.waitUntil && io.time >= e.waitUntil) { io.fire(e, 'ontrigger', [...now][0]); e.waitUntil = io.time + Math.max(0.1, +(e.kv.wait ?? 0.2)); }
     }
   }
   passFilter(f: Ent, a: Ent) {

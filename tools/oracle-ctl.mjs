@@ -103,7 +103,7 @@ const POS_RE = /setpos (-?[\d.]+) (-?[\d.]+) (-?[\d.]+);setang (-?[\d.]+) (-?[\d
 // Each tick is one frame because host_framerate is pinned to the tick interval. The command buffer runs twice per
 // frame (once for the frame, once for its tick), so `wait 2` is one tick; checked by the free-fall test in docs/oracle.md. The sampled
 // trace and the exact settings are written to OUT/runs/NAME.jsonl (+ .meta.json).
-async function trace(name, ticks, setup = [], at = {}, settle = 40) {
+async function trace(name, ticks, setup = [], at = {}, settle = 40, recordPath = null) {
   ticks = +ticks;
   // getpos and spec_pos report the client's view, which cl_smooth eases over 0.1 s after every landing or step (seen
   // as a rounded take-off and landing in the first traces); cl_smooth 0 gives the raw predicted position.
@@ -114,6 +114,8 @@ async function trace(name, ticks, setup = [], at = {}, settle = 40) {
   const lines = [];
   for (let i = 0; i <= ticks; i++) lines.push(`alias _ot${i} "${(at[i] || []).join(';')}${at[i] ? ';' : ''}spec_pos;getpos;wait 2;_ot${i + 1}"`);
   lines.push(`alias _ot${ticks + 1} "echo ORACLE_TRACE_DONE;wait 5;host_framerate 0;cl_smooth 1;echo ORACLE_TAIL_"`, '_ot0');
+  // Optional clip of the run (wall clock; the game runs about one tick per 1/66 s here, so it is close to real time).
+  const rec = recordPath ? record(recordPath, Math.ceil(ticks / 50) + 2) : null;
   const t0 = Date.now();
   const out = await con(lines, 120000 + ticks * 200, /ORACLE_TRACE_DONE[\s\S]*ORACLE_TAIL_/);
   const wall = (Date.now() - t0) / 1000;
@@ -131,6 +133,7 @@ async function trace(name, ticks, setup = [], at = {}, settle = 40) {
   const cv = await con(['host_framerate', 'sv_gravity', 'sv_friction', 'sv_accelerate', 'sv_airaccelerate', 'sv_maxspeed', 'sv_stopspeed', 'cl_forwardspeed', 'cl_sidespeed', 'sv_stepsize', 'fps_max']);
   const cvars = {}; for (const l of cv) { const mm = l.match(/^"(\w+)" = "([^"]*)"/); if (mm) cvars[mm[1]] = mm[2]; }
   const meta = { name, ticks, samples: rows.length, wall_s: wall, effective_fps: +(rows.length / wall).toFixed(1), setup, at, cvars, ...info(), when: new Date().toISOString() };
+  if (rec) meta.clip = (await rec).path;
   fs.writeFileSync(path.join(dir, `${name}.meta.json`), JSON.stringify(meta, null, 1));
   return { file: path.join(dir, `${name}.jsonl`), samples: rows.length, wall_s: wall, cvars };
 }

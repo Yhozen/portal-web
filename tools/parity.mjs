@@ -68,11 +68,20 @@ const METRICS = {
   air_fit_g: (r, dt, [from]) => airFit(r, dt, from).g,
   air_fit_dist: (r, dt, [from]) => { const f = airFit(r, dt, from); return f.t * median(f.ks.map(k => hspeed(r, k, dt))); },
   // teleports: the first tick the eye jumps more than 48 units
-  entry_speed: (r, dt) => { const k = tpIndex(r); return k > 2 ? spd3(r, k - 1, dt) : NaN; },
+  entry_speed: (r, dt) => { const k = tpIndex(r); return k > 4 ? spd3(r, k - 3, dt) : NaN; },
   exit_speed: (r, dt) => { const k = tpIndex(r); return k > 0 && k + 2 < r.length ? spd3(r, k + 2, dt) : NaN; },
   exit_vz: (r, dt) => { const k = tpIndex(r); return k > 0 && k + 2 < r.length ? vz(r, k + 2, dt) : NaN; },
   exit_rise: (r, dt) => { const k = tpIndex(r); return k > 0 ? Math.max(...r.slice(k).map(x => x.eye[2])) - r[k].eye[2] : NaN; },
   exit_drift: (r, dt, [axis, ticks]) => { const k = tpIndex(r); return k > 0 && k + ticks < r.length ? r[k + ticks].eye[axis] - r[k].eye[axis] : NaN; },
+  // vz on clean free-flight ticks either side of the teleport, carried to the teleport tick with gravity
+  entry_vz: (r, dt) => { const k = tpIndex(r); return k > 6 ? vz(r, k - 5, dt) - 600 * dt * 5 : NaN; },
+  exit_vz0: (r, dt) => { const k = tpIndex(r); return k > 0 && k + 4 < r.length ? vz(r, k + 4, dt) + 600 * dt * 4 : NaN; },
+  // apex of the feet after the exit (eye minus the standing view, so after the original's eye pop) over the drop height
+  apex_feet_gain: (r, dt, [h]) => { const k = tpIndex(r); return k > 0 ? Math.max(...r.slice(k).map(x => x.eye[2])) - STAND_VIEW - h : NaN; },
+  apex_eye: (r, dt) => { const k = tpIndex(r); return k > 0 ? Math.max(...r.slice(k).map(x => x.eye[2])) : NaN; },
+  // the eye's jump of more than 25 units in one tick after the exit (the original unducks then)
+  eye_pop_t: (r, dt) => { const k = tpIndex(r); for (let j = k + 2; k > 0 && j < r.length; j++) if (r[j].eye[2] - r[j - 1].eye[2] - (r[j - 1].eye[2] - r[j - 2].eye[2]) > 25) return (j - k) * dt; return NaN; },
+  eye_pop: (r, dt) => { const k = tpIndex(r); for (let j = k + 2; k > 0 && j < r.length; j++) { const x = r[j].eye[2] - r[j - 1].eye[2] - (r[j - 1].eye[2] - r[j - 2].eye[2]); if (x > 25) return x; } return 0; },
   gravity: (r, dt, [a, b]) => median(range(a, b).map(k => -(vz(r, k, dt) - vz(r, k - 1, dt)) / dt)),
 };
 function metrics(sc, r, side) {
@@ -100,7 +109,7 @@ async function runOrig(sc) {
   }
   let rows, res;
   for (let attempt = 0; attempt < 3; attempt++) {
-    res = await o.trace(`${sc.name}`, sc.ticks, setup, at, sc.settle ?? 40);
+    res = await o.trace(`${sc.name}`, sc.ticks, setup, at, sc.settle ?? 40, process.env.PARITY_RECORD ? path.join(RUNS, '..', `${sc.name}-orig.mp4`) : null);
     rows = fs.readFileSync(res.file, 'utf8').trim().split('\n').map(JSON.parse);
     // the run only counts if the player was where the scenario put them when it started
     const e = rows[0].eye; if (Math.abs(e[0] - sc.pos[0]) < 1 && Math.abs(e[1] - sc.pos[1]) < 1 && (sc.settle === 0 || Math.abs(e[2] - sc.pos[2] - 64) < 1.5)) break;
@@ -154,6 +163,7 @@ if (cmd === 'orig') {
     const r = runPort(sc, sock, cur); cur = sc.map; const m = metrics(sc, r, 'port');
     if (!ref) { console.log(JSON.stringify({ scenario: sc.name, side: 'port', samples: r.length, ...m })); continue; }
     for (const [k, v] of Object.entries(m)) { const want = ref.metrics[k]; if (!want) continue;
+      if (want.assert === false) { console.log(`INFO ${sc.name}.${k} port=${v} original=${want.value} (recorded, not asserted${want.note ? ': ' + want.note : ''})`); continue; }
       const ok = v != null && Math.abs(v - want.value) <= want.tol; if (!ok) fails++;
       console.log(`${ok ? 'PASS' : 'FAIL'} ${sc.name}.${k} port=${v} original=${want.value} tol=${want.tol}${want.note ? ' (' + want.note + ')' : ''}`); }
   }
@@ -166,7 +176,7 @@ if (cmd === 'orig') {
   const old = fs.existsSync(refFile) ? load(refFile) : { metrics: {} }; const out = { about: `Measured in the original Portal by tools/parity.mjs orig ${path.relative(ROOT, file)}. Values are what the original did; tol is how far the port may be off. Notes say when a value is derived rather than read directly.`, build: null, settings: null, metrics: {} };
   for (const sc of pick) { const o = readRun('orig', sc.name); if (!o) continue; const meta = JSON.parse(fs.readFileSync(path.join(RUNS, 'orig', sc.name + '.meta.json'), 'utf8'));
     out.build ||= meta.build; out.settings ||= { host_framerate: 0.015, tick: 0.015, sampler: 'getpos once per tick. It reports the client view of the eye position (cl_smooth 0 during runs), blended between ticks, so times are good to about a tick; rates, speeds and heights are medians or fits. One sample per tick checked by a free fall (0.135 units per tick squared = 600 u/s²).', cvars_after_run: meta.cvars, window: meta.size };
-    const m = metrics(sc, o, 'orig'); for (const [k, v] of Object.entries(m)) { const prev = old.metrics[k] || {}; out.metrics[k] = { value: v, tol: prev.tol ?? defaultTol(k, v), scenario: sc.name, ...(prev.note ? { note: prev.note } : {}) }; } }
+    const m = metrics(sc, o, 'orig'); for (const [k, v] of Object.entries(m)) { const prev = old.metrics[k] || {}; out.metrics[k] = { value: v, tol: prev.tol ?? defaultTol(k, v), scenario: sc.name, ...(prev.note ? { note: prev.note } : {}), ...(prev.assert === false ? { assert: false } : {}) }; } }
   fs.mkdirSync(path.dirname(refFile), { recursive: true }); fs.writeFileSync(refFile, JSON.stringify(out, null, 1) + '\n'); console.log(JSON.stringify({ wrote: refFile, metrics: Object.keys(out.metrics).length }));
 } else { console.error('unknown command ' + cmd); process.exit(2); }
 

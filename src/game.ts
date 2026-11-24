@@ -593,6 +593,19 @@ export class Game {
     e.prop = prop; this.playAnim(e, 'idle', true); // combineball.mdl's own looping idle turns its three bones (about 86 deg/s)
     this.balls.push(b); io.fire(L, 'onpostspawnball', e); io.log.push(`${io.time.toFixed(2)} energy ball from ${L.name}`);
   }
+  /** a sphere of radius r swept from a to b against body c's oriented box (its half-sizes grown by r, slab test in the
+   *  box's frame): entry fraction and world normal, or null */
+  ballVsBody(a: V3, b: V3, r: number, c: Cube): { f: number; n: V3 } | null {
+    const R = c.R, he: V3 = c.he ? c.he : [c.h, c.h, c.h], ctr = c.pos;
+    const loc = (v: V3): V3 => { const d = sub(v, ctr); return [d[0] * R[0] + d[1] * R[1] + d[2] * R[2], d[0] * R[4] + d[1] * R[5] + d[2] * R[6], d[0] * R[8] + d[1] * R[9] + d[2] * R[10]]; };
+    const A = loc(a), B = loc(b); let enter = -1, leave = 1, ax = -1, sg = 0;
+    for (let k = 0; k < 3; k++) { const e = he[k] + r, d = B[k] - A[k];
+      if (Math.abs(d) < 1e-9) { if (A[k] < -e || A[k] > e) return null; continue; }
+      let t0 = (-e - A[k]) / d, t1 = (e - A[k]) / d, s = -1; if (t0 > t1) { [t0, t1] = [t1, t0]; s = 1; }
+      if (t0 > enter) { enter = t0; ax = k; sg = s; } if (t1 < leave) leave = t1; if (enter > leave) return null; }
+    if (ax < 0 || enter < 0 || enter > 1) return null;   // starting inside (or no hit this step): let it pass
+    const n: V3 = [sg * R[ax * 4], sg * R[ax * 4 + 1], sg * R[ax * 4 + 2]]; return { f: Math.max(0, enter - 1e-4), n };
+  }
   updateBalls(dt: number) {
     const io = this.io;
     for (const L of io.ents) if (L.cls === 'point_energy_ball_launcher' && !L.killed) {
@@ -601,13 +614,16 @@ export class Game {
       if (L.enabled && alive < (+(L.kv.ballcount || 1) || 1)) { if (L.nextBall === undefined) L.nextBall = io.time + 0.5; if (io.time >= L.nextBall) { this.launchBall(L); L.nextBall = io.time + (+(L.kv.ballrespawntime || 2)); } }
       else if (alive) L.nextBall = io.time + (+(L.kv.ballrespawntime || 2));
     }
-    const mask = 0x1 | 0x2 | 0x8 | 0x4000;
+    const mask = 0x1 | 0x2 | 0x8 | 0x4000, skip = new Set<any>([this.playerEnt, ...this.cubes.map(c => c.ent)]);
     for (const b of [...this.balls]) {
       if (io.time >= b.die) { b.ent.killed = true; b.ent.onKill?.(); continue; }
       const mins: V3 = [-b.r, -b.r, -b.r], maxs: V3 = [b.r, b.r, b.r]; let left = dt; const prev: V3 = [...b.pos] as V3;
       for (let it = 0; it < 4 && left > 1e-4; it++) {
         this.tr.ignore = this.tunnelFor(b.pos, mins, maxs);
-        const want = ma(b.pos, left, b.vel); const t = this.tr.trace(b.pos, want, mins, maxs, mask, this.playerEnt);
+        const want = ma(b.pos, left, b.vel); const t = this.tr.trace(b.pos, want, mins, maxs, mask, skip);
+        // cubes and turrets are oriented boxes: sweep the ball in each body's own frame, so a turned cube deflects it
+        // sideways (a13's box-bounce catcher), where the axis-aligned box could only send it straight back
+        for (const c of this.cubes) { if (!c.alive) continue; const hit = this.ballVsBody(b.pos, want, b.r, c); if (hit && hit.f < t.fraction) { t.fraction = hit.f; t.normal = hit.n; t.startsolid = false; t.ent = c.ent; t.end = ma(b.pos, hit.f, sub(want, b.pos)); } }
         if (t.startsolid) { b.pos = want; break; }
         b.pos = t.end; left *= 1 - t.fraction; if (t.fraction >= 1) break;
         const n = t.normal; const vn = dot(b.vel, n); b.vel = ma(b.vel, -2 * vn, n); b.pos = ma(b.pos, 0.5, n);

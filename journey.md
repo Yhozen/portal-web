@@ -2,6 +2,27 @@
 
 A running log of work on the port. Times are America/New_York.
 
+## 2026-11-24, session 2 (from 9:03 AM EST)
+
+**9:20 AM EST, a13's box cover holds the box now.** box_dropper_cover.mdl lists its flaps and arms under
+`bone_followers` in the model's keyvalues, and the .phy has one convex piece per bone (20 of them). In SDK 2013 that's
+CBoneFollowerManager: each listed bone gets a physics shadow that follows the bone. The port now reads the .phy
+pieces (compactsurfaceheader_t from the public phyfile.h, then the ledges and points of the compact surface) and gives
+each one a convex collider that moves with its bone, in the prop's current pose. With the cover closed, the box rests at
+z 186.4. The original, sitting idle at the start (ent_text box), has it at 2055.1, 203.0, 186.6 for at least 28 s. The
+x/y differ (2038, 201 in the port), since it lands on the flaps a bit differently. When the entry speech ends,
+logic_drop_box opens the cover and the box drops. checks/box-cover.ctl covers both. The only other models in the game
+with bone followers that show up in a00-a11 are a00's dropper cover and bed_cover, and those don't change a00's run.
+a00 did lose 100 s at first, but not from a collider. The new timing put the walk into a wall with the box at a spot
+where the player jittered by a unit, and that kept resetting the autopilot's stuck counter. walk() now also gives up
+after 4 s without getting any closer to its waypoint. a00 is back at 178.6 s, a02 at 174.6.
+
+**9:35 AM EST, energy balls bounce off a cube's real faces.** The ball's sweep used the cube's axis-aligned box, so a
+cube could only send a ball straight back. a13's box-bounce catcher needs it sent sideways. Balls now sweep each cube
+in the cube's own frame. Holding the box turned 45 degrees in launcher3's path sends the ball off sideways, and it ends
+up in ball_trap_10. That a ball leaves a cube's face as a mirror bounce is my guess at what vphysics gives; I haven't
+measured it.
+
 ## 2026-11-23 to 24, oracle session (from about 11:45 PM EST)
 
 **Summary (written 8:50 AM EST).** I built an oracle out of the original Portal and measured the port against it all

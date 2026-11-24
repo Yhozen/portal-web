@@ -52,6 +52,12 @@ const fl = window.FLING || [-60, -150, 0], PC = [-58, -272];
   }
   lg('fling', 'max fall ' + (vmax|0) + ' landed ' + P() + ' ground ' + (game.pl.groundEnt ? game.pl.groundEnt.name || game.pl.groundEnt.cls : '-') + ' nofall ' + E('box_no_fall_off').enabled); }
 lg('pick cube', AP.pickUp(cube)); lg('held', !!G.held + ' cube ' + cube.pos.map(v => v|0));
+// Walking off the edge with the cube at eye height snags it on the platform lip, so turn north slowly with the view pitched
+// up (the cube rides above the lip) and jump off.
+{ const y0 = game.pl.ang[1], y1 = 90; let d = ((y1 - y0 + 540) % 360) - 180; const n = Math.ceil(Math.abs(d) / 8) || 1;
+  for (let k = 1; k <= n; k++) { game.pl.ang = [-40, y0 + d * k / n, 0]; idle(3); }
+  let i = 0; for (; i < 240; i++) { game.pl.ang = [-40, 90, 0]; game.step(1/66, IN(1, i < 20)); if (i > 20 && game.pl.onGround && game.pl.pos[2] < 20) break; }
+  idle(20); lg('hop off', P() + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v|0) + ' ' + io.log.filter(l => /snag|dropped/.test(l)).slice(-1)); }
 const C2 = G.cubes.filter(c => c.alive && c !== cube)[0]; lg('cube2', C2 && C2.pos.map(v => v|0));
 // Buttons b and c sit on top of pillars (b's pad at z 232, c's at 137). The ceiling over each takes a portal: blue there,
 // orange low on a wall, walk into orange with the cube, drop out of the ceiling onto the pillar and leave the cube on the pad.
@@ -63,7 +69,7 @@ const toPillar = (cb, btn, stand) => {
   lg(btn + ' pick', AP.pickUp(cb)); const O = G.gunPortals[1].pos;
   lg(btn + ' in', through([O[0], O[1] + 40, O[2]]) + ' held ' + !!G.held);
   for (let i = 0; i < 200 && !game.pl.onGround; i++) idle(1);
-  lg(btn + ' on pillar', P() + ' held ' + !!G.held); G.held && G.use(); AP.wait(1.5);
+  lg(btn + ' on pillar', P() + ' held ' + !!G.held); lg(btn + ' place', G.held ? AP.placeCube(G.held, top) : 'not held');
   lg(btn + ' door', E('floor_' + btn + '_door_rm7').state + ' cube ' + cb.pos.map(v => v|0)); };
 toPillar(cube, 'buttonb', [-35, 150, 0]);
 lg('off b', AP.reach([-35, 120, 0], 24));

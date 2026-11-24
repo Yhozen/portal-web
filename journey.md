@@ -161,6 +161,18 @@ about 0.6 s, and on its side by 0.7 s. The port leaned it on the wall at 45 degr
 Now the kicks put it past up 0.5 at 0.73 s (kick 1) and 0.65 s (kick 2). checks/turret-tip-time asserts it stands at 0.3
 and 0.6 s and is over at 1.0 s. a10, a11, a13 and a15 still clear (a11 86.5 s).
 
+**5:00 PM EST, turret damage is in, but only with ?damage=1.** I brought the 12:05 PM patch back on top of the new
+turret body. checks/turret-damage stands the player 200 units in front of the training turret: dead 1.80 s after the
+first hit (the original: 1.79 and 1.68 s), and shoved from x 214 to the wall at 144, 70 units (the original: 72). Then
+I mapped what the a11 turrets see, using the same sight test the turrets use, on a 24-unit grid. The route the script
+walks to the turret it carries is a long loop through the west and north rooms. Almost every step of it is covered:
+the north corridor along y 60 is in sight of the two turrets at (399, 336) and (240, 336) from end to end, and the turret
+room itself is covered by three. With damage on, the player dies 9 s after the kick. Avoiding turret sight leaves no
+route, and pricing it in makes the planner give up. The two floors I tried for a portal under a turret (the ones at
+(455, -383) and (800, -432)) take none. a11 needs a route planned by hand: knocking turrets over from behind and
+finding cover. That's more than this session has left, so damage stays behind ?damage=1 (game.damage, off by default),
+and the autopilot only avoids turret sight when it's on. a10, a11, a13 and a15 clear as before.
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

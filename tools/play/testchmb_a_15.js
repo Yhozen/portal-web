@@ -91,7 +91,7 @@ if (window.STAGE === 8) throw 'stage 8';
 // the trench opens onto the chimney between z 352 and about 590. Blue high on the west wall, orange on the deck floor
 // where you land coming out of blue at walking-in speed (~210 u/s east, ~290 out from the wall): step in slowly, drop out of blue, fall back into orange, and the second time out of blue you're going ~900 u/s
 // east, enough to cross the trench into the tank room
-AP.approach(window.DA ?? [-1900, 448], 4, 2); // from the west, so orange lies along x
+AP.approach(window.DA ?? [-1940, 448], 4, 2); // from the west, so orange lies along x. -1940, not -1900: the wall-fling tick takes 9 u/s off the first exit, and the shorter run-up came out of the second hop going up into the deck beam
 { let r = ''; for (const t of (window.AT ?? [[-2112, 448, 640], [-2112, 430, 640], [-2112, 466, 640]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue high west wall', P(), r); }
 { let r = ''; for (const t of (window.BF ?? [[-1810, 448, 0], [-1820, 448, 0], [-1830, 448, 0]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange deck floor', P(), r); }
 { const op = G.gunPortals[1].pos, n0 = G.stats.teleports, tr = [];

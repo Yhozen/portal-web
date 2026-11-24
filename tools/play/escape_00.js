@@ -39,7 +39,105 @@ AP.wait(20, () => ctop() > -400); AP.wait(20, () => ctop() < -538); lg('crusher 
   const tr2 = []; for (k = 0; k < 8 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [-80, 270, 0]; game.step(T, idle); if (k % 33 === 0) tr2.push((ctop() | 0) + '/' + (game.pl.pos[2] | 0) + '/' + cr.state); } lg('ride', tr2.join(' '));
   lg('rode into the mark', G.stats.teleports > n0, P(), game.pl.vel.map(v => v | 0)); lg('landed', fly(0.2, 4)); }
 if (window.STAGE === 2) throw 'stage 2';
-// drop off the north edge of the walkway onto the portalable lower floor (z -319), then floor-into-the
+const standAt = (x, y) => {
+  for (let k = 0; k < 6 * 66; k++) {
+    const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1], dist = Math.hypot(dx, dy);
+    if (dist < 2 && Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 8 && game.pl.onGround && k > 5) break;
+    game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+    game.step(T, { fwd: Math.min(0.8, dist / 12), side: 0, jump: false, duck: false });
+  }
+  game.pl.vel = [0, 0, 0]; AP.wait(0.2); lg('stood', game.pl.pos.map(v => +v.toFixed(1)));
+};
+const placeAt = (which, at) => {
+  const eye = game.pl.eye(); const d = at.map((v, i) => v - eye[i]), l = Math.hypot(...d) || 1, f = d.map(v => v / l);
+  lastFail = null; G.shootPortal(which, { eye, f }); AP.wait(0.1);
+  const Q = G.gunPortals[which];
+  return Q.open && !lastFail ? Q.pos.map(v => v | 0) + ' f ' + Q.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail;
+};
+// next ledge (the red arrow at 547, 128, 352): blue high on the east wall from the walkway's east end,
+// orange on the lower floor, hop onto the z -59 ledge at (700, 117) and drop in. The fall comes out at
+// ~562 u/s and lands on the z=320 south strip. Stand still on the ledge first: a running hop flies past
+// the floor portal and misses it.
+lg('to shoot blue', JSON.stringify(AP.gotoRetry([850, 80, -64], 10, 4, 1)).slice(0, 80), P());
+standAt(850, 80);
+lg('blue east wall high', P(), placeAt(0, window.SB ?? [890, 170, 400]));
+lg('to the rail', JSON.stringify(AP.gotoRetry([700, 80, -64], 8, 4, 1)).slice(0, 80), P());
+standAt(700, 80);
+{ for (let k = 0; k < 2 * 66; k++) { game.pl.ang = [10, 90, 0]; game.step(T, { fwd: 0.6, side: 0, jump: k < 8, duck: false }); if (game.pl.onGround && game.pl.pos[1] > 110 && k > 15) break; }
+  game.pl.vel = [0, 0, 0]; AP.wait(0.25); lg('on the ledge', P()); }
+lg('orange lower floor', P(), placeAt(1, window.SF ?? [700, 250, -319]));
+{ const n0 = G.stats.teleports;
+  for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [40, 90, 0]; game.step(T, { fwd: 1, side: 0, jump: k < 8, duck: false }); }
+  lg('strip fling out', G.stats.teleports > n0, P(), game.pl.vel.map(v => v | 0));
+  for (let k = 0; k < 5 * 66; k++) { game.pl.ang = [0, 180, 0]; game.step(T, { fwd: 0.2, side: -1, jump: false, duck: false }); if (game.pl.onGround && k > 6) break; }
+  lg('strip fling land', P(), game.pl.onGround);
+  for (let k = 0; k < 3 * 66; k++) { game.pl.ang = [0, 270, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); if (game.pl.pos[1] < 120 && game.pl.onGround && game.pl.pos[2] > 300) break; }
+  lg('south strip', P(), game.pl.onGround); }
+if (window.STAGE === 3) throw 'stage 3';
+// high-speed pistons: blue on the wall past them (x -127), orange on the y=0 wall you can walk into
+{
+  // the corridor mouth is south of the y=-24 wall; hugging that corner pins you at (255, -24)
+  const go = (x, y, max = 5) => {
+    for (let k = 0; k < max * 66; k++) {
+      const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1], dist = Math.hypot(dx, dy);
+      if (dist < 8 && game.pl.onGround) break;
+      game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+      game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+    }
+  };
+  go(280, 80); go(276, -54); go(150, -46);
+  lg('at the pistons', P());
+  lg('blue past them', placeAt(0, window.PB ?? [-127, -150, 384]));
+  lg('orange walk-into', placeAt(1, window.PO ?? [150, 0, 384]));
+  lg('past the pistons', walkInto(1, 5), P());
+  for (let k = 0; k < 2 * 66; k++) { game.step(T, { fwd: 0, side: 0, jump: false, duck: false }); if (game.pl.onGround && k > 8) break; }
+  lg('landed past', P(), game.pl.onGround);
+  go(-90, 31, 6);
+  lg('vertical pistons', P());
+}
+if (window.STAGE === 4) throw 'stage 4';
+const stepOffWall = (xMin = 100, max = 0.6) => {
+  // walk out along the exit portal's normal (west is wrong when the exit is on the west wall)
+  const b = G.gunPortals[0];
+  const yaw = b && b.open ? Math.atan2(b.f[1], b.f[0]) * 180 / Math.PI : 180;
+  for (let k = 0; k < max * 66; k++) {
+    game.pl.ang = [0, yaw, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+    if (k > 12 && game.pl.onGround && Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 30) break;
+  }
+};
+const thruWall = (blueAt, orangeAt, tag, opts = {}) => {
+  lg('blue ' + tag, placeAt(0, blueAt));
+  lg('orange ' + tag, placeAt(1, orangeAt));
+  lg('through ' + tag, walkInto(1, 5), P());
+  stepOffWall(opts.xMin ?? 50, opts.off ?? 1);
+  for (let k = 0; k < 2 * 66; k++) { game.step(T, { fwd: 0, side: 0, jump: false, duck: false }); if (game.pl.onGround && k > 8) break; }
+  lg('land ' + tag, P(), game.pl.onGround, game.pl.groundEnt && game.pl.groundEnt.name);
+};
+// from a piston (or the floor), put the walk-into on the east wall at this y / eye height and hop to blueAt
+const thruFromHere = (blueAt, tag) => {
+  const eye = game.pl.eye();
+  const orangeAt = [127, game.pl.pos[1], eye[2]];
+  lg('blue ' + tag, placeAt(0, blueAt));
+  lg('orange ' + tag, placeAt(1, orangeAt));
+  lg('through ' + tag, walkInto(1, 5), P());
+  stepOffWall(100, 0.6);
+  for (let k = 0; k < 3 * 66; k++) { game.step(T, { fwd: 0, side: 0, jump: false, duck: false }); if (game.pl.onGround && k > 8) break; }
+  lg('land ' + tag, P(), game.pl.onGround, game.pl.groundEnt && game.pl.groundEnt.name);
+};
+// the far north wall at y=767 is visible past the two vertical blockers; skip them
+thruWall(window.FW ?? [-155, 767, 384], window.FN ?? [-127, 47, 384], 'far wall');
+if (window.STAGE === 5) throw 'stage 5';
+// "over here": portal above a horizontal piston, walk into a nearby wall, land on crusher01, then up to crusher05
+thruWall(window.C1 ?? [127, 455, 633], window.C1O ?? [127, 735, 384], 'crusher01', { xMin: 100, off: 0.6 });
+if (window.STAGE === 6) throw 'stage 6';
+thruFromHere(window.C5 ?? [127, 582, 715], 'crusher05');
+if (window.STAGE === 7) throw 'stage 7';
+// next layer: west wall above crusher08 (top 826). The east-wall / south-wall hop at
+// the two highest pistons still wedges in the y=256 lip, so this is the reliable up.
+thruFromHere(window.C8 ?? [-255, 640, 900], 'crusher08');
+if (window.STAGE === 8) throw 'stage 8';
+if (window.PAD) { // drop off the north edge of the walkway onto the portalable lower floor (z -319), then floor-into-the
 // east wall (x 895, y 478) with a short north hop into the floor portal so the exit keeps +y; without
 // that hop the exit is 34 units south of the z=320 pad (a jump longer than 34 units clears the portal)
 lg('to the north rail', JSON.stringify(AP.gotoRetry([700, 80, -64], 10, 4, 1)).slice(0, 80), P());
@@ -92,7 +190,7 @@ if (game.pl.pos[2] < 200) {
 }
 for (let k = 0; k < 2 * 66; k++) { game.pl.ang = [0, 90, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); }
 lg('exit-sign pad', P(), game.pl.onGround);
-if (window.STAGE === 3) throw 'stage 3';
+}
 } catch (e) { lg('ERROR', String(e.stack || e).slice(0, 400)); }
 lg('end', P());
 return out.join('\n'); })()

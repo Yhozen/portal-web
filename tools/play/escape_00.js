@@ -137,6 +137,37 @@ if (window.STAGE === 7) throw 'stage 7';
 // the two highest pistons still wedges in the y=256 lip, so this is the reliable up.
 thruFromHere(window.C8 ?? [-255, 640, 900], 'crusher08');
 if (window.STAGE === 8) throw 'stage 8';
+// the two highest pistons (crusher15/17, bottoms 1096) sit flush with the south wall;
+// a portal in the gap between them (x=-136..8) exits at z=1088 onto crusher12 (top 1080).
+thruWall(window.C12 ?? [-64, 256, 1143], window.C12O ?? [-255, 620, 890], 'crusher12', { off: 0.35 });
+game.pl.vel = [0, 0, 0];
+if (window.STAGE === 9) throw 'stage 9';
+// past the y=768 fence: west wall of the z=1088 floor, walk into the same south-wall portal
+thruWall(window.CFF ?? [-192, 1100, 1144], window.CFFO ?? [-64, 256, 1143], 'far floor', { off: 0.3 });
+game.pl.vel = [0, 0, 0];
+if (window.STAGE === 10) throw 'stage 10';
+// drop off the north edge onto the z=832 corridor (fires trigger_once → crusher01_esc00 loops over the goo)
+{
+  const go = (x, y, max = 4) => {
+    for (let k = 0; k < max * 66; k++) {
+      const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1], dist = Math.hypot(dx, dy);
+      if (dist < 8 && game.pl.onGround) break;
+      game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+      game.step(T, { fwd: Math.min(1, dist / 20), side: 0, jump: false, duck: false });
+    }
+    game.pl.vel = [0, 0, 0];
+  };
+  go(-65, 1160, 4);
+  lg('north lip', P());
+  for (let k = 0; k < 8 * 66; k++) {
+    game.pl.ang = [0, 90, 0];
+    game.step(T, { fwd: k < 20 ? 0.4 : 0, side: 0, jump: false, duck: false });
+    if (game.pl.onGround && k > 40 && game.pl.pos[2] < 900) break;
+  }
+  game.pl.vel = [0, 0, 0];
+  lg('z832 corridor', P(), game.pl.onGround);
+}
+if (window.STAGE === 11) throw 'stage 11';
 if (window.PAD) { // drop off the north edge of the walkway onto the portalable lower floor (z -319), then floor-into-the
 // east wall (x 895, y 478) with a short north hop into the floor portal so the exit keeps +y; without
 // that hop the exit is 34 units south of the z=320 pad (a jump longer than 34 units clears the portal)

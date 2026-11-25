@@ -107,25 +107,37 @@ if (game.pl.pos[2] < -500) {
   }
 }
 if (window.STAGE === 4) throw 'stage 4';
-// from the tube bay, shoot through the chain-link fence onto the west-facing
-// wall of the turret room (x -1792, z -315) and walk through a floor portal.
+// intended route (Gamer Walkthroughs): from the tube bay, portal onto the
+// south wall next to the higher walkway (y 1696, z -200) and jump across to it.
+// face north when placing the floor portal — that sets its "up" so a center
+// entry comes out far enough east to land on the z -256 walkway and run to
+// about -1744, 1743, -256. The turret-room rust floor is below this, past
+// the fence; the metal stairs down there are broken and don't reach the walkway.
 if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
   standAt(-2232, 1964, 4);
-  // move blue off the ceiling first: a floor portal directly under the still-open
-  // ceiling portal is a loop, and waiting even 0.1 s on it reports no fit
-  lg('turret wall', placeAt(0, [-1792, 1742, -315]));
+  lg('walkway wall', placeAt(0, [-2208, 1696, -200]));
+  game.pl.ang = [0, 90, 0];
   lastFail = null;
-  // the floor plate under the landing is too tight for a 64x108 portal (no fit);
-  // 48 units west is on a surface that takes one (live pose, after the 48 s play).
   const eye2 = game.pl.eye();
   G.shootPortal(1, { eye: [eye2[0] - 48, eye2[1], eye2[2]], f: [0, 0, -1] });
   const o2 = G.gunPortals[1], b2 = G.gunPortals[0];
   const floorOk = o2 && o2.open && !lastFail && o2.pos[0] < -2100 && o2.pos[2] < -480;
-  lg('tube bay', P(), 'floor ' + (floorOk ? o2.pos.map(v => v | 0) + ' f ' + o2.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail));
+  lg('tube floor', P(), 'floor ' + (floorOk ? o2.pos.map(v => v | 0) + ' f ' + o2.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail));
   if (floorOk && b2 && b2.open) {
     game.pl.pos = [o2.pos[0], o2.pos[1], o2.pos[2] + 12];
     game.pl.vel = [0, 0, -20];
-    lg('into turret room', fly(0.5, 6), 'blue ' + b2.pos.map(v => v | 0));
+    game.pl.ang = [0, 0, 0];
+    let top = -1e9;
+    for (let k = 0; k < 4 * 66; k++) {
+      game.step(T, { fwd: 1, side: 0, jump: k === 6 || k === 22, duck: false });
+      top = Math.max(top, game.pl.pos[2]);
+      const onWalk = game.pl.onGround && game.pl.pos[2] > -280 && game.pl.pos[2] < -180 && game.pl.pos[0] > -2188;
+      const slow = Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 16;
+      if (k > 30 && onWalk && slow) break;
+    }
+    lg('onto walkway', P(), 'top ' + (top | 0), 'blue ' + b2.pos.map(v => v | 0));
+    // walk west toward the red arrow on the south wall (overlay 94 at -1888, 1696, -209)
+    if (game.pl.pos[2] > -280 && game.pl.pos[2] < -180) standAt(-1888, 1743, 6);
   }
 }
 if (window.STAGE === 5) throw 'stage 5';

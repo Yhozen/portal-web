@@ -6,7 +6,7 @@ import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach, attachFrame, turretFace, aimAttachment, TURRET, ROCKET_TURRET, PLAYER_HP, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
-import { Tracer, MASK_SHOT_PORTAL, MASK_BLOCKLOS, type Collider } from './trace.ts';
+import { Tracer, MASK_SHOT_PORTAL, MASK_BLOCKLOS, type Collider, type Hole, type Trace } from './trace.ts';
 import { Player, HULL } from './player.ts';
 import { Renderer, throughPortal, type Portal, type Instance, type PropInst } from './render.ts';
 import type { ModelCache } from './models.ts';
@@ -15,6 +15,7 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
+const HOLE_DEPTH = 128; // how far behind its plane a portal's hole goes (a hull falling into a floor portal is 72 deep before its eye crosses)
 
 interface Cube extends Body { /** .phy mass (kg), when read: turrets */ mass?: number; /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; /** set in teleportPlayer so updateCube does not straight-line re-teleport the same tick */ justPortaled?: boolean; }
 
@@ -45,7 +46,8 @@ export class Game {
     this.gunPortals = [mk(BLUE, 'gun_blue'), mk(ORANGE, 'gun_orange')];
     this.gunPortals[0].linked = this.gunPortals[1]; this.gunPortals[1].linked = this.gunPortals[0];
     this.portals.push(...this.gunPortals); r.portals = this.portals;
-    this.player.ignoreFn = () => { this.tr.ignore = this.tunnelFor(this.player.pos, HULL.mins, this.player.maxs()); };
+    this.player.holesFn = () => this.portalHoles();
+    this.player.slipFn = t => this.slipping(t);
     this.setupHandlers();
     r.instances.push({ model: 0, matrix: m4(), visible: true });
     for (const kv of bsp.entities) this.spawn(kv);
@@ -396,6 +398,51 @@ export class Game {
     }
     this.portalBrushes.set(p, s); return s;
   }
+  /** The holes of the open, linked portals, for a mover's traces (Hole in trace.ts). The wall behind a portal stays solid
+   *  around the hole, so a hull that only partly fits meets the rim and slides along it, and one inside the hole is held
+   *  by its sides. (The hole used to be all or nothing: the wall vanished while the hull fitted and came back whole when
+   *  it didn't, which left a player who drifted sideways on the way through wedged inside the wall.)
+   *  The hole is the portal's 64 x 108 plus 2 all round, from the portal's plane to HOLE_DEPTH behind it. A wall portal
+   *  whose lower rim is above the floor is entered by stepping onto the rim like a stair (the old test let the feet hang
+   *  20 units under it instead, and a player standing that low in one portal came out 18 units inside the floor at a lower
+   *  one). What a brush has in front of the plane stays solid: a00's portal_blue_2 stands edge-on to a thin wall, and the
+   *  hole would otherwise run the length of that wall. */
+  portalHoles(): Hole[] | null {
+    let out: Hole[] | null = null;
+    for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open) continue;
+      const s: any = this.brushesBehind(p);
+      if (!s.hole) { const hw = PW + 2, hu = PH + 2, hd = PH + 2, col = (p as any).onCol || null;
+        const rim = (c: V3, r: V3, u: V3) => [{ n: r, d: dot(c, r) - hw }, { n: scale(r, -1), d: -(dot(c, r) + hw) }, { n: u, d: dot(c, u) - hd }, { n: scale(u, -1), d: -(dot(c, u) + hu) }];
+        const own = col ? this.modelBrushes(col.headnode) : null, lp = col ? this.colLocal(col, p.pos) : p.pos, lf = col ? this.colLocalDir(col, p.f) : p.f, more = new Map<number, { n: V3; d: number }[]>();
+        for (const bi of s as Set<number>) { const br = this.bsp.brushes[bi], pos = own?.has(bi) ? lp : p.pos, f = own?.has(bi) ? lf : p.f, c = dot(pos, f), mn = [-1e9, -1e9, -1e9], mx = [1e9, 1e9, 1e9]; let face = false;
+          for (let i = 0; i < br.numSides; i++) { const pl = this.bsp.planes[this.bsp.brushSides[br.firstSide + i].plane]; if (dot(pl.n, f) > 0.999 && Math.abs(pl.d - c) < 1) face = true; // the face the portal is on
+            for (let k = 0; k < 3; k++) if (pl.n[k] > 0.999) mx[k] = Math.min(mx[k], pl.d); else if (pl.n[k] < -0.999) mn[k] = Math.max(mn[k], -pl.d); }
+          let sup = 0, inf = 0; for (let k = 0; k < 3; k++) { sup += f[k] * (f[k] > 0 ? mx[k] : mn[k]); inf += f[k] * (f[k] > 0 ? mn[k] : mx[k]); }
+          const ps: { n: V3; d: number }[] = []; if (!face && sup > c + 1) ps.push({ n: scale(f, -1), d: -c }); if (inf < c - HOLE_DEPTH - 1) ps.push({ n: f, d: c - HOLE_DEPTH }); if (ps.length) more.set(bi, ps); }
+        s.hole = { brushes: s, rim: rim(p.pos, p.r, p.u), col, colRim: col ? rim(lp, this.colLocalDir(col, p.r), this.colLocalDir(col, p.u)) : undefined, more } as Hole; }
+      (out ??= []).push(s.hole); }
+    return out;
+  }
+  /** Is the ground under the player (t, the categorize trace) the bottom of a wall portal's hole that they are on their
+   *  way out of? Then it isn't ground: no landing, no friction, until the hull is clear of the wall. Coming out of a
+   *  portal whose lower rim is above the floor leaves the feet on that rim, and landing there took the speed the player
+   *  came through with (a fling out of escape_00's high wall portal lost its climb and fell short; walking out of a15's
+   *  high one, the player stopped in the mouth). The old all-or-nothing hole had no rim, so the player flew out. They
+   *  still collide with the rim, and one standing in a portal, or stepping up into one, stands on it as before. */
+  slipping(t: Trace): boolean {
+    if (t.hit < 0) return false; const pl = this.player, hz = pl.maxs()[2] / 2, c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + hz];
+    for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open || Math.abs(p.f[2]) > 0.7 || dot(pl.vel, p.f) <= 1) continue;
+      const d = sub(c, p.pos), df = dot(d, p.f);
+      if (!(df < Math.abs(p.f[0]) * 16 + Math.abs(p.f[1]) * 16 && df > -64 && Math.abs(dot(d, p.r)) <= PW + 2 && this.brushesBehind(p).has(t.hit))) continue;
+      // only with nothing to stand on in front of the wall: a portal low on a wall reaches into the floor brush that runs
+      // under it, and the floor in front of it is that brush too (a08's player lost their footing walking away from one)
+      let floor = false;
+      for (const [cx, cy] of [[-16, -16], [16, -16], [-16, 16], [16, 16]]) { const q: V3 = [pl.pos[0] + cx, pl.pos[1] + cy, pl.pos[2] + 1];
+        if (dot(sub(q, p.pos), p.f) <= 0.5) continue; const g = this.tr.trace(q, [q[0], q[1], q[2] - 3], [0, 0, 0], [0, 0, 0], 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000, pl);
+        if (g.fraction < 1 || g.startsolid) { floor = true; break; } }
+      if (!floor) return true; }
+    return false;
+  }
   /** if a box at pos fits inside an open, linked portal hole and is near/behind it, return the brushes to ignore */
   tunnelFor(pos: V3, mins: V3, maxs: V3): Set<number> | null {
     let out: Set<number> | null = null;
@@ -415,13 +462,17 @@ export class Game {
     return out;
   }
   /** has a point moved from in front of portal p to behind it, inside the hole? */
-  crossed(p: Portal, a: V3, b: V3) {
+  crossed(p: Portal, a: V3, b: V3, hole = false) {
     const da = dot(sub(a, p.pos), p.f), db = dot(sub(b, p.pos), p.f);
     if (!(da >= 0 && db < 0)) return false;
     const t = da / (da - db); const x = add(a, scale(sub(b, a), t)); const d = sub(x, p.pos);
+    // hole: the player's test. Their hull is held inside the carved hole (portalHoles), so a crossing anywhere in it counts;
+    // the ellipse missed a jump through the top of a portal and left the player walking on behind the plane
+    if (hole) { const lr = dot(d, p.r), lu = dot(d, p.u); return Math.abs(lr) <= PW + 2 && Math.abs(lu) <= PH + 2; }
     const lr = dot(d, p.r) / PW, lu = dot(d, p.u) / PH; return lr * lr + lu * lu <= 1.05;
   }
   lastExit: { p: Portal; t: number } | null = null;
+  inHole: { pos: V3; f: V3 } | null = null;
   teleportPlayer(a: Portal, b: Portal, centre = false, feetBefore = this.player.pos[2]) {
     this.lastExit = { p: b, t: this.io.time };
     const M = throughPortal(a, b); const pl = this.player; const mid = centre ? pl.maxs()[2] / 2 : pl.viewOffset;
@@ -438,6 +489,18 @@ export class Game {
     pl.pos = [nc[0], nc[1], nc[2] - mid];
     // floor/ceiling exits: put the whole hull in front of the exit plane (a ceiling exit drops the player out below it)
     if (b.f[2] < -0.7) pl.pos[2] = Math.min(pl.pos[2], b.pos[2] - pl.maxs()[2] - 1); else if (b.f[2] > 0.7) pl.pos[2] = Math.max(pl.pos[2], b.pos[2] + 1);
+    // a wall exit leaves the hull half inside the wall, so it has to be inside the hole (portalHoles). Between two walls it
+    // already is, by the same amount it was in the entry. Out of a floor or ceiling portal it may not be: the entry's long
+    // axis becomes the height, and a fast landing counts up to 8 units over the rim. Move it the least that fits
+    // (with the hull the player will have: one that comes out of a floor or ceiling portal is ducked below, and fitting
+    // the standing hull instead pulled a14's fling out of its high wall portal 24 units down, short of the ledge)
+    const willDuck = !pl.noclip && (Math.abs(a.f[2]) > 0.7 || Math.abs(b.f[2]) > 0.7), hullMax = willDuck ? HULL.duckMaxs : pl.maxs();
+    if (Math.abs(b.f[2]) < 0.7) { const mx = hullMax, ext: V3 = [16, 16, mx[2] / 2], d = sub([pl.pos[0], pl.pos[1], pl.pos[2] + ext[2]], b.pos);
+      // across, inside the portal's own width: the hole is carved 2 wider, but a brush that starts at the portal's side
+      // edge isn't carved at all (a00's blue_3 stands against one), and a hull let out to the hole's rim there was pushed
+      // 16 units out of the wall
+      for (const [ax, half] of [[b.r, PW], [b.u, PH + 2]] as [V3, number][]) { const room = half - (Math.abs(ax[0]) * ext[0] + Math.abs(ax[1]) * ext[1] + Math.abs(ax[2]) * ext[2]) - 0.03125, l = dot(d, ax);
+        if (room >= 0 && Math.abs(l) > room) pl.pos = ma(pl.pos, Math.sign(l) * room - l, ax); } }
     // floor to floor: the hull comes out upright and whole in front of the exit, which lifts the feet by the depth they
     // had gone into the entry plus the clamp above. The original keeps the energy instead: dropped from h onto a floor
     // portal, the player comes back up to within 8 units of h (measured, checks/reference/fling.json), where this port
@@ -448,13 +511,19 @@ export class Game {
     const out = dot(pl.vel, b.f); if (out < 60) pl.vel = ma(pl.vel, 60 - out, b.f);
     pl.onGround = false; this.stats.teleports++;
     // un-stick: the exit hole may sit lower/higher than the hull (e.g. feet below the floor); nudge up/out until free
-    this.tr.ignore = this.tunnelFor(pl.pos, HULL.mins, pl.maxs());
-    const free = (q: V3) => !this.tr.trace(q, q, HULL.mins, pl.maxs(), 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000 | 0x2000000, pl).startsolid;
+    this.tr.ignore = null; this.tr.holes = this.portalHoles();
+    const free = (q: V3) => !this.tr.trace(q, q, HULL.mins, hullMax, 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000 | 0x2000000, pl).startsolid;
     if (!free(pl.pos)) { let done = false;
-      for (let k = 1; k <= 40 && !done; k++) for (const d of [[0, 0, 1], b.f, [0, 0, -1]] as V3[]) { const q = ma(pl.pos, k, d); if (free(q)) { pl.pos = q; done = true; break; } } }
+      for (let k = 1; k <= 40 && !done; k++) for (const d of [[0, 0, 1], b.f, [0, 0, -1]] as V3[]) { const q = ma(pl.pos, k, d); if (free(q)) { pl.pos = q; done = true; break; } }
+      // still inside something: along the wall, either way (portal_blue_2 again: the wall it stands against is in the way)
+      for (let k = 1; k <= 40 && !done; k++) for (const d of [b.r, scale(b.r, -1)] as V3[]) { const q = ma(pl.pos, k, d); if (free(q)) { pl.pos = q; done = true; break; } } }
+    this.tr.holes = null;
     // duck after the standing mid-point exit (so the hull/eye used above stay standing). Wall exits stay ducked until
     // we land; floor/ceiling exits un-duck at 0.35 s (oracle wallfling-drop-* and fling-drop-* traces).
-    if (!this.player.noclip) this.player.forcePortalDuck(Math.abs(b.f[2]) < 0.7);
+    // Only when a floor or ceiling portal is involved, which is what those traces measured: the hull turns over there.
+    // Between two wall portals the player stays upright, so nothing ducks and the eye passes straight through (the
+    // duck dropped it 36 units at every wall-to-wall teleport).
+    if (willDuck) this.player.forcePortalDuck(Math.abs(b.f[2]) < 0.7);
     // a held cube comes along (Source keeps held objects attached through portals): re-place it in front of the new
     // view *after* the duck, so it isn't left 36 units above the ducked eye and snagged on the next UpdateObject.
     const hc = this.held; if (hc && hc.viaPortal === a) hc.viaPortal = null; else if (hc) { hc.viaPortal = null; const e2 = pl.eye(); const f2 = angleVectors(pl.ang).f; const ext: V3 = [hc.ext, hc.ext, hc.ext];
@@ -1251,6 +1320,12 @@ export class Game {
     const pushedC: V3 = this.player.eye(), prevC: V3 = len(sub(pushedC, eyeAtStart)) < 64 ? eyeAtStart : pushedC; const prevPos: V3 = [...this.player.pos] as V3; const prevVel: V3 = [...this.player.vel] as V3; const wasGround = this.player.onGround;
     if (this.dead) { input = { fwd: 0, side: 0, jump: false, duck: false }; this.player.viewOffset = Math.max(14, this.player.viewOffset - 170 * dt); } // the original's eye drops to 14 in about 0.3 s
     else if (this.health < 100 && this.io.time - this.lastHurt > PLAYER_HP.regenWait) this.health = Math.min(100, this.health + PLAYER_HP.regenPerSec * dt);
+    // A portal that closes, moves or loses its partner takes its hole with it, and a player standing in the hole was left
+    // inside the wall for good (a00's blue portal moves on a timer). Push them out of the front of where it was.
+    if (this.inHole && !this.player.noclip) { const pl = this.player, h = this.inHole;
+      if (pl.trace(pl.pos, pl.pos).startsolid) { const hz = pl.maxs()[2] / 2, c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + hz];
+        const out = Math.abs(h.f[0]) * 16 + Math.abs(h.f[1]) * 16 + Math.abs(h.f[2]) * hz - dot(sub(c, h.pos), h.f) + 0.5, q = ma(pl.pos, out, h.f);
+        if (out > 0 && !pl.trace(q, q).startsolid) { pl.pos = q; const into = dot(pl.vel, h.f); if (into < 0) pl.vel = ma(pl.vel, -into, h.f); this.io.log.push(`${this.io.time.toFixed(2)} player pushed out of a closed portal`); } } }
     this.player.move(input, dt);
     // a wall portal's hole is carved out of the wall only while the hull fits inside it (tunnelFor), so a move that takes
     // the hull past the hole's rim while it's still partly in the wall ends up inside solid (seen coming out of a14's door
@@ -1261,10 +1336,10 @@ export class Game {
         for (let i = 0; i < 2 && !fixed; i++) if (!stuck(tries[i])) { pl.pos = tries[i]; if (i === 0) pl.vel[2] = 0; else pl.vel[0] = pl.vel[1] = 0; fixed = true; }
         if (!fixed) pl.pos = prevPos; } }
     const nowC: V3 = this.player.eye();
-    let tp = false; for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC)) { this.teleportPlayer(p, p.linked); tp = true; break; }
+    let tp = false; for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prevC, nowC, true)) { this.teleportPlayer(p, p.linked); tp = true; break; }
     // floor portals: a shallow hole under the portal can stop the player before the eye crosses, so the hull centre counts there too
     if (!tp) { const hc = this.player.maxs()[2] / 2, pa: V3 = [prevPos[0], prevPos[1], prevPos[2] + hc], pb: V3 = [this.player.pos[0], this.player.pos[1], this.player.pos[2] + hc];
-      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb)) { this.teleportPlayer(p, p.linked, true); tp = true; break; } }
+      for (const p of this.portals) if (p.open && p.linked && p.linked.open && p.f[2] > 0.7 && this.crossed(p, pa, pb, true)) { this.teleportPlayer(p, p.linked, true); tp = true; break; } }
     // landing fast on a floor portal: the floor behind the hole stops the hull before its centre crosses, which used to
     // zero the fall and let the player sink through slowly (a fling came out at 213 u/s after falling at 904). Falling
     // into the hole counts as going through, with the speed from before the landing.
@@ -1274,6 +1349,10 @@ export class Game {
         const d = sub(pl.pos, p.pos); if (Math.abs(dot(d, p.r)) > 32 - 8 || Math.abs(dot(d, p.u)) > 56 - 8) continue;
         const feet = pl.pos[2]; pl.vel = prevVel; pl.pos = [pl.pos[0], pl.pos[1], p.pos[2] - mid - 1]; this.teleportPlayer(p, p.linked, true, feet); break; } }
     this.tr.ignore = null;
+    // the portal whose plane the hull straddles, if any, for the push above
+    this.inHole = null; { const pl = this.player, hz = pl.maxs()[2] / 2, c: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + hz];
+      for (const p of this.portals) { if (!p.open || !p.linked || !p.linked.open) continue; const d = sub(c, p.pos), df = dot(d, p.f);
+        if (df < Math.abs(p.f[0]) * 16 + Math.abs(p.f[1]) * 16 + Math.abs(p.f[2]) * hz && df > -64 && Math.abs(dot(d, p.r)) <= PW + 2 && Math.abs(dot(d, p.u)) <= PH + 2 + hz) { this.inHole = { pos: [...p.pos] as V3, f: [...p.f] as V3 }; break; } } }
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
     this.updateBalls(dt); this.updateRocketTurrets(dt); this.updateRockets(dt);

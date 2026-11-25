@@ -3,7 +3,7 @@
 // and its default cvars (sv_gravity 600, sv_accelerate 10, sv_airaccelerate 10, sv_friction 4, sv_stopspeed 100).
 // Numbers marked "measured" come from the original game through tools/oracle-ctl.mjs and tools/parity.mjs
 // (checks/reference/movement.json); the SDK alone doesn't have Portal's player code.
-import { Tracer, MASK_PLAYERSOLID, type Trace } from './trace.ts';
+import { Tracer, MASK_PLAYERSOLID, type Trace, type Hole } from './trace.ts';
 import { type V3, dot, angleVectors } from './math.ts';
 
 export const HULL = { mins: [-16, -16, 0] as V3, maxs: [16, 16, 72] as V3, duckMaxs: [16, 16, 36] as V3, view: 64, duckView: 28 };
@@ -21,7 +21,7 @@ const duckEye = (f: number) => HULL.duckView * f + HULL.view * (1 - f);
 export interface Input { fwd: number; side: number; jump: boolean; duck: boolean; }
 export class Player {
   pos: V3 = [0, 0, 0]; vel: V3 = [0, 0, 0]; ang: V3 = [0, 0, 0]; onGround = false; ducked = false; groundEnt: any = null; viewOffset = HULL.view;
-  noclip = false; baseVel: V3 = [0, 0, 0]; pushed = false; jumpHeld = false; ducking = false; duckHeld = false; duckTime = 0; tr: Tracer; ignoreFn: (() => void) | null = null; landed = 0;
+  noclip = false; baseVel: V3 = [0, 0, 0]; pushed = false; jumpHeld = false; ducking = false; duckHeld = false; duckTime = 0; tr: Tracer; holesFn: (() => Hole[] | null) | null = null; slipFn: ((t: Trace) => boolean) | null = null; landed = 0;
   // duckRaised: finishDuck in the air lifted the feet so the eye stayed put. Portal teleports duck the other way
   // (origin stays, eye drops to duckView) and must unduck that way too, or the feet would drop 36 on the way out.
   duckRaised = false;
@@ -31,7 +31,8 @@ export class Player {
   portalDuck = false; portalUnduckIn = 0;
   constructor(tr: Tracer) { this.tr = tr; }
   maxs(): V3 { return this.ducked ? HULL.duckMaxs : HULL.maxs; }
-  trace(a: V3, b: V3, maxs = this.maxs()): Trace { this.ignoreFn?.(); return this.tr.trace(a, b, HULL.mins, maxs, MASK_PLAYERSOLID, this); }
+  /** the hull's sweep: portal holes are carved for it and for nothing after it (rays must still stop at a portal's wall) */
+  trace(a: V3, b: V3, maxs = this.maxs()): Trace { const t = this.tr; t.ignore = null; t.holes = this.holesFn?.() ?? null; const r = t.trace(a, b, HULL.mins, maxs, MASK_PLAYERSOLID, this); t.holes = null; return r; }
   eye(): V3 { return [this.pos[0], this.pos[1], this.pos[2] + this.viewOffset]; }
   // Like gamemovement's CheckStuck: if we start inside something (e.g. a teleport destination exactly on the floor), nudge out.
   unstick() { if (!this.trace(this.pos, this.pos).startsolid) return;
@@ -131,7 +132,7 @@ export class Player {
     const down: V3 = [this.pos[0], this.pos[1], this.pos[2] - 2];
     const t = this.trace(this.pos, down);
     const was = this.onGround;
-    this.onGround = t.fraction < 1 && t.normal[2] >= 0.7 && !t.allsolid; this.groundEnt = this.onGround ? t.ent : null;
+    this.onGround = t.fraction < 1 && t.normal[2] >= 0.7 && !t.allsolid && !this.slipFn?.(t); this.groundEnt = this.onGround ? t.ent : null;
     if (this.onGround && !t.startsolid) { this.pos = t.end; if (!was) { this.landed = performance.now(); this.duckRaised = false; } }
   }
   private friction(dt: number) {

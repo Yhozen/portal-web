@@ -4,7 +4,10 @@
 window.AP = (() => {
   const LOG = [];
   const W = window.game, G = W.game, pl = W.pl, TICK = 1 / 66, S = 24;
-  const tr = (a, b) => pl.trace(a, b);
+  // The planner treats a portal's wall as solid and the pair as an edge (neighbors, below). The hull's own traces carve the
+  // portal's hole (Game.portalHoles), which the planner would read as a way straight through a thin wall, where a real walk
+  // is teleported. So plan without the holes, except from inside one, as it was when the hole only opened around the player.
+  const tr = (a, b) => { const h = pl.holesFn; if (!G.tunnelFor(pl.pos, [-16, -16, 0], pl.maxs())) pl.holesFn = null; const r = pl.trace(a, b); pl.holesFn = h; return r; };
   const hurt = () => G.io.ents.filter(e => (e.cls === 'trigger_hurt' || (G.held && e.cls === 'trigger_portal_cleanser')) && e.bmins && e.enabled !== false && !e.killed); // carrying a cube: a cleanser would fizzle it
   const inHurt = (p, hs) => hs.some(e => p[0] > e.bmins[0] - 16 && p[0] < e.bmaxs[0] + 16 && p[1] > e.bmins[1] - 16 && p[1] < e.bmaxs[1] + 16 && p[2] > e.bmins[2] - 72 && p[2] < e.bmaxs[2]);
   const key = p => `${Math.round(p[0] / 12)},${Math.round(p[1] / 12)},${Math.round(p[2] / 16)}`;

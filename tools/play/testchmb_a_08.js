@@ -20,7 +20,9 @@ lg('onto roof', through([-600, 25, 190]) + ' roof cube ' + cubeA.pos.map(v => v|
 // grating, so it can be walked into), cube in hand, out of orange in the start room.
 { let r = 'none'; for (const x of [-470, -420, -520, -380]) { r = shoot(0, [x, 255, 285]); const B = G.gunPortals[0]; if (B.open && B.pos[1] > 250 && B.pos[2] - 56 < 258) break; } lg('blue low behind roof', r); }
 lg('pick roof cube', AP.pickUp(cubeA)); lg('held', !!G.held);
-{ const B = G.gunPortals[0].pos; lg('off roof', through([B[0], B[1] + 40, B[2]]) + ' held ' + !!G.held); }
+// line up in front of it first: walked in at a slant from across the roof, the held cube meets the wall beside the hole
+// and holds the player off it (the old all-or-nothing hole let the cube through as well)
+{ const B = G.gunPortals[0].pos; AP.approach([B[0], B[1] - 70], 6, 3); lg('off roof', through([B[0], B[1] + 40, B[2]]) + ' held ' + !!G.held); }
 lg('roof cube on a', AP.placeCube(G.held || cubeA, C(E('floor_buttona_trigger_box_lvl7')))); AP.wait(1.5);
 lg('door a', E('floor_buttona_door_rm7').state + ' cube ' + cubeA.pos.map(v => v|0));
 // the cube sits where the player stood before, so step back to the button's west side and aim at the main-room ceiling

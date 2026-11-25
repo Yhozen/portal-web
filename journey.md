@@ -252,6 +252,26 @@ modelled the duck. Changing the hull on exit would touch every fling, including 
 would put the camera in a standing hull. Left recorded, not asserted, in checks/reference/fling-wall.json.
 
 
+**7:45–8:20 PM EST, escape_00 reaches the changelevel.** After the cube tubes, the route is a standing
+run-jump from the lower-tube lip into an east-wall portal — placed first at the y=1224 crossing, because
+the wall is not in view from y=1570 — with the exit on the west wall above crusher01_esc00. Landing when
+the piston is west (closed) and riding the opening stroke puts us on the z=768 floor. The pit railings
+around the changelevel are a 41-unit world brush (top z=809), higher than a jump, so they are not hopped:
+from the walkway a downward ceiling portal at (576, 2176, 1088) and the same west-wall exit, ridden west
+on the close, drop through `changelevel_escape_00_01` into escape_01. The full playthrough is 198.4 s,
+`changedTo "escape_01"` at [565, 2184, 701]. Script: tools/play/escape_00.js (96bf94d). The wall-exit
+forced-duck experiment was left on the shelf.
+
+**8:20–8:50 PM EST, wrap-up.** Engine code had changed earlier (cube-tube `.phy` collision in 613f90d),
+so checks and allplay were re-run. `tools/run-checks.sh` on `/tmp/pctl3.sock`: passed 39, failed 0,
+including parity-fling-wall 15/15, parity-fling 12/12, and parity-movement 22/22. `tools/play/seq.sh`
+for a00–a11, a13–a15, and escape_00: every script exit 0, page_errors 0. escape_00 198.4 s → escape_01.
+a07 still ends at 131.4 s with `changedTo` unset (the script finishes on testchmb_a_07; pre-existing).
+A recorded replay of the tube-to-changelevel tail drifted into the goo (input rounding), so the reel
+uses the cube-tube climb from that capture plus the earlier piston-route reel; the live allplay run is
+the source of the 198.4 s time. Reel: `/workspace/portal-web-shots/oracle/session2/session2-reel.mp4`.
+
+
 **12:25 PM EST, buttons refire while something sits on them.** Chasing a00 under the 81 hold turned up a real bug. The
 cube touched the box button, slid off 0.06 s later (so the door closed) and then settled back on it. The trigger saw the
 new touch, but its wait of 1 s hadn't run out, so OnTrigger never fired and the door stayed shut with a box sitting on

@@ -130,6 +130,40 @@ for (let k = 0; k < 5 * 66; k++) {
 }
 settle();
 lg('huge room', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 5) throw 'stage 5';
+// The west ledge of the huge room ends around y 910. Stay at x 5000 so
+// the 45-degree ramp at x 5122 doesn't dump you into the z -1408 channel.
+// A floor portal at 5000, 600, -1280, entered from the west wall, lands
+// on the south platform by the turret alcoves and flippy_turret_door_13.
+// The shot has to be taken from x ~5000; from x 4898 it clips noportal
+// metal at 5071, 596, -935.
+runHold(270, 0, 5000, 1, v => v <= 910, 10);
+standAt(5000, 910, 5);
+lg('south ledge', P());
+lg('alcove floor portal', placeAt(0, [5000, 600, -1280]));
+lg('ledge wall', placeAt(1, [4864, game.pl.pos[1], -1216]));
+const Qs = G.gunPortals[0];
+if (!(Qs.open && Qs.pos[2] < -1260 && Math.abs(Qs.f[2]) > 0.8 && Qs.pos[1] < 800)) {
+  lg('done early, no south floor', P()); throw 'no south floor';
+}
+for (let k = 0; k < 5 * 66; k++) {
+  game.pl.ang = [0, 180, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[1] < 800 || game.pl.pos[2] > -1260) break;
+  if (game.pl.pos[2] < -1350) break;
+}
+// overwrite the floor portal so we cannot fall back through, then walk
+// west-south off the exit.
+placeAt(0, [4864, 640, -1216]);
+for (let k = 0; k < 3 * 66; k++) {
+  if (game.pl.onGround && game.pl.pos[0] <= 4940 && Math.hypot(game.pl.vel[0], game.pl.vel[1], game.pl.vel[2]) < 12 && k > 12) break;
+  if (game.pl.pos[2] < -1350) break;
+  if (game.pl.pos[1] > 850) break;
+  game.pl.ang = [0, 200, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+}
+settle();
+lg('alcove floor', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

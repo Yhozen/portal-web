@@ -16,7 +16,7 @@ import { type V3, angleVectors, dot, cross, norm, sub, add, scale, ma, entityMat
 const BLUE: V3 = [0.25, 0.6, 1.0], ORANGE: V3 = [1.0, 0.55, 0.1];
 const PW = 32, PH = 54; // Portal 1 portal half-extents
 
-interface Cube extends Body { /** .phy mass (kg), when read: turrets */ mass?: number; /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; }
+interface Cube extends Body { /** .phy mass (kg), when read: turrets */ mass?: number; /** model origin relative to the body centre, in body axes (turrets stand on their origin) */ off?: V3; turret?: Turret; ent: Ent; held: boolean; Rrel?: Float32Array; prop: PropInst; ext: number; onGround: boolean; spawn: V3; alive: boolean; tunnel: Set<number> | null; viaPortal?: Portal | null; /** set in teleportPlayer so updateCube does not straight-line re-teleport the same tick */ justPortaled?: boolean; }
 
 interface Turret { state: TurretState; next: number; shot: number; lastSight: number; thrash: number; eyes: number; shots: number; seen: boolean; }
 
@@ -452,14 +452,15 @@ export class Game {
     const free = (q: V3) => !this.tr.trace(q, q, HULL.mins, pl.maxs(), 0x1 | 0x2 | 0x8 | 0x4000 | 0x10000 | 0x2000000, pl).startsolid;
     if (!free(pl.pos)) { let done = false;
       for (let k = 1; k <= 40 && !done; k++) for (const d of [[0, 0, 1], b.f, [0, 0, -1]] as V3[]) { const q = ma(pl.pos, k, d); if (free(q)) { pl.pos = q; done = true; break; } } }
-    // a held cube comes along (Source keeps held objects attached through portals): re-place it in front of the new view
+    // duck after the standing mid-point exit (so the hull/eye used above stay standing). Wall exits stay ducked until
+    // we land; floor/ceiling exits un-duck at 0.35 s (oracle wallfling-drop-* and fling-drop-* traces).
+    if (!this.player.noclip) this.player.forcePortalDuck(Math.abs(b.f[2]) < 0.7);
+    // a held cube comes along (Source keeps held objects attached through portals): re-place it in front of the new
+    // view *after* the duck, so it isn't left 36 units above the ducked eye and snagged on the next UpdateObject.
     const hc = this.held; if (hc && hc.viaPortal === a) hc.viaPortal = null; else if (hc) { hc.viaPortal = null; const e2 = pl.eye(); const f2 = angleVectors(pl.ang).f; const ext: V3 = [hc.ext, hc.ext, hc.ext];
       const t = this.tr.trace(e2, ma(e2, 56, f2), scale(ext, -1), ext, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt); hc.pos = t.startsolid ? [...e2] as V3 : t.end; hc.vel = [...pl.vel] as V3;
-      if (hc.R) hc.R = mul(M, hc.R); }
+      if (hc.R) hc.R = mul(M, hc.R); hc.justPortaled = true; }
     this.tr.ignore = null;
-    // duck after placing, so the exit still uses the standing mid-point. Wall exits stay ducked until we land;
-    // floor/ceiling exits un-duck at 0.35 s (oracle wallfling-drop-* and fling-drop-* traces).
-    if (!this.player.noclip) this.player.forcePortalDuck(Math.abs(b.f[2]) < 0.7);
     this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
   }
   /** src: fire from somewhere else (the a01 pedestal gun's FirePortal1 input) */
@@ -1322,7 +1323,13 @@ export class Game {
       c.vel = scale(sub(t.end, c.pos), 1 / Math.max(dt, 1e-3)); c.pos = t.end; c.asleep = false; c.w = [0, 0, 0];
       if (c.Rrel && !c.viaPortal) c.R = mul(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0]), c.Rrel);
       if (this.player.groundEnt === c.ent) { this.io.log.push(`${this.io.time.toFixed(2)} stood on the held cube, dropped`); c.held = false; this.held = null; c.viaPortal = null; } // UpdateObject lets go of what the player stands on
-      else if (len(sub(c.pos, want)) > 80) { this.io.log.push(`${this.io.time.toFixed(2)} held cube snagged at ${c.pos.map(v => v | 0)} (want ${want.map(v => v | 0)}) dropped`); c.held = false; this.held = null; c.viaPortal = null; }
+      else if (len(sub(c.pos, want)) > 80) {
+        // just went through a portal: forcePortalDuck drops the eye 36 and the cube may sit >80 from the new want for
+        // a few ticks (or until we land and un-duck). Source keeps the grab; dropping here is what made a02 lose box A
+        // on the left pedestal after the pit-wall teleport.
+        if (this.lastExit && this.io.time - this.lastExit.t < 2) { /* keep holding */ }
+        else { this.io.log.push(`${this.io.time.toFixed(2)} held cube snagged at ${c.pos.map(v => v | 0)} (want ${want.map(v => v | 0)}) dropped`); c.held = false; this.held = null; c.viaPortal = null; }
+      }
     } else {
       const Z: V3 = [0, 0, 0]; const mask = 0x1 | 0x2 | 0x8 | 0x4000;
       this.tr.ignore = this.tunnelFor(c.pos, mins, maxs);
@@ -1332,7 +1339,8 @@ export class Game {
       if (c.pos[2] < -16000) c.ent.game.io.fire(c.ent, 'onoutofworld', c.ent);
     }
     this.tr.ignore = null;
-    for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, c.pos)) {
+    if (c.justPortaled) { c.justPortaled = false; /* already re-placed in teleportPlayer; prev is still pre-portal */ }
+    else for (const p of this.portals) if (p.open && p.linked && p.linked.open && this.crossed(p, prev, c.pos)) {
       const M = throughPortal(p, p.linked); c.pos = xformPoint(M, c.pos); c.vel = xformDir(M, c.vel); c.w = xformDir(M, c.w); c.R = mul(M, c.R); c.R[12] = c.R[13] = c.R[14] = 0; c.asleep = false;
       const out = dot(c.vel, p.linked.f); if (out < 60) c.vel = ma(c.vel, 60 - out, p.linked.f);
       // held cubes stay held: the grab point is then seen through the portal (like Source's grab-through-portal)

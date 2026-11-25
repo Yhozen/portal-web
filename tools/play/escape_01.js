@@ -80,8 +80,23 @@ if (game.pl.pos[2] < -500) {
     const pole = AP.ent('turret_deliver_pole_20');
     lg('after use', 'sparky ' + (sparky && sparky.killed ? 'killed' : 'alive'), 'pole z ' + ((pole && (pole.pos || pole.origin) || [0,0,0])[2] | 0), P());
   }
+  // portal out through the ceiling hole: stand on the east side of the alcove, orange on
+  // the floor, blue on the underside of the concrete floor at z -128 in the tube room
+  // (brush 410, concrete_bts_floor002a). Falling in lands at about -2232, 1964, -512.
+  if (window.STAGE === 3) throw 'stage 3';
+  standAt(-1748, 2188, 4);
+  lg('east stand', P(), 'floor ' + placeAt(1, [-1792, 2208, -700]));
+  lg('ceiling', placeAt(0, [-2144, 2000, -200]));
+  const orange = G.gunPortals[1], blue = G.gunPortals[0];
+  if (orange && orange.open && blue && blue.open) {
+    game.pl.pos = [orange.pos[0], orange.pos[1], orange.pos[2] + 12];
+    game.pl.vel = [0, 0, -30];
+    lg('fell through', fly(0.4, 6), 'blue ' + blue.pos.map(v => v | 0));
+  } else {
+    lg('no hole portals', 'o ' + !!(orange && orange.open) + ' b ' + !!(blue && blue.open));
+  }
 }
-if (window.STAGE === 3) throw 'stage 3';
+if (window.STAGE === 4) throw 'stage 4';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));

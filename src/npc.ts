@@ -91,7 +91,14 @@ export function aimAttachment(m: GLModel, att: number, poses: number[], goalDir:
   const l: V3 = [d[0] * f.x[0] + d[1] * f.x[1] + d[2] * f.x[2], d[0] * f.y[0] + d[1] * f.y[1] + d[2] * f.y[2], d[0] * f.z[0] + d[1] * f.z[1] + d[2] * f.z[2]];
   const [lp, ly] = dirAngles(yUp ? [l[0], l[2], l[1]] : l), step = degPerSec * dt;
   const dp = angNorm(Math.max(-step, Math.min(step, angNorm(lp)))), dy = angNorm(Math.max(-step, Math.min(step, angNorm(ly))));
-  const pp = m.skel.poseParams; const clamp = (i: number, v: number) => Math.max(pp[i].start, Math.min(pp[i].end, v));
-  if (pp[1]) poses[1] = clamp(1, poses[1] + dp); if (pp[0]) poses[0] = clamp(0, poses[0] + dy);
+  const pp = m.skel.poseParams;
+  // aim_yaw is a looping 360-degree param (start -180, end 180, loop 360). Clamping at 180 left the
+  // escape_01 rocket turret stuck facing north and unable to track the player around to the east glass.
+  const apply = (i: number, v: number) => {
+    const p = pp[i]; if (!p) return v;
+    if (p.loop) { let x = v; while (x > p.end) x -= p.loop; while (x < p.start) x += p.loop; return x; }
+    return Math.max(p.start, Math.min(p.end, v));
+  };
+  if (pp[1]) poses[1] = apply(1, poses[1] + dp); if (pp[0]) poses[0] = apply(0, poses[0] + dy);
   return Math.abs(dp) > 0.1 || Math.abs(dy) > 0.1;
 }

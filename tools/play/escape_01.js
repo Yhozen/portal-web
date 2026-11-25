@@ -181,10 +181,43 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
         if (game.pl.pos[0] > -1300 && game.pl.onGround && game.pl.pos[2] < -450) break;
       }
       lg('large room', P(), 'g ' + game.pl.onGround);
+      if (window.STAGE === 7) throw 'stage 7';
+      // walkthrough: portal on the top of the flipped door, another on the
+      // floor, and fling onto the z -256 ramp/platform into the offices.
+      // The door top is flippy_brush (plastic, n [0.5,0,0.87] once open).
+      // Because |n.z| > 0.7 it is treated as a floor portal, so its "up"
+      // comes from yaw; only yaw 90 or 270 lets a 64x108 portal fit.
+      standAt(-1100, 1600, 8);
+      game.pl.ang = [0, 90, 0];
+      AP.wait(0.2);
+      lg('door top', P(), placeAt(0, [-1668, 1600, -260]));
+      standAt(-1450, 1600, 8);
+      game.pl.ang = [90, 0, 0];
+      lastFail = null;
+      G.shootPortal(1, { eye: game.pl.eye(), f: [0, 0, -1] });
+      const floor = G.gunPortals[1], doorP = G.gunPortals[0];
+      const floorOk = floor && floor.open && !lastFail && floor.pos[2] < -480;
+      lg('room floor', P(), 'floor ' + (floorOk ? floor.pos.map(v => v | 0) + ' f ' + floor.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail),
+        'door ' + (doorP && doorP.open ? doorP.pos.map(v => v | 0) + ' f ' + doorP.f.map(v => +v.toFixed(2)) : 'no'));
+      // a 64-unit fall into that floor portal (linked to the door top) lands
+      // on the office platform at about -1104, 1639, -256. 128 overshoots;
+      // 0 leaves you stuck on the door. The tube-bay drop already enters a
+      // portal from a set height; this is the same idea.
+      if (floorOk && doorP && doorP.open) {
+        game.pl.pos = [floor.pos[0], floor.pos[1], floor.pos[2] + 64];
+        game.pl.vel = [0, 0, 0];
+        game.pl.onGround = false;
+        game.pl.ang = [0, 0, 0];
+        lg('fling out', fly(0.3, 10), 'g ' + game.pl.onGround);
+        if (game.pl.onGround && game.pl.pos[2] > -280 && game.pl.pos[2] < -200) {
+          standAt(-900, 1600, 8);
+          lg('office platform', P(), 'g ' + game.pl.onGround);
+        }
+      }
     }
   }
 }
-if (window.STAGE === 7) throw 'stage 7';
+if (window.STAGE === 8) throw 'stage 8';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));

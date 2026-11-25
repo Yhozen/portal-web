@@ -332,6 +332,97 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
               const train = io.ents.find(e => e.cls === 'func_tracktrain' && !e.killed && e.name === 'box_tracktrain_1');
               lg('glass 43', glassGone('*43'), P(), 'hp ' + G.health, 'dead ' + !!G.dead,
                 'train ' + (train ? (train.pos || []).map(v => v | 0) + ' spd ' + train.speedNow : 'none'));
+              if (window.STAGE === 12) throw 'stage 12';
+              if (glassGone('*43') && !G.dead) {
+                // back through the south-wall portal to the far room, duck through
+                // the broken *43 pane, and put a floor portal under the 960 tube
+                // so the next office rocket goes up into the missile trigger.
+                lg('far wall 2', placeAt(1, [256, 580, -180]));
+                lg('south entry 2', placeAt(0, [-620, 448, -200]));
+                for (let k = 0; k < 4 * 66; k++) {
+                  const dx = -620 - game.pl.pos[0];
+                  game.pl.ang = [0, 270, 0];
+                  game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, -dx / 8)), jump: false, duck: false });
+                  if (game.pl.pos[0] > 0) break;
+                }
+                lg('far room 2', fly(0.2, 6), 'hp ' + G.health);
+                runHold(270, 0, 180, 1, v => v <= 420, 6);
+                runHold(0, 1, 420, 0, v => v >= 596, 10);
+                runHold(90, 0, 596, 1, v => v >= 800, 6);
+                runHold(0, 1, 800, 0, v => v >= 740, 5);
+                game.pl.ang = [0, 0, 0];
+                for (let k = 0; k < 3 * 66; k++) game.step(T, { fwd: 1, side: 0, jump: false, duck: true });
+                AP.wait(0.5);
+                lg('through 43', P());
+                runHold(270, 0, game.pl.pos[0], 1, v => v <= 576, 8);
+                runHold(0, 1, 576, 0, v => v >= 960, 8);
+                lg('tube floor', placeAt(1, [960, 576, -255]), P());
+                for (let k = 0; k < 3 * 66 && game.pl.pos[0] > 400; k++) game.step(T, { fwd: 0, side: 0, jump: k < 10, duck: false });
+                lg('back in the office 2', fly(0.15, 5), 'hp ' + G.health);
+                if (!G.dead && game.pl.pos[0] < 400) {
+                  lg('west entry 2', placeAt(0, [-656, 480, -200]));
+                  standAt(-630, 490, 4);
+                  shotAt = las.nextRocket;
+                  if (!shotAt || shotAt < io.time - 0.05) {
+                    AP.wait(8, () => las.nextRocket && las.nextRocket >= io.time - 0.05);
+                    shotAt = las.nextRocket;
+                  }
+                  lg('tube bait', P(), 'shotAt ' + (shotAt && shotAt.toFixed(2)), 'hp ' + G.health);
+                  let wentThrough = false;
+                  for (let k = 0; k < 8 * 66; k++) {
+                    const now = io.time;
+                    if (shotAt && now >= shotAt && now <= shotAt + 1.2) {
+                      game.pl.ang = [0, 90, 0];
+                      game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+                    } else game.step(T, idle);
+                    if (io.log.some(l => /broken_tube_box_spawner_3\.forcespawn|relay_broken_tube_effects2|tracknode_boxtube_4\.enablealternatepath/i.test(l))) { wentThrough = true; break; }
+                    if (G.dead) break;
+                    if (shotAt && now > shotAt + 2.5) break;
+                  }
+                  if (!wentThrough) wentThrough = io.log.some(l => /broken_tube_box_spawner_3\.forcespawn|relay_broken_tube_effects2/i.test(l));
+                  lg('tube rocket', wentThrough, P(), 'hp ' + G.health, 'dead ' + !!G.dead);
+                  // wait until the rocket has hit the missile trigger, then overwrite
+                  // the floor portal before the spat cube falls into it; otherwise the
+                  // cube comes out the west-wall portal into the office.
+                  if (wentThrough && !G.dead) {
+                    lg('far wall 3', placeAt(1, [256, 580, -180]));
+                    lg('south entry 3', placeAt(0, [-620, 448, -200]));
+                    for (let k = 0; k < 4 * 66; k++) {
+                      const dx = -620 - game.pl.pos[0];
+                      game.pl.ang = [0, 270, 0];
+                      game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, -dx / 8)), jump: false, duck: false });
+                      if (game.pl.pos[0] > 0) break;
+                    }
+                    lg('far room 3', fly(0.2, 6), 'hp ' + G.health);
+                    runHold(270, 0, 180, 1, v => v <= 420, 6);
+                    runHold(0, 1, 420, 0, v => v >= 596, 10);
+                    runHold(90, 0, 596, 1, v => v >= 800, 6);
+                    runHold(0, 1, 800, 0, v => v >= 740, 5);
+                    game.pl.ang = [0, 0, 0];
+                    for (let k = 0; k < 3 * 66; k++) game.step(T, { fwd: 1, side: 0, jump: false, duck: true });
+                    AP.wait(0.5);
+                    runHold(270, 0, game.pl.pos[0], 1, v => v <= 576, 8);
+                    const spitBox = () => G.cubes.find(c => c.alive && c.ent && c.ent.name === 'box' && c.ent.isCopy);
+                    // the box needs a moment to finish falling onto the tube-room floor
+                    for (let k = 0; k < 3 * 66; k++) {
+                      const c = spitBox();
+                      if (c && c.pos[2] < -220 && Math.abs(c.vel[2]) < 8) break;
+                      game.step(T, idle);
+                    }
+                    const spit = spitBox();
+                    lg('spit cube', spit && spit.pos.map(v => v | 0), 'hp ' + G.health, 'dead ' + !!G.dead);
+                    if (spit && !G.dead) {
+                      standAt(spit.pos[0] + 50, spit.pos[1], 5);
+                      AP.lookAt(spit.pos);
+                      AP.wait(0.2);
+                      G.use();
+                      AP.wait(0.4);
+                    }
+                    lg('held cube', !!G.held, spitBox() && spitBox().pos.map(v => v | 0), P(), 'hp ' + G.health);
+
+                  }
+                }
+              }
             }
           }
         }

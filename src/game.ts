@@ -133,7 +133,10 @@ export class Game {
         // just non-solid, and a floor disc there blocked the catcher mouth for energy balls
         if (passableTrain && M.maxs[2] - M.mins[2] >= 128) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
           e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-80, -80, M.mins[2]]; e.platMaxs = [80, 80, M.mins[2] + 4]; }
-        const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
+        // func_rotating spawnflag 64 is "Not Solid" (the blades; the housing is world). escape_01's
+        // rotating_fan_07 is 577 (start on + not solid + loud) — a solid collider here ate portal
+        // shots at the wall under the fan and left the player hanging in the fan volume.
+        const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1') || (c === 'func_rotating' && (+kv.spawnflags & 64)));
         if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => {
           if (e.killed || (c === 'func_brush' && !e.enabled)) return false;
           // a just-enabled brush that appeared around the player stays non-solid for them until they leave, so a

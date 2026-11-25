@@ -723,6 +723,10 @@ export class Game {
     const srcs = names.flatMap(n => (this.io.byName.get(n) || []).filter(e => !e.isCopy));
     // speed is m_flSpeed (a10 carts); startspeed is what StartForward uses (escape_01 tube boxes have speed 0)
     if (!srcs.some(e => e.cls === 'func_tracktrain' && (+(e.kv.speed || 0) !== 0 || +(e.kv.startspeed || 0) !== 0))) return false;
+    // catcher templates include a startspeed-500 door train, but they have to be placed with the maker's
+    // rotation (a13's angled ball_trap_12). Treating startspeed alone as a cart (f6b9469) stole them from
+    // placeTemplateGroup, left the housing unrotated, and the ball bounced off the mouth.
+    if (srcs.some(e => e.cls === 'trigger_multiple')) return false;
     const fix = +(t.kv.spawnflags || 0) & 2 ? '' : '&' + String(++this.trainSpawns).padStart(4, '0');
     const R = entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]); const made: Ent[] = [];
     for (const src of srcs) { const kv: Record<string, string> = { ...src.kv };

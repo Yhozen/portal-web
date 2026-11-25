@@ -213,6 +213,107 @@ if (window.STAGE === 12) throw 'stage 12';
   lg('lower tube north', P(), game.pl.onGround);
 }
 if (window.STAGE === 13) throw 'stage 13';
+// crusher01_esc00 loops east-west over the goo (opened by the trigger on the upper tube).
+// Orange as low as we can on the east wall at the tube, blue on the west wall above the
+// piston; a standing run-jump from the tube lip lands on the piston when it's west, and
+// the opening stroke carries us onto the z=768 floor. The pit railings are 41 units —
+// higher than a jump — so from that floor blue goes on the pit ceiling and orange back
+// on the west wall; riding the piston west into orange drops us through the changelevel.
+{
+  const cr = E('crusher01_esc00');
+  const waitCr = (open, max = 12) => {
+    for (let k = 0; k < max * 66; k++) {
+      game.step(T, { fwd: 0, side: 0, jump: false, duck: !!game.pl.ducked });
+      if (open && cr.state === 1 && !cr.moving) return k / 66;
+      if (!open && cr.state === 0 && !cr.moving) return k / 66;
+    }
+    return -1;
+  };
+  const walkTo = (x, y, max = 10, cap = 0.7, duck = false) => {
+    for (let k = 0; k < max * 66; k++) {
+      const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1], dist = Math.hypot(dx, dy);
+      if (dist < 8 && game.pl.onGround && Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 25) break;
+      game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+      game.step(T, { fwd: Math.min(cap, dist / 15), side: 0, jump: false, duck });
+      if (game.pl.pos[2] < 500) break;
+    }
+    game.pl.vel = [0, 0, 0];
+  };
+
+  // we're at y~1570 after the tube walk; go to the crossing to place the east-wall entrance,
+  // then back north for the west-wall exit (the east wall isn't visible from y=1570)
+  walkTo(575, 1224, 12, 0.55, true);
+  lg('at crossing for entrance', P(), game.pl.onGround);
+  lg('orange east wall', P(), placeAt(1, window.TE ?? [768, 1224, 640]));
+  walkTo(575, 1570, 12, 0.55, true);
+  lg('to shoot west wall', P(), game.pl.onGround);
+  lg('blue west wall', P(), placeAt(0, window.TW ?? [256, 1457, 824]));
+  walkTo(575, 1224, 12, 0.55, true);
+  lg('back at crossing', P(), game.pl.onGround);
+
+  lg('wait piston closed', waitCr(false));
+  for (let k = 0; k < 4 * 66; k++) {
+    const dx = 632 - game.pl.pos[0];
+    game.pl.ang = [0, 0, 0];
+    game.step(T, { fwd: Math.min(0.6, Math.max(0.15, dx / 20)), side: 0, jump: false, duck: false });
+    if (game.pl.pos[0] > 628 && game.pl.onGround) break;
+    if (game.pl.pos[2] < 600) break;
+  }
+  lg('at lip', P(), game.pl.onGround);
+  {
+    const n0 = G.stats.teleports;
+    for (let k = 0; k < 4 * 66 && G.stats.teleports === n0; k++) {
+      const op = G.gunPortals[1].pos;
+      const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1], dz = op[2] - game.pl.eye()[2];
+      game.pl.ang = [Math.atan2(-dz, Math.hypot(dx, dy)) * 180 / Math.PI, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+      game.step(T, { fwd: 1, side: 0, jump: k < 12, duck: false });
+      if (game.pl.pos[2] < 400) break;
+    }
+    lg('through east wall', G.stats.teleports > n0, P(), game.pl.vel.map(v => v | 0));
+  }
+  // ride the opening piston east onto the z=768 floor, then the east passage around the
+  // y=1664 wall (at x=735) and west onto the pit walkway, where the ceiling is in view
+  for (let k = 0; k < 6 * 66; k++) {
+    game.pl.ang = [0, 0, 0];
+    game.step(T, { fwd: 0.6, side: 0, jump: false, duck: false });
+    if (game.pl.onGround && game.pl.pos[2] > 750 && game.pl.pos[0] > 700) break;
+    if (game.pl.pos[2] < 500) break;
+  }
+  lg('on 768 floor', P(), game.pl.onGround);
+  walkTo(735, 1460, 6, 0.7);
+  walkTo(735, 1770, 10, 0.8);
+  walkTo(576, 1770, 8, 0.8);
+  walkTo(576, 2000, 8, 0.8);
+  lg('on pit walkway', P(), game.pl.onGround);
+  if (window.STAGE === 14) throw 'stage 14';
+  lg('blue pit ceiling', P(), placeAt(0, window.TC ?? [576, 2176, 1088]));
+  walkTo(735, 2000, 8, 0.8);
+  walkTo(735, 1454, 16, 0.8);
+  lg('back at piston floor', P(), game.pl.onGround);
+  lg('orange west wall', P(), placeAt(1, window.TW ?? [256, 1457, 824]));
+  if (window.STAGE === 15) throw 'stage 15';
+  // step onto the piston while it's fully open and ride the close west into orange
+  lg('wait piston open', waitCr(true));
+  walkTo(700, 1457, 4, 0.6);
+  lg('on piston', P(), game.pl.onGround, game.pl.groundEnt && game.pl.groundEnt.name);
+  {
+    const n0 = G.stats.teleports;
+    for (let k = 0; k < 16 * 66 && G.stats.teleports === n0; k++) {
+      const dx = 256 - game.pl.pos[0], dy = 1457 - game.pl.pos[1];
+      game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+      const walk = cr.state === 0 || (game.pl.pos[0] > 400 && cr.t < 0.3);
+      game.step(T, { fwd: walk ? 0.7 : 0, side: 0, jump: false, duck: false });
+      if (game.pl.pos[2] < 500) break;
+    }
+    lg('through west wall', G.stats.teleports > n0, P());
+  }
+  for (let k = 0; k < 6 * 66; k++) {
+    game.step(T, { fwd: 0, side: 0, jump: false, duck: false });
+    if (window.changedTo) break;
+  }
+  lg('changelevel', P(), window.changedTo || '', game.pl.onGround);
+}
+
 if (window.PAD) { // drop off the north edge of the walkway onto the portalable lower floor (z -319), then floor-into-the
 // east wall (x 895, y 478) with a short north hop into the floor portal so the exit keeps +y; without
 // that hop the exit is 34 units south of the z=320 pad (a jump longer than 34 units clears the portal)

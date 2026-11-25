@@ -30,6 +30,21 @@ const standAt = (x, y, max = 6) => {
   }
   game.pl.vel = [0, 0, 0]; AP.wait(0.2); lg('stood', game.pl.pos.map(v => +v.toFixed(1)));
 };
+// yaw 0 = +X, 90 = +Y, 180 = -X, 270 = -Y. +side is to the right of facing.
+const runHold = (yaw, holdAxis, holdVal, stopAxis, stopPred, max = 8) => {
+  for (let k = 0; k < max * 66; k++) {
+    game.pl.ang = [0, yaw, 0];
+    const err = holdVal - game.pl.pos[holdAxis];
+    const rad = yaw * Math.PI / 180;
+    const rx = Math.sin(rad), ry = -Math.cos(rad);
+    const rcomp = holdAxis === 0 ? rx : ry;
+    const side = Math.abs(rcomp) < 0.2 ? 0 : Math.max(-0.6, Math.min(0.6, err / 8 / rcomp));
+    game.step(T, { fwd: 1, side, jump: false, duck: false });
+    if (stopPred(game.pl.pos[stopAxis]) && k > 5) break;
+  }
+  game.pl.vel = [0, 0, 0];
+};
+const glassGone = (m) => { const e = io.ents.find(x => x.cls === 'func_breakable_surf' && x.kv.model === m); return e && !!e.killed; };
 // run west along the spawn corridor and the narrow catwalk over the ambush pit, holding y near 2624.
 // looking yaw 180 (west), +side is south (-Y), so a positive dy (we're south of the line) needs -side.
 const runWest = (xStop, yHold = 2624, max = 8) => {
@@ -246,6 +261,79 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
           AP.wait(1, () => (AP.ent('laser_1') || {}).rocketEnabled);
           const las = AP.ent('laser_1') || {};
           lg('turret enabled', P(), 'laser ' + !!las.rocketEnabled, 'btn ' + (btn && btn.state));
+          if (window.STAGE === 10) throw 'stage 10';
+          // first rocket is ~6.9 s after Enable and is lethal; the button stand
+          // is inside the west-pane blast, so get back to the legal LOS stand
+          // south of the button before it fires.
+          standAt(-600, 560, 4);
+          lg('stood back from the glass', P(), 'g ' + game.pl.onGround);
+          for (let k = 0; k < 14 * 66; k++) { game.step(T, idle); if (glassGone('*50')) break; }
+          lg('west glass', glassGone('*50'), P(), 'hp ' + G.health);
+          if (glassGone('*50') && !G.dead) {
+            // a rocket into the south-wall portal comes out the west wall,
+            // same-facing portals flip Y, and the path hits the east pane.
+            lg('east entry', placeAt(0, [-620, 448, -200]));
+            lg('east exit', placeAt(1, [-656, 480, -200]));
+            standAt(-560, 470, 5);
+            let shotAt = las.nextRocket;
+            lg('east bait', P(), 'shotAt ' + (shotAt && shotAt.toFixed(2)));
+            for (let k = 0; k < 8 * 66; k++) {
+              const now = io.time;
+              if (shotAt && now >= shotAt && now <= shotAt + 1.2) {
+                game.pl.ang = [0, 90, 0];
+                game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+              } else game.step(T, idle);
+              if (glassGone('*51') || G.dead) break;
+            }
+            lg('east glass', glassGone('*51'), P(), 'hp ' + G.health, 'dead ' + !!G.dead);
+            if (window.STAGE === 11) throw 'stage 11';
+            if (glassGone('*51') && !G.dead) {
+              // both panes are open, so a portal on the far wall of the next
+              // room is visible from the office. Walk into the south-wall
+              // portal and you're past the turret before the next rocket.
+              lg('far wall', placeAt(1, [256, 580, -180]));
+              for (let k = 0; k < 3 * 66; k++) {
+                const dx = -620 - game.pl.pos[0];
+                game.pl.ang = [0, 270, 0];
+                game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, -dx / 8)), jump: false, duck: false });
+                if (game.pl.pos[0] > 0) break;
+              }
+              lg('far room', fly(0.2, 6), 'hp ' + G.health);
+              // d4's walkable gap is at x 180, then the south hallway at y 420,
+              // then d5's gap at x 596 north into the *43 alcove.
+              runHold(270, 0, 180, 1, v => v <= 420, 6);
+              runHold(0, 1, 420, 0, v => v >= 596, 10);
+              runHold(90, 0, 596, 1, v => v >= 800, 6);
+              lg('alcove', P(), 'exit43 ' + placeAt(1, [512, 800, -180]));
+              standAt(540, 800, 3);
+              // the alcove portal sits at z -180; a short jump walks into it
+              // and drops you back at the office south wall.
+              for (let k = 0; k < 2 * 66; k++) {
+                const dy = 800 - game.pl.pos[1];
+                game.pl.ang = [0, 180, 0];
+                game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, dy / 8)), jump: k < 10, duck: false });
+                if (game.pl.pos[0] < 0) break;
+              }
+              lg('back in the office', fly(0.15, 4), 'hp ' + G.health);
+              runHold(90, 0, -630, 1, v => v >= 500, 3);
+              lg('west entry', placeAt(0, [-656, 480, -200]));
+              standAt(-630, 490, 4);
+              shotAt = las.nextRocket;
+              lg('43 bait', P(), 'shotAt ' + (shotAt && shotAt.toFixed(2)), 'hp ' + G.health);
+              for (let k = 0; k < 8 * 66; k++) {
+                const now = io.time;
+                if (shotAt && now >= shotAt && now <= shotAt + 1.2) {
+                  game.pl.ang = [0, 90, 0];
+                  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+                } else game.step(T, idle);
+                if (glassGone('*43') || G.dead) break;
+              }
+              AP.wait(0.5);
+              const train = io.ents.find(e => e.cls === 'func_tracktrain' && !e.killed && e.name === 'box_tracktrain_1');
+              lg('glass 43', glassGone('*43'), P(), 'hp ' + G.health, 'dead ' + !!G.dead,
+                'train ' + (train ? (train.pos || []).map(v => v | 0) + ' spd ' + train.speedNow : 'none'));
+            }
+          }
         }
       }
     }
@@ -255,5 +343,5 @@ if (window.STAGE === 8) throw 'stage 8';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));
-out.push(io.log.filter(l => /picked|portalgun|laser_1|rocket|teleport|fizz|changed|pod|crusher|trap_1|block_crazy|pincher|sparky|look_target|pole_20/.test(l)).slice(-25).join('\n'));
+out.push(io.log.filter(l => /picked|portalgun|laser_1|rocket|teleport|fizz|changed|pod|crusher|trap_1|block_crazy|pincher|sparky|look_target|pole_20|tracktrain|forcespawn|broken_tube|changelevel|relay_make/.test(l)).slice(-25).join('\n'));
 return out.join('\n'); })()

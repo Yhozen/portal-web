@@ -161,10 +161,30 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
       AP.wait(10, doorDone);
       const flip2 = AP.ent('flippy_turret_door_12') || {};
       lg('flippy open', P(), 'state ' + flip2.state, 'ang ' + (flip2.ang || flip2.angles || []).map(v => (v | 0)));
+      if (window.STAGE === 6) throw 'stage 6';
+      // if we landed on the turret (z ~ -325), walk south off it onto the pit floor
+      if (game.pl.pos[2] > -350) {
+        for (let k = 0; k < 2 * 66; k++) {
+          game.pl.ang = [0, 270, 0];
+          game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+          if (game.pl.pos[2] < -360 && game.pl.onGround) break;
+        }
+        lg('off the turret', P());
+      }
+      // the open door is the way into the large room; walk east through it and
+      // drop to the z -512 floor. A ramp up to z -256 starts around x -1200.
+      standAt(-1700, 1604, 5);
+      for (let k = 0; k < 6 * 66; k++) {
+        const dy = 1604 - game.pl.pos[1];
+        game.pl.ang = [0, 0, 0];
+        game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, dy / 8)), jump: false, duck: false });
+        if (game.pl.pos[0] > -1300 && game.pl.onGround && game.pl.pos[2] < -450) break;
+      }
+      lg('large room', P(), 'g ' + game.pl.onGround);
     }
   }
 }
-if (window.STAGE === 6) throw 'stage 6';
+if (window.STAGE === 7) throw 'stage 7';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));

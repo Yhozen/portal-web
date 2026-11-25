@@ -920,7 +920,10 @@ export class Game {
       const near = len(sub(o, at)) <= rad || !!(ent.bmins && at[0] >= ent.bmins[0] - rad && at[0] <= ent.bmaxs[0] + rad && at[1] >= ent.bmins[1] - rad && at[1] <= ent.bmaxs[1] + rad && at[2] >= ent.bmins[2] - rad && at[2] <= ent.bmaxs[2] + rad);
       if (!near) continue;
       if (ent.cls === 'func_breakable_surf') { ent.killed = true; if (ent.inst) ent.inst.visible = false; io.fire(ent, 'onbreak', rk.ent); continue; }
-      if (ent.kv.damagefilter && this.passDamageFilter(ent, 64)) io.fire(ent, 'ontakedamage', rk.ent);
+      // a damagefilter, if present, must pass (rockets are DMG_BLAST = 64); entities
+      // with no filter still get OnTakeDamage (escape_02's glados_body has the output
+      // and no filter — requiring a filter meant rockets never registered a hit)
+      if (ent.outputs.get('ontakedamage') && (!ent.kv.damagefilter || this.passDamageFilter(ent, 64))) io.fire(ent, 'ontakedamage', rk.ent);
     }
     rk.ent.killed = true; rk.ent.onKill?.();
   }

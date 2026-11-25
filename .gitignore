@@ -15,3 +15,6 @@ shots/
 *.webm
 *.mov
 changelog-site/
+
+# tools/gate.sh records the engine hashes it passed on, per machine
+.gate/

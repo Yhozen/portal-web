@@ -134,7 +134,13 @@ export class Game {
         if (passableTrain && M.maxs[2] - M.mins[2] >= 128) { // the visible/solid elevator is a prop with vphysics collision; give the rider a floor disc instead
           e.platform = { mins: [0, 0, 0] as V3, maxs: [0, 0, 0] as V3, ent: e }; this.tr.extraBoxes.push(e.platform); e.platMins = [-80, -80, M.mins[2]]; e.platMaxs = [80, 80, M.mins[2] + 4]; }
         const solid = !passableTrain && !(c === 'func_illusionary' || (c === 'func_brush' && kv.solidity === '1'));
-        if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => !e.killed && (c !== 'func_brush' || e.enabled) }; e.col = col; this.tr.colliders.push(col); }
+        if (solid) { const col: Collider = { bsp: this.bsp, headnode: M.headnode, offset: e.pos, ent: e, enabled: () => {
+          if (e.killed || (c === 'func_brush' && !e.enabled)) return false;
+          // a just-enabled brush that appeared around the player stays non-solid for them until they leave, so a
+          // "close behind you" wall (escape_01's block_crazy_player_escaping_trap at the ambush catwalk lip) doesn't
+          // pin you in the doorway: the original walks through that lip at 150 u/s (oracle trace e01-walk-lip)
+          if (e.passPlayer) { if (this.playerOverlaps(e)) return false; e.passPlayer = false; }
+          return true; } }; e.col = col; this.tr.colliders.push(col); }
         if (c === 'func_brush' && kv.startdisabled === '1') { e.enabled = false; inst.visible = false; }
       }
     }
@@ -276,6 +282,11 @@ export class Game {
     }
   }
   /** damage with the fraction carried over (health is whole numbers in the original), a push along `dir`, and death at 0 */
+  playerOverlaps(e: Ent) {
+    if (!e.bmins) return false;
+    const lo = add(this.player.pos, HULL.mins), hi = add(this.player.pos, this.player.maxs());
+    return lo[0] < e.bmaxs[0] && hi[0] > e.bmins[0] && lo[1] < e.bmaxs[1] && hi[1] > e.bmins[1] && lo[2] < e.bmaxs[2] && hi[2] > e.bmins[2];
+  }
   hurtPlayer(dmg: number, dir: V3, force = false) {
     if (this.dead || this.god || (!this.damage && !force)) return;
     this.dmgAcc += dmg; const n = Math.floor(this.dmgAcc); this.dmgAcc -= n; this.health = Math.floor(this.health) - n; this.lastHurt = this.io.time;
@@ -607,7 +618,10 @@ export class Game {
       else { const l = longest(); if (l) l.frequency = +(e.kv.frequency || 0); }
       return true; });
     H.set('func_portal_detector', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = e.enabled === false; else return false; return true; });
-    H.set('func_brush', (e, i) => { if (i === 'enable') e.enabled = true; else if (i === 'disable') e.enabled = false; else if (i === 'toggle') e.enabled = !e.enabled; else return false; this.wakeCubes(e); if (e.inst) e.inst.visible = e.enabled; return true; });
+    H.set('func_brush', (e, i) => { if (i === 'enable') { e.enabled = true; if (this.playerOverlaps(e)) e.passPlayer = true; }
+      else if (i === 'disable') { e.enabled = false; e.passPlayer = false; }
+      else if (i === 'toggle') { e.enabled = !e.enabled; if (!e.enabled) e.passPlayer = false; else if (this.playerOverlaps(e)) e.passPlayer = true; }
+      else return false; this.wakeCubes(e); if (e.inst) e.inst.visible = e.enabled; return true; });
     const propVis = (e: Ent, i: string, param: string) => { if (!e.cube && i === 'enablemotion' && /^prop_physics/.test(e.cls)) { this.wakeStaticProp(e); return true; } if (e.cube && (i === 'wake' || i === 'enablemotion')) { e.cube.asleep = false; e.cube.sleep = 0; return true; } if (e.cube && (i === 'sleep' || i === 'disablemotion')) { e.cube.asleep = true; return true; } if (!e.prop) return false; if (i === 'turnon' || i === 'enable') e.prop.visible = true; else if (i === 'turnoff' || i === 'disable') e.prop.visible = false; else if (i === 'skin') return true; else if (i === 'setanimation') { this.playAnim(e, param, false); }
       else if (i === 'setdefaultanimation') { e.defaultAnim = param; }
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }

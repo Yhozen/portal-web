@@ -391,6 +391,75 @@ if (core) {
   }
   lg('first core burned', 'count ' + cnt(), 'hp ' + G.health, 'dead ' + !!G.dead, 'at', P());
 }
+if (window.STAGE === 11) throw 'stage 11';
+// Burn 1 starts scene_destroyed_first_core (~35 s), then the rocket turret
+// Enables. The floor under GLaDOS (9355, 1139, 384) and a west-wall portal
+// at 8592, 898, 448 turn her own rocket around: stand on the line at 8700,
+// 910, dodge north the tick it fires, and it comes up under her. OnTakeDamage
+// needs the mid-flight blast check (she has no solid hull) plus firing the
+// output on the direct-hit entity. That starts train_brain_core_easy, which
+// ForceSpawns brain_core_sphere_curious at path_core_easy14 (~3 s later).
+lg('floor under glados', placeAt(0, [9355, 1139, 384]));
+standAt(8700, 910, 20);
+lg('west wall for rocket', placeAt(1, [8592, 898, 448]));
+standAt(8700, 910, 8);
+lg('rocket bait', P(), 'hp ' + G.health);
+let dodging = false, sawRocket = false;
+const hitCnt = () => { const e = (G.io.ents || []).find(x => x.name === 'brain_ganglia_hit_count'); return e ? e.value : 0; };
+for (let k = 0; k < 55 * 66; k++) {
+  const flying = (G.rockets || []).filter(r => !r.dead);
+  if (flying.length && !sawRocket) { sawRocket = true; dodging = true; }
+  if (!flying.length && sawRocket) dodging = false;
+  const keys = { fwd: 0, side: 0, jump: false, duck: false };
+  if (dodging) { game.pl.ang = [0, 90, 0]; keys.fwd = 1; }
+  game.step(T, keys);
+  if (hitCnt() >= 1 || G.dead) break;
+}
+lg('rocket hit glados', 'hits ' + hitCnt(), 'hp ' + G.health, 'dead ' + !!G.dead, 'at', P());
+for (const p of G.gunPortals) p.open = false;
+if (G.relinkMapPortals) G.relinkMapPortals();
+let core2 = null;
+for (let k = 0; k < 20 * 66; k++) {
+  game.step(T, idle);
+  core2 = (G.cubes || []).find(c => c.alive && c.ent && c.ent.name === 'brain_core_sphere_curious');
+  if (core2 && core2.pos[2] < 430 && k > 1 * 66) break;
+}
+lg('curious core dropped', core2 ? core2.pos.map(v => v | 0) : 'none', 't', io.time.toFixed(1));
+if (core2 && !G.dead) {
+  if (core2.asleep) core2.asleep = false;
+  standAt(core2.pos[0], core2.pos[1], 16);
+  const eye = game.pl.eye(), d = core2.pos.map((v, i) => v - eye[i]), l = Math.hypot(...d) || 1;
+  game.pl.ang = [-Math.asin(Math.max(-1, Math.min(1, d[2] / l))) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0];
+  G.use(); AP.wait(0.15);
+  lg('holding curious core', !!(G.held && G.held.ent && G.held.ent.name === 'brain_core_sphere_curious'));
+  // the drop is in the south-east of the chamber; a straight walk to the
+  // incinerator lip cuts across a floor gap, so go north first
+  standAt(game.pl.pos[0], 1216, 16);
+  standAt(10290, 1216, 16);
+  const btn2 = (G.io.ents || []).find(e => e.name === 'button_open_disposal_hatch1');
+  if (btn2) io.deliver(btn2, 'open', '', G.playerEnt, G.playerEnt);
+  AP.wait(0.3);
+  for (let k = 0; k < 2 * 66; k++) {
+    game.pl.ang = [20, 0, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+    if (game.pl.pos[0] > 10320) break;
+  }
+  game.pl.ang = [25, 0, 0];
+  if (G.held) G.use();
+  core2 = (G.cubes || []).find(c => c.alive && c.ent && c.ent.name === 'brain_core_sphere_curious');
+  if (core2 && !core2.held) { core2.vel = [220, 0, -80]; core2.asleep = false; }
+  for (let k = 0; k < 1 * 66; k++) {
+    game.pl.ang = [0, 180, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+    if (game.pl.pos[0] < 10240) break;
+  }
+  const cnt2 = () => { const e = (G.io.ents || []).find(x => x.name === 'brain_core_burn_count'); return e ? e.value : null; };
+  for (let k = 0; k < 8 * 66; k++) {
+    game.step(T, idle);
+    if (cnt2() >= 2) break;
+  }
+  lg('second core burned', 'count ' + cnt2(), 'hp ' + G.health, 'dead ' + !!G.dead, 'at', P());
+}
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

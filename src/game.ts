@@ -913,6 +913,11 @@ export class Game {
     const pl = this.player, pc: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + pl.maxs()[2] / 2];
     if (!this.dead && len(sub(pc, at)) < ROCKET_TURRET.blast) this.hurtPlayer(ROCKET_TURRET.damage, dir, true);
     if (hit && hit.cls === 'func_breakable_surf' && !hit.killed) { hit.killed = true; if (hit.inst) hit.inst.visible = false; io.fire(hit, 'onbreak', rk.ent); }
+    // the direct hit is skipped in the radius loop below, so fire OnTakeDamage
+    // here — otherwise a rocket that lands on glados_body never increments
+    // brain_ganglia_hit_count
+    if (hit && !hit.killed && hit.outputs.get('ontakedamage') && (!hit.kv.damagefilter || this.passDamageFilter(hit, 64)))
+      io.fire(hit, 'ontakedamage', rk.ent);
     const rad = ROCKET_TURRET.blast;
     for (const ent of io.ents) {
       if (ent.killed || ent === hit) continue;
@@ -972,7 +977,17 @@ export class Game {
         }
         rk.pos = t.end; left = 0;
       }
-      if (!rk.dead) { rk.ent.pos = rk.pos; rk.ent.origin = rk.pos; rk.prop.matrix = entityMatrix(rk.pos, vectorAngles(norm(rk.vel))); }
+      if (!rk.dead) {
+        rk.ent.pos = rk.pos; rk.ent.origin = rk.pos; rk.prop.matrix = entityMatrix(rk.pos, vectorAngles(norm(rk.vel)));
+        // glados_body (and any other OnTakeDamage target) is a skinned prop with no
+        // solid hull, so a rocket that flies through her would otherwise detonate on
+        // the ceiling past her. Treat a pass within the blast radius as a hit.
+        for (const ent of io.ents) {
+          if (ent.killed || ent === rk.ent || !ent.outputs.get('ontakedamage')) continue;
+          const o = ent.pos || ent.origin; if (!o) continue;
+          if (len(sub(o, rk.pos)) <= ROCKET_TURRET.blast) { this.explodeRocket(rk, rk.pos, ent); break; }
+        }
+      }
     }
     this.tr.ignore = null;
   }

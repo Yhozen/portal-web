@@ -147,7 +147,14 @@ lg('final wait', JSON.stringify(AP.gotoRetry([-420, -440, -255], 20, 3)));
    floor just east of the exit lift (shot looking west, so what goes in heading along the blue's up comes out heading
    west), ride lift a up, step to its north edge (the platform itself blocks shots straight down), put blue on the floor
    beyond it looking north, jump off north into it and come out of the orange heading up and west onto the exit ledge */
-lg('orange by exit lift', (() => { AP.gotoRetry([60, 1216, -255], 30, 3); let r; for (let k = 0; k < 4; k++) { r = shoot(1, [-30, 1180, -256]); if (G.gunPortals[1].open && G.gunPortals[1].pos[2] < -250 && G.gunPortals[1].pos[1] > 1150) break; } return r + ' u ' + G.gunPortals[1].u.map(v => +v.toFixed(2)) + ' from ' + P(); })());
+lg('orange by exit lift', (() => { AP.gotoRetry([60, 1216, -255], 30, 3);
+  // 57d7eb7 stood at 63,1213 and opened orange at -29,1196 with u -0.99,-0.11 (almost due west). After portal duck the
+  // planner can stop a few units north, which skews u south and the exit jump misses lift_brush_a10_3. Settle and stand
+  // on that exact pose before the same look-at. Don't aim due west from y 1216: that ray hits the exit lift.
+  for (let i = 0; i < 90 && (game.pl.ducked || !game.pl.onGround); i++) game.step(1/66, { fwd: 0, side: 0, jump: false, duck: false });
+  AP.approach([63, 1213], 2, 3); let r;
+  for (let k = 0; k < 4; k++) { r = shoot(1, [-30, 1180, -256]); if (G.gunPortals[1].open && G.gunPortals[1].pos[2] < -250 && G.gunPortals[1].pos[1] > 1150 && G.gunPortals[1].u[0] < -0.9) break; }
+  return r + ' u ' + G.gunPortals[1].u.map(v => +v.toFixed(2)) + ' from ' + P(); })());
 const liftA = E('lift_brush_a10_1');
 lg('lift a', JSON.stringify(AP.gotoRetry([40, 600, -255], 30, 3)) + JSON.stringify(AP.gotoRetry([-128, 600, -255], 30, 3)) + ' lift ' + liftA.pos.map(v => v|0));
 waitFor(() => liftA.pos[2] < -245, 15);

@@ -37,7 +37,7 @@ const runHold = (yaw, holdAxis, holdVal, stopAxis, stopPred, max = 8) => {
     const side = Math.abs(rcomp) < 0.2 ? 0 : Math.max(-0.6, Math.min(0.6, err / 8 / rcomp));
     game.step(T, { fwd: 1, side, jump: false, duck: false });
     if (stopPred(game.pl.pos[stopAxis]) && k > 5) break;
-    if (G.dead || game.pl.pos[2] < -1650) break;
+    if (G.dead || game.pl.pos[2] < -2100) break;
   }
   game.pl.vel = [0, 0, 0];
 };
@@ -50,18 +50,18 @@ AP.wait(2); lg('start', P() + ' gun ' + G.hasGun + ' fire ' + G.canFire + ' hp '
 // north to about y 2708 before the floor drops.
 if (window.STAGE === 1) throw 'stage 1';
 runHold(270, 0, 6120, 1, v => v <= 1820, 6);
-lg('south lip', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'grate ' + placeAt(0, [6016, 1648, -1280]));
+lg('south lip', P(), 'g ' + game.pl.onGround, 'hp ' + G.health);
 if (window.STAGE === 2) throw 'stage 2';
-// back to mid-walkway, then north along x 6120 toward the gap at y ~2708
-runHold(90, 0, 6120, 1, v => v >= 1875, 6);
-lg('back mid', P());
-runHold(90, 0, 6120, 1, v => v >= 2650, 12);
-lg('north end', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
-// a wall past the north fan hole at y 2992 is portalable from here, but that
-// portal sits under the upper floor (center z -1461) and drops into the pit.
-// the first hop out of this trench is still being measured against the oracle.
-lg('east wall', placeAt(0, [6144, game.pl.pos[1], -1472]));
-lg('north room wall', placeAt(1, [6050, 2992, -1461]));
+// the goo south of the walkway is non-lethal (StrategyWiki; the port landed
+// at z -1792 with 100 health). Walk off the lip into the sewer.
+runHold(270, 0, 6120, 2, v => v < -1700, 5);
+for (let k = 0; k < 4 * 66 && !game.pl.onGround; k++) game.step(T, idle);
+lg('in the sewer', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 3) throw 'stage 3';
+// the channel runs west under the offices; a wall at x 5632 stops this walk.
+runHold(180, 1, 1620, 0, v => v <= 5650, 12);
+lg('sewer west', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+lg('west wall', placeAt(0, [5632, game.pl.pos[1], -1600]));
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

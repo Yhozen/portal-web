@@ -333,6 +333,17 @@ lg('catwalk', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead
 // is a prop_door_rotating at 6402, 627, 438 (no collision in the port).
 runHold(0, 1, 608, 0, v => v >= 6400, 16);
 lg('at escape door', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 9) throw 'stage 9';
+// East along the catwalk, north up the office corridor at x 6976, up the
+// short stair (z 384 to 416), and through d5_escape_4's doorway (the
+// opening is y 1200-1240; the prop_door_rotating has no collision) into
+// the GLaDOS chamber.
+standAt(6976, 608, 10);
+standAt(6976, 1193, 12);
+standAt(7100, 1220, 8);
+standAt(7130, 1220, 4);
+runHold(0, 1, 1170, 0, v => v >= 9280, 22);
+lg('glados chamber', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

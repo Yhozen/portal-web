@@ -9,3 +9,9 @@ shots/
 *.vmt
 *.mdl
 *.wav
+
+# videos stay on GitHub releases, not in the tree
+*.mp4
+*.webm
+*.mov
+changelog-site/

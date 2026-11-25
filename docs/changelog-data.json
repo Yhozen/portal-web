@@ -1,0 +1,456 @@
+{
+  "updated": "2026-11-25",
+  "repo": "Yhozen/portal-web",
+  "pages": "https://yhozen.github.io/portal-web/",
+  "checks": {
+    "pass": 39,
+    "total": 39
+  },
+  "maps": {
+    "changelevel": 16,
+    "total": 18,
+    "note": "a07 still ends with the next map unset. escape_02 ends in the GLaDOS fight after two of her four cores burn."
+  },
+  "sessions": [
+    {
+      "id": "session-3",
+      "title": "Session 3",
+      "date": "2026-11-25",
+      "dateLabel": "24–25 Nov 2026",
+      "started": "8:35 PM EST on 24 Nov",
+      "ended": "9:49 AM EST on 25 Nov",
+      "branch": "gabriel/oracle",
+      "tip": "d7b1478b37852c1ef414a05748355b85576962cf",
+      "tipShort": "d7b1478",
+      "reelCommit": "f2160f857654f176a829e40a33ff9c2bfc39214e",
+      "reelCommitShort": "f2160f8",
+      "tag": "session-3-2026-11-25",
+      "commitsSincePrev": 44,
+      "checks": "39/39",
+      "lede": "The second escape map plays through to its level change, and the last escape map gets through the flings and the catwalk into GLaDOS's chamber, then redirects rockets into her and burns two of her four cores.",
+      "landed": [
+        "The rocket turret's timing and damage were measured in the original: first shot at 6.9 s, then one every 6 s, 550 u/s, lethal. Its rockets go through portals, it sees you through breakable glass, and it can turn a full circle.",
+        "Tube boxes take path_track's alternate path and spit out the cube, and the escape fan isn't solid, both as in the original.",
+        "You duck when you come out of a wall portal and stand up after a floor fling. A cube you're carrying stays in your hands through that duck.",
+        "Pointing at a door and pressing use now works, and so do look triggers.",
+        "Rocket blasts damage GLaDOS, and her cores burn in the incinerator."
+      ],
+      "regression": "The wrap-up allplay first showed regressions in a02, a03, a06, a10, a13 and a15. The new duck at a wall portal had made you drop a carried cube and had undone the aim a10 needed for its lift; look triggers closed a06's fling-pillar doors while you looked down into the pit; a03's wall portal sat off the energy ball's path; and the new train code was grabbing a13's ball catchers and placing them rotated wrong. Those are fixed at d7b1478. A second allplay at 9:41–9:49 AM EST reached every level change except a07, which stopped short before this session too, and escape_02, which ends after the second core burns.",
+      "remains": [
+        "GLaDOS's last two cores and the ending.",
+        "A route through a11 that survives turret damage, so ?damage=1 can become the default.",
+        "The hold-distance 81 change, parked because the playthrough scripts are tuned around 56.",
+        "a07 still finishes on the chamber with the next map unset."
+      ],
+      "playthroughNote": "Game seconds to the next map, from the allplay at 9:41–9:49 AM EST on 25 Nov, on d7b1478. Checks passed 39/39.",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "178.9",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "113.3",
+          "next": "a02"
+        },
+        {
+          "map": "a02",
+          "time": "149.9",
+          "next": "a03"
+        },
+        {
+          "map": "a03",
+          "time": "119.9",
+          "next": "a04"
+        },
+        {
+          "map": "a04",
+          "time": "72.1",
+          "next": "a05"
+        },
+        {
+          "map": "a05",
+          "time": "51.7",
+          "next": "a06"
+        },
+        {
+          "map": "a06",
+          "time": "63.9",
+          "next": "a07"
+        },
+        {
+          "map": "a07",
+          "time": "131.4",
+          "next": "unset"
+        },
+        {
+          "map": "a08",
+          "time": "76.3",
+          "next": "a09"
+        },
+        {
+          "map": "a09",
+          "time": "119.0",
+          "next": "a10"
+        },
+        {
+          "map": "a10",
+          "time": "203.4",
+          "next": "a11"
+        },
+        {
+          "map": "a11",
+          "time": "86.6",
+          "next": "a13"
+        },
+        {
+          "map": "a13",
+          "time": "290.1",
+          "next": "a14"
+        },
+        {
+          "map": "a14",
+          "time": "126.3",
+          "next": "a15"
+        },
+        {
+          "map": "a15",
+          "time": "261.7",
+          "next": "escape_00"
+        },
+        {
+          "map": "escape_00",
+          "time": "196.9",
+          "next": "escape_01"
+        },
+        {
+          "map": "escape_01",
+          "time": "215.6",
+          "next": "escape_02"
+        },
+        {
+          "map": "escape_02",
+          "time": "199.3",
+          "next": "second core burns"
+        }
+      ],
+      "videos": [
+        {
+          "file": "session3-reel.mp4",
+          "title": "Session 3 reel",
+          "role": "reel",
+          "seconds": 87.7,
+          "size": 10275879,
+          "recorded": "6:52 AM EST on 25 Nov",
+          "commit": "f2160f857654f176a829e40a33ff9c2bfc39214e",
+          "commitShort": "f2160f8",
+          "caption": "87.7 s of live playthroughs, recorded tick by tick in the harness at 1280×720: the escape_02 flings off the slanted doors into the alcove, onto the z −384 shelf and up onto GLaDOS's catwalk, then a rocket aimed up the broken escape_01 tube so the cube spits out."
+        },
+        {
+          "file": "e02-flings.mp4",
+          "title": "escape_02 flings",
+          "role": "clip",
+          "seconds": 65.0,
+          "size": 9794610,
+          "recorded": "6:44 AM EST on 25 Nov",
+          "commit": "f2160f857654f176a829e40a33ff9c2bfc39214e",
+          "commitShort": "f2160f8",
+          "caption": "65 s of live gameplay: the three flings in escape_02, off the slanted doors into the alcove, onto the high shelf, then up to the catwalk into GLaDOS's chamber."
+        },
+        {
+          "file": "e01-rocket-tube.mp4",
+          "title": "escape_01 rocket up the tube",
+          "role": "clip",
+          "seconds": 38.0,
+          "size": 5289181,
+          "recorded": "6:50 AM EST on 25 Nov",
+          "commit": "f2160f857654f176a829e40a33ff9c2bfc39214e",
+          "commitShort": "f2160f8",
+          "caption": "38 s of live gameplay: portals in the office aim the rocket turret up the broken tube; the cube spits out, still at 100 health."
+        }
+      ]
+    },
+    {
+      "id": "session-2",
+      "title": "Session 2",
+      "date": "2026-11-24",
+      "dateLabel": "24 Nov 2026",
+      "started": "9:03 AM EST on 24 Nov",
+      "ended": "8:28 PM EST on 24 Nov",
+      "branch": "gabriel/oracle",
+      "tip": "57d7eb7a3b35949df91616b435c570468a710a68",
+      "tipShort": "57d7eb7",
+      "reelCommit": "57d7eb7a3b35949df91616b435c570468a710a68",
+      "reelCommitShort": "57d7eb7",
+      "tag": "session-2-2026-11-24",
+      "commitsSincePrev": 49,
+      "checks": "39/39",
+      "lede": "Every test chamber except a07 now reaches its level change, and the first escape map plays through into escape_01. A lot of the movement and entity behaviour was measured in the original and brought into line.",
+      "landed": [
+        "Bone followers, so a13's dropper cover is solid and holds the box.",
+        "Energy balls bounce off cubes in the cube's own frame.",
+        "Firing while holding a cube drops it.",
+        "trigger_multiple refires while something sits in it, as in the SDK's CTriggerMultiple.",
+        "Doors return after their wait.",
+        "Portals work on rotated brush entities, and the player is clipped out at a wall portal's rim.",
+        "trigger_push follows the SDK.",
+        "prop_physics EnableMotion, and func_portal_detector.",
+        "Turret .phy body: it tips in 0.6–0.7 s, as in the original. Turret damage is 1.80 s from first hit to death, against 1.79 in the original, and stays behind ?damage=1.",
+        "Wall-fling speed: 400 / 527.3 / 627.3 against the original's 391.5 / 526.5 / 625.5.",
+        "Cube-tube .phy collision, which is how escape_00 climbs to the changelevel."
+      ],
+      "regression": null,
+      "remains": [
+        "escape_01, escape_02 and the GLaDOS fight (taken up in session 3).",
+        "A route through a11 that survives turret damage.",
+        "Hold distance 81, parked: a patch at the 81-unit hold broke the a00, a01, a02 and a08 scripts, which are tuned around 56.",
+        "a07 still ends with the next map unset."
+      ],
+      "playthroughNote": "Game seconds to the next map, from the allplay at wrap-up, on 57d7eb7. Checks passed 39/39.",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "178.6",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "112.7",
+          "next": "a02"
+        },
+        {
+          "map": "a02",
+          "time": "152.6",
+          "next": "a03"
+        },
+        {
+          "map": "a03",
+          "time": "125.6",
+          "next": "a04"
+        },
+        {
+          "map": "a04",
+          "time": "72.1",
+          "next": "a05"
+        },
+        {
+          "map": "a05",
+          "time": "51.7",
+          "next": "a06"
+        },
+        {
+          "map": "a06",
+          "time": "64.4",
+          "next": "a07"
+        },
+        {
+          "map": "a07",
+          "time": "131.4",
+          "next": "unset"
+        },
+        {
+          "map": "a08",
+          "time": "78.7",
+          "next": "a09"
+        },
+        {
+          "map": "a09",
+          "time": "119.1",
+          "next": "a10"
+        },
+        {
+          "map": "a10",
+          "time": "197.3",
+          "next": "a11"
+        },
+        {
+          "map": "a11",
+          "time": "86.6",
+          "next": "a13"
+        },
+        {
+          "map": "a13",
+          "time": "290.9",
+          "next": "a14"
+        },
+        {
+          "map": "a14",
+          "time": "125.4",
+          "next": "a15"
+        },
+        {
+          "map": "a15",
+          "time": "265.3",
+          "next": "escape_00"
+        },
+        {
+          "map": "escape_00",
+          "time": "198.4",
+          "next": "escape_01"
+        }
+      ],
+      "videos": [
+        {
+          "file": "session2-reel.mp4",
+          "title": "Session 2 reel",
+          "role": "reel",
+          "seconds": 112.6,
+          "size": 10862125,
+          "recorded": "8:27 PM EST on 24 Nov",
+          "commit": "57d7eb7a3b35949df91616b435c570468a710a68",
+          "commitShort": "57d7eb7",
+          "caption": "112.6 s at 1280×720. The official allplay is the source of the 198.4 s escape_00 time. A recorded replay of the tube-to-changelevel tail drifted into the goo, so the reel uses the cube-tube climb plus the earlier piston-route footage."
+        },
+        {
+          "file": "e00-route-reel.mp4",
+          "title": "escape_00 piston route",
+          "role": "clip",
+          "seconds": 24.2,
+          "size": 1821779,
+          "recorded": "6:53 PM EST on 24 Nov",
+          "commit": "57d7eb7a3b35949df91616b435c570468a710a68",
+          "commitShort": "57d7eb7",
+          "caption": "24.2 s. The piston-route footage used in the session reel: escape_00 past the high-speed pistons and up the crushers. Recorded around 6:53 PM EST, after the route had reached crusher08."
+        },
+        {
+          "file": "e00-tubes.mp4",
+          "title": "escape_00 cube tubes",
+          "role": "clip",
+          "seconds": 22.0,
+          "size": 5362524,
+          "recorded": "7:46 PM EST on 24 Nov",
+          "commit": "57d7eb7a3b35949df91616b435c570468a710a68",
+          "commitShort": "57d7eb7",
+          "caption": "22 s. Climbing the hollow cube tubes under crusher01_esc00, after the tubes were given their .phy collision."
+        },
+        {
+          "file": "e00-end.mp4",
+          "title": "escape_00 toward the changelevel",
+          "role": "clip",
+          "seconds": 87.5,
+          "size": 17794124,
+          "recorded": "8:19 PM EST on 24 Nov",
+          "commit": "57d7eb7a3b35949df91616b435c570468a710a68",
+          "commitShort": "57d7eb7",
+          "caption": "87.5 s. A capture of the tube-to-changelevel tail. The replay of this take drifted into the goo, so it is not the source of the official 198.4 s time; the session reel uses the tube climb from this capture and the earlier piston-route footage instead."
+        }
+      ]
+    },
+    {
+      "id": "session-1",
+      "title": "Session 1",
+      "date": "2026-11-24",
+      "dateLabel": "23–24 Nov 2026",
+      "started": "about 11:45 PM EST on 23 Nov",
+      "ended": "8:56 AM EST on 24 Nov",
+      "branch": "gabriel/oracle",
+      "tip": "795cd54a5da3b54c834f80d18f8dd27ee2da18e9",
+      "tipShort": "795cd54",
+      "reelCommit": "795cd54a5da3b54c834f80d18f8dd27ee2da18e9",
+      "reelCommitShort": "795cd54",
+      "tag": "session-1-2026-11-24",
+      "commitsSincePrev": null,
+      "checks": "36/36",
+      "lede": "An oracle was built from the original Portal (the native Linux build, driven through its own console) and the port was measured against it overnight. Walk, jump, duck, flings, cube size and +use reach were brought into line, and the playthroughs reached a11, with a13 underway.",
+      "landed": [
+        "Movement (22 metrics on a09's floor): walk 150 against a previous 175, now 150. Running jump speed 225 against 175, now 225. Air strafe cap 60 against 30, now 60. Duck eye 90% at 0.345 s against 0.18 s, now matched. Running jump distance 116.6 against 116.6.",
+        "Floor-to-floor flings, which used to come back up 37–41 units too high, now match the drop height.",
+        "Floor-to-wall fling speed was still 2–5% high at the end of the session. A fix that got it to 400.0 / 527.3 / 627.3 broke a10 and was left uncommitted; it landed in session 2.",
+        "Cubes take their size from the model hull (±20.25 for metal_box), not a fixed ±12.",
+        "+use reach follows the SDK's FindUseEntity (80 units, hull sweeps, cone 0.8).",
+        "Glass takes no portal. Cleansers fizzle shots across them. Template cubes go to their own offsets.",
+        "The held cube follows the SDK grab controller more closely; hold distance stayed at 56, against about 81 in the original."
+      ],
+      "regression": null,
+      "remains": [
+        "a13's ball catchers and lifts, a14, and the escape maps (taken up in session 2).",
+        "The wall-fling height and the speed fix without breaking a10.",
+        "Held distance 81.",
+        "box_dropper's cover and prop_dynamic solidity.",
+        "Turret damage and the turret tip-over."
+      ],
+      "playthroughNote": "Game seconds to the next map, from the playthroughs on the final build of the session, written up at 8:50 AM EST on 24 Nov, on 795cd54. Checks passed 36/36.",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "178.9",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "85.6",
+          "next": "a02"
+        },
+        {
+          "map": "a02",
+          "time": "168.3",
+          "next": "a03"
+        },
+        {
+          "map": "a03",
+          "time": "125.6",
+          "next": "a04"
+        },
+        {
+          "map": "a04",
+          "time": "72.1",
+          "next": "a05"
+        },
+        {
+          "map": "a05",
+          "time": "52.0",
+          "next": "a06"
+        },
+        {
+          "map": "a06",
+          "time": "65.0",
+          "next": "a07"
+        },
+        {
+          "map": "a07",
+          "time": "131.3",
+          "next": "unset"
+        },
+        {
+          "map": "a08",
+          "time": "78.7",
+          "next": "a09"
+        },
+        {
+          "map": "a09",
+          "time": "118.6",
+          "next": "a10"
+        },
+        {
+          "map": "a10",
+          "time": "198.2",
+          "next": "a11"
+        },
+        {
+          "map": "a11",
+          "time": "69.8",
+          "next": "a13"
+        },
+        {
+          "map": "a13",
+          "time": "43.7",
+          "next": "WIP, into the ball hallway"
+        }
+      ],
+      "videos": [
+        {
+          "file": "oracle-session-reel-2026-11-24.mp4",
+          "title": "Session 1 reel",
+          "role": "reel",
+          "seconds": 46.9,
+          "size": 8896222,
+          "recorded": "8:23 AM EST on 24 Nov",
+          "commit": "795cd54a5da3b54c834f80d18f8dd27ee2da18e9",
+          "commitShort": "795cd54",
+          "caption": "46.9 s at 1280×720. A side-by-side floor fling against the original, the +use reach sheet, the a13 box climb with the original's reach, and a11 played through to the lift (turret onto the box button, portals through the grating). The footage is from the morning's build at af8974f, just before the session wrap-up note at 795cd54."
+        }
+      ]
+    }
+  ]
+}

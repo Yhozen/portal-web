@@ -1,0 +1,37 @@
+# Builds the changelog site (tools/changelog.mjs) and publishes it on GitHub Pages.
+# Enable Pages once, with GitHub Actions as the source:
+#   gh api --method POST repos/Yhozen/portal-web/pages -f build_type=workflow
+# Videos are not part of this workflow; they live on GitHub releases.
+name: changelog
+on:
+  push:
+    branches: [main, gabriel/progress]
+    paths:
+      - 'CHANGELOG.md'
+      - 'docs/changelog-data.json'
+      - 'tools/changelog.mjs'
+      - '.github/workflows/changelog.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: changelog
+  cancel-in-progress: true
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: node tools/changelog.mjs --out changelog-site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: changelog-site }
+      - id: deploy
+        uses: actions/deploy-pages@v4

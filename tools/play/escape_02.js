@@ -294,6 +294,45 @@ settle();
 if (game.pl.ducked) { for (let k = 0; k < 30; k++) game.step(T, idle); }
 lg('fling 2 top', top2 | 0);
 lg('high shelf', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 8) throw 'stage 8';
+// The east strip of the z -384 shelf (x ~4644-4831) is portalable concrete;
+// the official landing at 4415 is noportal metal in between. A floor portal
+// there, linked to one on the z -1280 huge-room floor, flings you up beside
+// the z 384 catwalk (at x 4740 the walkway is only y 576-640, so the exit
+// sits at y 720 in open air). Mid-air drop at 5130 snaps to ~5178 and
+// catches the descent still in the air; strafe south at the peak onto y 608.
+standAt(4740, 640, 8);
+lg('shelf exit', placeAt(0, [4740, 720, -384]));
+standAt(4830, 640, 6);
+standAt(4830, 720, 6);
+let placedDrop = false, top3 = -1e9;
+for (let k = 0; k < 16 * 66; k++) {
+  if (game.pl.pos[2] > top3) top3 = game.pl.pos[2];
+  if (!placedDrop && !game.pl.onGround && game.pl.pos[0] > 4865 && game.pl.pos[2] < -420 && game.pl.pos[2] > -900) {
+    lg('deep floor', quickPlace(1, [5130, 720, -1280]), 'at', P());
+    placedDrop = true;
+  }
+  let keys = { fwd: 0, side: 0, jump: false, duck: false };
+  if (!placedDrop && game.pl.pos[0] < 5000) { game.pl.ang = [0, 0, 0]; keys.fwd = 1; }
+  if (placedDrop && game.pl.pos[2] > -200) {
+    const wantY = 608;
+    if (game.pl.pos[1] > wantY + 6) { game.pl.ang = [0, 270, 0]; keys.fwd = 1; }
+    else if (game.pl.pos[1] < wantY - 6) { game.pl.ang = [0, 90, 0]; keys.fwd = 1; }
+  }
+  if (placedDrop && game.pl.onGround && game.pl.pos[2] > 300) break;
+  if (game.pl.pos[2] < -1400 && k > 50) break;
+  game.step(T, keys);
+}
+for (const p of G.gunPortals) p.open = false;
+if (G.relinkMapPortals) G.relinkMapPortals();
+settle();
+if (game.pl.ducked) { for (let k = 0; k < 30; k++) game.step(T, idle); }
+lg('fling 3 top', top3 | 0);
+lg('catwalk', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+// narrow catwalk along y 576-640 until it widens around x 6152; d5_escape_3
+// is a prop_door_rotating at 6402, 627, 438 (no collision in the port).
+runHold(0, 1, 608, 0, v => v >= 6400, 16);
+lg('at escape door', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

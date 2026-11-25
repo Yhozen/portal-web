@@ -26,7 +26,7 @@ const runWest = (xStop, yHold = 2624, max = 8) => {
   for (let k = 0; k < max * 66; k++) {
     const dy = yHold - game.pl.pos[1];
     game.pl.ang = [0, 180, 0];
-    game.step(T, { fwd: 1, side: -Math.max(-0.6, Math.min(0.6, dy / 10)), jump: false, duck: false });
+    game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, dy / 8)), jump: false, duck: false });
     if (game.pl.pos[0] <= xStop && game.pl.onGround && k > 10) break;
   }
 };
@@ -35,11 +35,34 @@ AP.wait(2); lg('start', P() + ' gun ' + G.hasGun + ' fire ' + G.canFire);
 // corridor west from -1172, 2619, -383, over the catwalk lip at x -1600 (the original walks this at 150 u/s;
 // see oracle/runs/e01-walk-lip.jsonl). The gun is picked up on the first steps (OnNewGame ForceSpawns it).
 runWest(-1710, 2624, 8);
-lg('on the catwalk', P(), 'g ' + game.pl.onGround);
+lg('catwalk or fall', P(), 'g ' + game.pl.onGround);
 if (window.STAGE === 1) throw 'stage 1';
-runWest(-2100, 2624, 8);
-lg('west of the pit', P(), 'g ' + game.pl.onGround);
+// the mid-pit crushers open as we enter, and the catwalk is only a few dozen units wide; if we
+// drift off the south edge we land on the ambush floor (z -639). Wait for that, or keep west if we stay up.
+if (game.pl.pos[2] > -500) {
+  runWest(-1900, 2624, 6);
+  lg('still up', P(), 'g ' + game.pl.onGround);
+}
+for (let k = 0; k < 4 * 66 && game.pl.pos[2] > -600; k++) game.step(T, idle);
+lg('pit or walkway', P(), 'g ' + game.pl.onGround);
 if (window.STAGE === 2) throw 'stage 2';
+// south pod (door_*_pod3) opens about 21 s after the floor trigger (19 s relay + 2 s door delay)
+const tLand = io.time;
+const southOpen = () => { const d = AP.ent('door_lower_pod3') || AP.ent('door_upper_pod3'); return d && (d.state === 'open' || d.state === 'opening' && (d.t || 0) > 0.8); };
+AP.wait(28, southOpen);
+lg('south pod', 'waited ' + (io.time - tLand).toFixed(2), 'lower ' + ((AP.ent('door_lower_pod3') || {}).state || '?'), 'pos ' + ((AP.ent('door_lower_pod3') && AP.ent('door_lower_pod3').pos) ? AP.ent('door_lower_pod3').pos.map(v => v | 0) : ''), P());
+if (game.pl.pos[2] < -500) {
+  lg('to the south wall', JSON.stringify(AP.gotoRetry([-1792, 2280, -639], 16, 20, 0.4)).slice(0, 120), P());
+  // the alcove past the pod is tight (broken claw at -1790, 2144); a direct goto can say "no path" after
+  // we're already through, so just walk south until we're clearly past the door at y 2296
+  for (let k = 0; k < 5 * 66 && game.pl.pos[1] > 2180; k++) {
+    const dx = -1792 - game.pl.pos[0], dy = 2144 - game.pl.pos[1];
+    game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  }
+  lg('through the pod', P(), 'g ' + game.pl.onGround);
+}
+if (window.STAGE === 3) throw 'stage 3';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));

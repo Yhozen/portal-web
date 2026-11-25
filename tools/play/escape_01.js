@@ -463,6 +463,73 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
                         }
                         const inVent = game.pl.pos[1] < 500 && game.pl.pos[2] > -200;
                         lg('in the vent', inVent, P(), 'hp ' + G.health, 'dead ' + !!G.dead);
+                        if (inVent) {
+                          const duckWalk = (yaw, pred, max = 8 * 66) => {
+                            game.pl.ang = [0, yaw, 0];
+                            let blocked = 0;
+                            for (let k = 0; k < max; k++) {
+                              const p0 = game.pl.pos.slice();
+                              game.step(T, { fwd: 1, side: 0, jump: false, duck: true });
+                              const moved = Math.hypot(game.pl.pos[0] - p0[0], game.pl.pos[1] - p0[1]);
+                              if (moved < 0.05) blocked++; else blocked = 0;
+                              if (blocked > 18 || pred(game.pl.pos) || G.dead) break;
+                            }
+                          };
+                          duckWalk(270, p => p[1] <= 352);
+                          duckWalk(0, p => p[0] >= 1230);
+                          duckWalk(270, p => p[1] <= 300);
+                          lg('fan stand', P(), placeAt(0, [1216, 176, -200]));
+                          duckWalk(90, p => p[1] >= 352);
+                          duckWalk(180, p => p[0] <= 1153);
+                          duckWalk(90, p => p[1] >= 530, 10 * 66);
+                          game.pl.ang = [0, 90, 0];
+                          for (let k = 0; k < 4 * 66; k++) {
+                            game.step(T, { fwd: 1, side: 0, jump: k >= 10 && k < 22, duck: k < 8 });
+                            if (game.pl.pos[2] < -200 && game.pl.onGround) break;
+                          }
+                          AP.wait(1);
+                          lg('back in the tube room', P(), 'hp ' + G.health);
+                          lg('tube wall', placeAt(1, [1232, 512, -200]));
+                          standAt(1232, 580);
+                          game.pl.ang = [0, 270, 0];
+                          let tele = false;
+                          for (let k = 0; k < 5 * 66; k++) {
+                            const x0 = game.pl.pos[0], y0 = game.pl.pos[1], z0 = game.pl.pos[2];
+                            game.step(T, { fwd: tele ? 0 : 1, side: 0, jump: false, duck: false });
+                            if (!tele && (Math.abs(game.pl.pos[0] - x0) > 40 || Math.abs(game.pl.pos[1] - y0) > 40 || Math.abs(game.pl.pos[2] - z0) > 40)) tele = true;
+                            if (tele && game.pl.onGround && Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 16 && game.pl.pos[2] < -300) break;
+                            if (G.dead) break;
+                          }
+                          AP.wait(0.5);
+                          lg('under the fan', P(), 'hp ' + G.health, 'dead ' + !!G.dead);
+                          if (game.pl.pos[2] < -300 && !G.dead) {
+                            runHold(0, 1, 141, 0, v => v >= 1540, 10);
+                            lg('lower room east', P(), placeAt(0, [1920, -100, -260]));
+                            lg('lower near wall', placeAt(1, [1540, 48, -260]));
+                            game.pl.ang = [0, 270, 0];
+                            tele = false;
+                            for (let k = 0; k < 5 * 66; k++) {
+                              const x0 = game.pl.pos[0], y0 = game.pl.pos[1], z0 = game.pl.pos[2];
+                              game.step(T, { fwd: tele ? 0 : 1, side: 0, jump: false, duck: false });
+                              if (!tele && (Math.abs(game.pl.pos[0] - x0) > 40 || Math.abs(game.pl.pos[1] - y0) > 40 || Math.abs(game.pl.pos[2] - z0) > 40)) tele = true;
+                              if (tele && game.pl.onGround && Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 16) break;
+                              if (G.dead) break;
+                            }
+                            AP.wait(0.4);
+                            lg('east platform', P(), 'hp ' + G.health);
+                            if (game.pl.pos[0] < 1860) {
+                              game.pl.ang = [0, 0, 0];
+                              for (let k = 0; k < 4 * 66 && game.pl.pos[0] < 1880; k++) game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+                            }
+                            game.pl.ang = [0, 270, 0];
+                            for (let k = 0; k < 40 * 66; k++) {
+                              const dx = 1888 - game.pl.pos[0];
+                              game.step(T, { fwd: 1, side: Math.max(-0.5, Math.min(0.5, -dx / 16)), jump: false, duck: false });
+                              if (window.changedTo || G.dead || game.pl.pos[1] < -500) break;
+                            }
+                            lg('changelevel', P(), window.changedTo || null, 'hp ' + G.health, 'dead ' + !!G.dead);
+                          }
+                        }
                       }
                     }
 

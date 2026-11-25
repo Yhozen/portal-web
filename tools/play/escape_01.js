@@ -136,11 +136,35 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
       if (k > 30 && onWalk && slow) break;
     }
     lg('onto walkway', P(), 'top ' + (top | 0), 'blue ' + b2.pos.map(v => v | 0));
-    // walk west toward the red arrow on the south wall (overlay 94 at -1888, 1696, -209)
-    if (game.pl.pos[2] > -280 && game.pl.pos[2] < -180) standAt(-1888, 1743, 6);
+    // walk west toward the red arrow (overlay 94 at -1888, 1696, -209)
+    if (game.pl.pos[2] > -280 && game.pl.pos[2] < -180) {
+      standAt(-1888, 1743, 6);
+      if (window.STAGE === 5) throw 'stage 5';
+      // duck through the small hole in the south wall (x -1852..-1812, z -244..-196)
+      // and drop onto the turret. trigger_once *40 then Opens the flippy door.
+      standAt(-1832, 1740, 4);
+      for (let k = 0; k < 0.5 * 66; k++) game.step(T, { fwd: 0, side: 0, jump: false, duck: true });
+      for (let k = 0; k < 5 * 66; k++) {
+        game.pl.ang = [0, 270, 0];
+        game.step(T, { fwd: 1, side: 0, jump: false, duck: true });
+        if (game.pl.pos[1] < 1608 && game.pl.onGround && game.pl.pos[2] < -300) break;
+      }
+      const flip = AP.ent('flippy_turret_door_12') || {};
+      lg('through the hole', P(), 'g ' + game.pl.onGround, 'flippy ' + (flip.state != null ? flip.state : '?'));
+      // trigger is +0.5s, then move_flippy fully opens, then +2s, then the
+      // rotating door swings 60 degrees at 15 deg/s (~4 s). Wait it out.
+      const doorDone = () => {
+        const f = AP.ent('flippy_turret_door_12') || {};
+        const a = (f.ang || f.angles || [0])[0];
+        return Math.abs(a) >= 55;
+      };
+      AP.wait(10, doorDone);
+      const flip2 = AP.ent('flippy_turret_door_12') || {};
+      lg('flippy open', P(), 'state ' + flip2.state, 'ang ' + (flip2.ang || flip2.angles || []).map(v => (v | 0)));
+    }
   }
 }
-if (window.STAGE === 5) throw 'stage 5';
+if (window.STAGE === 6) throw 'stage 6';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));

@@ -10,7 +10,17 @@ const placeAt = (which, at) => {
   return Q.open && !lastFail ? Q.pos.map(v => v | 0) + ' f ' + Q.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail;
 };
 const T = 1 / 66, idle = { fwd: 0, side: 0, jump: false, duck: false };
-const fly = (min = 0.3, max = 8) => { let top = -1e9; for (let k = 0; k < max * 66; k++) { game.step(T, idle); top = Math.max(top, game.pl.pos[2]); if (k > min * 66 && game.pl.onGround) break; } return game.pl.pos.map(v => v | 0) + ' top ' + (top | 0); };
+const fly = (min = 0.3, max = 8) => {
+  let top = -1e9;
+  for (let k = 0; k < max * 66; k++) {
+    game.step(T, idle); top = Math.max(top, game.pl.pos[2]);
+    // a wall-portal exit leaves you ducked and still sliding; that is onGround
+    // but not landed (turret-room drop stopped at z -456 with vx -238)
+    const slow = Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 16;
+    if (k > min * 66 && game.pl.onGround && slow) break;
+  }
+  return game.pl.pos.map(v => v | 0) + ' top ' + (top | 0);
+};
 const standAt = (x, y, max = 6) => {
   for (let k = 0; k < max * 66; k++) {
     const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1], dist = Math.hypot(dx, dy);
@@ -97,6 +107,28 @@ if (game.pl.pos[2] < -500) {
   }
 }
 if (window.STAGE === 4) throw 'stage 4';
+// from the tube bay, shoot through the chain-link fence onto the west-facing
+// wall of the turret room (x -1792, z -315) and walk through a floor portal.
+if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
+  standAt(-2232, 1964, 4);
+  // move blue off the ceiling first: a floor portal directly under the still-open
+  // ceiling portal is a loop, and waiting even 0.1 s on it reports no fit
+  lg('turret wall', placeAt(0, [-1792, 1742, -315]));
+  lastFail = null;
+  // the floor plate under the landing is too tight for a 64x108 portal (no fit);
+  // 48 units west is on a surface that takes one (live pose, after the 48 s play).
+  const eye2 = game.pl.eye();
+  G.shootPortal(1, { eye: [eye2[0] - 48, eye2[1], eye2[2]], f: [0, 0, -1] });
+  const o2 = G.gunPortals[1], b2 = G.gunPortals[0];
+  const floorOk = o2 && o2.open && !lastFail && o2.pos[0] < -2100 && o2.pos[2] < -480;
+  lg('tube bay', P(), 'floor ' + (floorOk ? o2.pos.map(v => v | 0) + ' f ' + o2.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail));
+  if (floorOk && b2 && b2.open) {
+    game.pl.pos = [o2.pos[0], o2.pos[1], o2.pos[2] + 12];
+    game.pl.vel = [0, 0, -20];
+    lg('into turret room', fly(0.5, 6), 'blue ' + b2.pos.map(v => v | 0));
+  }
+}
+if (window.STAGE === 5) throw 'stage 5';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));

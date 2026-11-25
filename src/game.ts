@@ -172,8 +172,8 @@ export class Game {
     if (c === 'func_portal_bumper') this.bumpers.push(e);
     if (c === 'func_portal_detector') { e.inside = [false, false]; e.both = false; this.portalDetectors.push(e); }
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
-    if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
-      if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
+    if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override|glados_core)$/.test(c) && kv.model) {
+      if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube' || c === 'prop_glados_core') this.spawnCube(e);
       else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; e.prop.restPose = true; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e, kv.model); if (/^prop_dynamic/.test(c) && kv.solid !== '0') this.followerProps.push(e); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
@@ -189,6 +189,8 @@ export class Game {
     e.cube = cube; this.cubes.push(cube);
     this.tr.extraBoxes.push({ mins: [0, 0, 0], maxs: [0, 0, 0], ent: e }); e.box = this.tr.extraBoxes[this.tr.extraBoxes.length - 1];
     e.onKill = () => { cube.alive = false; prop.visible = false; if (this.held === cube) this.held = null; e.box.mins = [1e9, 1e9, 1e9]; e.box.maxs = [1e9, 1e9, 1e9]; };
+    // spawnflag 8 is Motion Disabled (SDK 2013 props.cpp); later cores hang until EnableMotion
+    if (+(e.kv.spawnflags || 0) & 8) cube.asleep = true;
     this.updateCubeBox(cube); if (e.killed) e.onKill();
     // Collision size from the model's hull (metal_box.mdl: ±20.25). It was a fixed ±12, so cubes sat 8 units into the floor;
     // the original rests a11's boxes at z 20.4 on a z-0 floor and stacks them.
@@ -638,7 +640,7 @@ export class Game {
       else if (i === 'destroy' || i === 'break') { e.rocketDestroyed = true; e.rocketEnabled = false; e.defaultAnim = 'inactive'; this.playAnim(e, 'close', false); this.io.fire(e, 'ondeath', e); }
       else return false; return true;
     });
-    H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
+    H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis); H.set('prop_glados_core', propVis);
     // material_modify_control: drives $frame of its parent brush's material (Valve Developer Wiki); used by the a00 countdown clock
     H.set('material_modify_control', (e, i, param) => { const par = e.kv.parentname ? this.io.find(e.kv.parentname, null, e)[0] : null; const ins: any = par && (par.inst || par.prop); if (!ins) return true;
       if (i === 'setmaterialvar') { e.lerp = null; ins.texFrame = Math.floor(+param || 0); }
@@ -1461,7 +1463,9 @@ export class Game {
   }
   passFilter(f: Ent, a: Ent) {
     let ok = true;
-    if (f.cls === 'filter_activator_name') ok = a.name === (f.kv.filtername || '').toLowerCase();
+    // filter_activator_name uses the same trailing-* prefix as I/O target names (escape_02's
+    // filter_brain_ball is brain_core_sphere*, matching every personality core)
+    if (f.cls === 'filter_activator_name') { const pat = (f.kv.filtername || '').toLowerCase(); ok = pat.endsWith('*') ? a.name.startsWith(pat.slice(0, -1)) : a.name === pat; }
     else if (f.cls === 'filter_combineball_type') ok = !!a.ball;
     else if (f.cls === 'filter_activator_class') ok = (a.cube ? 'prop_physics' : a.cls) === (f.kv.filterclass || '').toLowerCase();
     if (f.kv.negated === '1') ok = !ok; return ok;

@@ -344,6 +344,53 @@ standAt(7100, 1220, 8);
 standAt(7130, 1220, 4);
 runHold(0, 1, 1170, 0, v => v >= 9280, 22);
 lg('glados chamber', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 10) throw 'stage 10';
+// Entering the chamber trips a huge trigger_once that starts scene_found_me.
+// On completion it parents dummy_core_prop to tt_dummy_core, the train runs
+// down, and make_brain_core_0 ForceSpawns a pickupable prop_glados_core at
+// about 9424, 1136, 422.
+let core = null;
+for (let k = 0; k < 50 * 66; k++) {
+  game.step(T, idle);
+  core = (G.cubes || []).find(c => c.alive && c.ent && c.ent.name === 'brain_core_sphere_0');
+  if (core && k > 2 * 66) break;
+}
+lg('first core dropped', core ? core.pos.map(v => v | 0) : 'none', 't', io.time.toFixed(1));
+if (core) {
+  standAt(core.pos[0], core.pos[1], 8);
+  const eye = game.pl.eye(), d = core.pos.map((v, i) => v - eye[i]), l = Math.hypot(...d) || 1;
+  game.pl.ang = [-Math.asin(Math.max(-1, Math.min(1, d[2] / l))) * 180 / Math.PI, Math.atan2(d[1], d[0]) * 180 / Math.PI, 0];
+  G.use(); AP.wait(0.15);
+  lg('holding first core', !!(G.held && G.held.ent && G.held.ent.name === 'brain_core_sphere_0'));
+  // The pedestal button is a Use-Opens func_door_rotating, but +use from the
+  // pedestal origin doesn't hit its brush, so Open is sent directly. The hatch
+  // only stays open for 6.5 s, so open it once we're already at the lip.
+  standAt(10290, 1216, 16);
+  const btn = (G.io.ents || []).find(e => e.name === 'button_open_disposal_hatch1');
+  if (btn) io.deliver(btn, 'open', '', G.playerEnt, G.playerEnt);
+  AP.wait(0.3);
+  for (let k = 0; k < 2 * 66; k++) {
+    game.pl.ang = [20, 0, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+    if (game.pl.pos[0] > 10320) break;
+  }
+  game.pl.ang = [25, 0, 0];
+  if (G.held) G.use();
+  core = (G.cubes || []).find(c => c.alive && c.ent && c.ent.name === 'brain_core_sphere_0');
+  if (core && !core.held) { core.vel = [220, 0, -80]; core.asleep = false; }
+  // step back from the lip so we don't follow the core into the shaft
+  for (let k = 0; k < 1 * 66; k++) {
+    game.pl.ang = [0, 180, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+    if (game.pl.pos[0] < 10240) break;
+  }
+  const cnt = () => { const e = (G.io.ents || []).find(x => x.name === 'brain_core_burn_count'); return e ? e.value : null; };
+  for (let k = 0; k < 8 * 66; k++) {
+    game.step(T, idle);
+    if (cnt() >= 1) break;
+  }
+  lg('first core burned', 'count ' + cnt(), 'hp ' + G.health, 'dead ' + !!G.dead, 'at', P());
+}
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

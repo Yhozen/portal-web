@@ -440,6 +440,9 @@ export class Game {
       const t = this.tr.trace(e2, ma(e2, 56, f2), scale(ext, -1), ext, 0x1 | 0x2 | 0x8 | 0x4000, this.playerEnt); hc.pos = t.startsolid ? [...e2] as V3 : t.end; hc.vel = [...pl.vel] as V3;
       if (hc.R) hc.R = mul(M, hc.R); }
     this.tr.ignore = null;
+    // duck after placing, so the exit still uses the standing mid-point. Wall exits stay ducked until we land;
+    // floor/ceiling exits un-duck at 0.35 s (oracle wallfling-drop-* and fling-drop-* traces).
+    if (!this.player.noclip) this.player.forcePortalDuck(Math.abs(b.f[2]) < 0.7);
     this.io.log.push(`${this.io.time.toFixed(2)} teleport ${a.name} -> ${b.name}`);
   }
   /** src: fire from somewhere else (the a01 pedestal gun's FirePortal1 input) */

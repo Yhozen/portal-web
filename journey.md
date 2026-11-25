@@ -2,6 +2,28 @@
 
 A running log of work on the port. Times are America/New_York.
 
+## 2026-11-24 to 25, session 3 (from 8:35 PM EST)
+
+**9:25 PM EST, forced duck is in, and a14 and a15 still close.** Wall exits stay ducked until
+you land; floor and ceiling exits snap the eye back up at 0.35 s if there's room. The mid-air duck also raises
+the feet so the eye stays put, and landing clears that raise so standing up grows the hull upward — the way the
+SDK does it, and the only way a duck-jump onto a15's exit-sign ledge (z 104 to 128) can unduck afterward. a15's
+scripts needed a retune around that: the fall loop's second hop now leaves the wall portal at z 560, the walk
+to crusher01_tc15 goes south around the floor portal then hops onto the cylinder top (z 104 at x 2764, not the
+west shelf at z 80), and a duck-jump off the south end reaches the z 128 ledge. The broken-tube jump also had
+to become a standing walk-off into the hole (y 964–996), then a duck so the hull fits under the tube ceiling;
+holding 1616,1591 on the way up the far shaft lets the southbound push at z 1344 catch you. a15 reaches
+escape_00 at 261.7 s, a14 reaches a15 at 126.3 s. escape_00 is next; the crusher12 landing is walking off the
+piston with leftover exit speed.
+
+**8:45 PM EST, starting.** Tip was 57d7eb7, tree clean, on gabriel/oracle. The first pass is the wall-exit forced
+duck and the floor-fling un-duck, measured against the original traces already in portal-web-shots/oracle/runs/orig.
+A standing floor-to-wall exit in the original drops the eye 37 units by five ticks later (view 64 to 28, plus a
+tick of lerp and gravity) and stays ducked for the rest of the flight; a floor-to-floor fling snaps the eye back up
+about 0.35 s after the exit. The port still left at standing view, so eye5 was 596.3 against the original's 551.9 /
+578.4 / 578.7. I'm modelling that in the hull and the view, then I'll re-check a14, a15 and escape_00 before keeping it.
+
+
 ## 2026-11-24, session 2 (from 9:03 AM EST)
 
 **9:20 AM EST, a13's box cover holds the box now.** box_dropper_cover.mdl lists its flaps and arms under

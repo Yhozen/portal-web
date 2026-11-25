@@ -110,6 +110,7 @@ const thruWall = (blueAt, orangeAt, tag, opts = {}) => {
   lg('blue ' + tag, placeAt(0, blueAt));
   lg('orange ' + tag, placeAt(1, orangeAt));
   lg('through ' + tag, walkInto(1, 5), P());
+  if (opts.brake) game.pl.vel = [0, 0, 0];
   stepOffWall(opts.xMin ?? 50, opts.off ?? 1);
   for (let k = 0; k < 2 * 66; k++) { game.step(T, { fwd: 0, side: 0, jump: false, duck: false }); if (game.pl.onGround && k > 8) break; }
   lg('land ' + tag, P(), game.pl.onGround, game.pl.groundEnt && game.pl.groundEnt.name);
@@ -139,7 +140,7 @@ thruFromHere(window.C8 ?? [-255, 640, 900], 'crusher08');
 if (window.STAGE === 8) throw 'stage 8';
 // the two highest pistons (crusher15/17, bottoms 1096) sit flush with the south wall;
 // a portal in the gap between them (x=-136..8) exits at z=1088 onto crusher12 (top 1080).
-thruWall(window.C12 ?? [-64, 256, 1143], window.C12O ?? [-255, 620, 890], 'crusher12', { off: 0.35 });
+thruWall(window.C12 ?? [-64, 256, 1143], window.C12O ?? [-255, 620, 890], 'crusher12', { off: 0.15, brake: true });
 game.pl.vel = [0, 0, 0];
 if (window.STAGE === 9) throw 'stage 9';
 // past the y=768 fence: west wall of the z=1088 floor, walk into the same south-wall portal

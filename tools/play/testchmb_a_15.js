@@ -91,8 +91,8 @@ if (window.STAGE === 8) throw 'stage 8';
 // the trench opens onto the chimney between z 352 and about 590. Blue high on the west wall, orange on the deck floor
 // where you land coming out of blue at walking-in speed (~210 u/s east, ~290 out from the wall): step in slowly, drop out of blue, fall back into orange, and the second time out of blue you're going ~900 u/s
 // east, enough to cross the trench into the tank room
-AP.approach(window.DA ?? [-1940, 448], 4, 2); // from the west, so orange lies along x. -1940, not -1900: the wall-fling tick takes 9 u/s off the first exit, and the shorter run-up came out of the second hop going up into the deck beam
-{ let r = ''; for (const t of (window.AT ?? [[-2112, 448, 640], [-2112, 430, 640], [-2112, 466, 640]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue high west wall', P(), r); }
+AP.approach(window.DA ?? [-1940, 448], 4, 2); // from the west, so orange lies along x. Wall portal at z 560, not 640: after a portal the player is ducked, and the second hop (ducked mid) used to come out at z 658 and into the deck beam.
+{ let r = ''; for (const t of (window.AT ?? [[-2112, 448, 560], [-2112, 430, 560], [-2112, 466, 560]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue high west wall', P(), r); }
 { let r = ''; for (const t of (window.BF ?? [[-1810, 448, 0], [-1820, 448, 0], [-1830, 448, 0]])) { r = shoot(1, t); if (!/not placed/.test(r)) break; } lg('orange deck floor', P(), r); }
 { const op = G.gunPortals[1].pos, n0 = G.stats.teleports, tr = [];
   for (let k = 0; k < 8 * 66; k++) { const dx = op[0] - game.pl.pos[0], dy = op[1] - game.pl.pos[1]; if (G.stats.teleports === n0) game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
@@ -169,12 +169,34 @@ if (window.STAGE === 19) throw 'stage 19';
 // over the handrail into the broken tube; its trigger_pushes carry you on
 // (the hole in its top is x 0..112, y 944..1024: the cover runs only to y 944 there)
 AP.approach(window.HJ ?? [56, 1110], 3, 2);
-// the ride drops you into a shaft above the box dropper; its 64-unit hole (x 1600..1664, y 480..544, rim z 928) needs
-// steering back from the shaft's south wall, where the last push's momentum throws you
-{ const tr = []; for (let k = 0; k < 25 * 66; k++) { const t = k / 66, p = game.pl.pos, drop = p[0] > 1560 && p[1] < 600 && p[2] < 1340 && p[2] > 900 && !game.pl.onGround;
-    const dx = 1632 - p[0], dy = 512 - p[1]; game.pl.ang = [0, drop ? Math.atan2(dy, dx) * 180 / Math.PI : -90, 0];
-    game.step(T, { fwd: drop ? Math.min(1, Math.hypot(dx, dy) / 8) : t < 1.5 && p[1] > (window.HY ?? 990) ? 1 : 0, side: t < 1.5 ? (56 - p[0]) / 20 : 0, jump: t < 1.5 && game.pl.onGround && p[1] < 1110, duck: (t < 1.5 && !game.pl.onGround) || drop });
-    if (k % 33 === 0) tr.push(io.time.toFixed(1) + ':' + P() + (game.pl.onGround ? '' : '*')); if (G.changedTo || window.changedTo || (t > 5 && game.pl.onGround && game.pl.pos[2] < 700)) break; }
+// the hole in the tube (x 24..104, y 964..996, a 1120-unit lip then the z 1064 floor) is a standing walk-off from the
+// z 1152 cover; duck once you fall so the hull fits under the low ceiling, then the trigger_pushes carry you east and
+// up the far shaft. Hold 1616,1591 on the way up so the southbound push at z 1344 can catch you, then steer in the drop
+// (x 1600..1664, y 480..544, rim z 928) off the shaft's south wall.
+{ const tr = []; for (let k = 0; k < 25 * 66; k++) {
+    const t = k / 66, p = game.pl.pos, pl = game.pl;
+    const drop = p[0] > 1560 && p[1] < 600 && p[2] < 1340 && p[2] > 900 && !pl.onGround;
+    const dx = 1632 - p[0], dy = 512 - p[1];
+    let inp = { fwd: 0, side: 0, jump: false, duck: true };
+    if (p[2] > 1140 && p[0] < 400) {
+      const adx = 56 - p[0], ady = 980 - p[1];
+      pl.ang = [0, Math.atan2(ady, adx) * 180 / Math.PI, 0];
+      inp = { fwd: Math.min(1, Math.hypot(adx, ady) / 8), side: 0, jump: false, duck: false };
+    } else if (drop) {
+      pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+      inp = { fwd: Math.min(1, Math.hypot(dx, dy) / 8), side: 0, jump: false, duck: true };
+    } else if (p[0] > 1500 && p[1] > 700) {
+      const adx = 1616 - p[0], ady = 1591 - p[1];
+      pl.ang = [0, Math.atan2(ady, adx) * 180 / Math.PI, 0];
+      inp = { fwd: p[2] < 1330 ? Math.min(1, Math.hypot(adx, ady) / 12) : 0, side: 0, jump: false, duck: true };
+    } else {
+      pl.ang = [0, p[0] < 200 ? 0 : -90, 0];
+      inp = { fwd: p[0] < 200 ? 1 : 0, side: 0, jump: false, duck: true };
+    }
+    game.step(T, inp);
+    if (k % 33 === 0) tr.push(io.time.toFixed(1) + ':' + P() + (pl.onGround ? '' : '*'));
+    if (G.changedTo || window.changedTo || (t > 5 && pl.onGround && pl.pos[2] < 700)) break;
+  }
   lg('tube', tr.join(' '), window.changedTo || ''); }
 if (window.STAGE === 20) throw 'stage 20';
 // the a02-style room under the dropper: its floor button opens the exit door only while held, so stand on it, put
@@ -213,18 +235,26 @@ if (window.STAGE === 23) throw 'stage 23';
 { let r = ''; for (const t of (window.PT ?? [[2520, 450, 96], [2560, 420, 96], [2480, 460, 96]])) { r = shoot(0, t); if (!/not placed/.test(r)) break; } lg('blue ledge top', P(), r); }
 lg('back to the shaft', JSON.stringify(AP.gotoRetry([2419, 610, -63], 6, 5, 1)).slice(0, 60), P());
 { const n0 = G.stats.teleports; for (let k = 0; k < 5 * 66 && G.stats.teleports === n0; k++) { game.pl.ang = [0, 90, 0]; game.step(T, { fwd: 1, side: (2419 - game.pl.pos[0]) / 20, jump: false, duck: false }); }
-  AP.wait(1.5); lg('ledge top', G.stats.teleports > n0, P()); }
+  AP.wait(0.5);
+  // go around the floor portal (blue is on this ledge at ~2519,450) to the east edge by the cylinder
+  const walkXY = (x, y, max = 6) => { for (let k = 0; k < max * 66; k++) { const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1]; if (Math.hypot(dx, dy) < 8) return P(); game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } return P(); };
+  lg('ledge top', G.stats.teleports > n0, P(), walkXY(game.pl.pos[0], 345), walkXY(2672, 345), walkXY(2672, 440)); }
 if (window.STAGE === 24) throw 'stage 24';
 // the sideways cylinder (crusher01_tc15, y 272..720): around the blue portal on the ledge top to its east edge, jump
 // onto the cylinder as it slides past, keep to its south end and step up onto the exit-sign ledge (z 128) as it retracts
-{ const c = E('crusher01_tc15'), p = game.pl; let mode = 0, jt = 0; const wp = [[2470, 345], [2610, 345], [2610, 440]]; let wi = 0;
-  for (let j = 0; j < 66 * 30; j++) { let inp = { fwd: 0, side: 0, jump: false, duck: false }; const cy = c.pos[1];
-    if (mode === 0) { const w = wp[wi], dx = w[0] - p.pos[0], dy = w[1] - p.pos[1]; if (Math.hypot(dx, dy) < 6 && wi < 2) wi++; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 10); if (Math.hypot(dx, dy) < 6) { p.ang = [0, 0, 0]; inp.fwd = 0; } if (cy > 560 && cy < 640 && c.moving && wi === 2 && Math.hypot(dx, dy) < 6) { mode = 1; jt = j; } }
-    else if (mode === 1) { p.ang = [0, 0, 0]; const t = j - jt; inp = { fwd: p.pos[0] < 2760 ? 1 : 0, side: 0, jump: t < 3 && p.onGround, duck: false }; if (t > 40 && p.onGround) mode = 2; }
-    else if (mode === 2) { const ty = cy - 400 + 24, dx = 2764 - p.pos[0], dy = ty - p.pos[1]; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 20); if (cy < 300 && p.pos[1] < 40) { mode = 3; jt = j; } }
-    else { p.ang = [0, -90, 0]; const t = j - jt; inp = { fwd: 1, side: (2764 - p.pos[0]) / 20, jump: t < 3, duck: t > 1 && t < 30 }; if (t > 60) break; }
-    game.step(T, inp); }
-  lg('exit-sign ledge', P()); }
+{ const c = E('crusher01_tc15'), p = game.pl; let mode = 0, jt = 0; const wp = [[2672, 440]]; let wi = 0; // east rim of the z=96 ledge, ~24 units from the cylinder
+  const ctr = [];
+  for (let j = 0; j < 66 * 50; j++) { let inp = { fwd: 0, side: 0, jump: false, duck: false }; const cy = c.pos[1];
+    if (mode === 0) { const w = wp[wi], dx = w[0] - p.pos[0], dy = w[1] - p.pos[1]; if (Math.hypot(dx, dy) < 6 && wi < wp.length - 1) wi++; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 10); if (Math.hypot(dx, dy) < 6) { p.ang = [0, 0, 0]; inp.fwd = 0; } if (cy > 560 && cy < 640 && c.moving && wi === wp.length - 1 && Math.hypot(dx, dy) < 6) { mode = 1; jt = j; } }
+    else if (mode === 1) { p.ang = [0, 0, 0]; const t = j - jt; inp = { fwd: p.pos[0] < 2764 ? 1 : 0, side: 0, jump: t < 2 && p.onGround, duck: false }; // hop from the z=96 ledge onto the cylinder TOP (z 104 at x ~2764), not the west shelf (z 80)
+      if (p.onGround && p.pos[2] > 100 && p.pos[0] > 2720) mode = 2; else if (t > 30 && p.pos[2] < 50) { mode = 0; } }
+    else if (mode === 2) { const ty = cy - 220, dx = 2764 - p.pos[0], dy = ty - p.pos[1]; p.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0]; inp.fwd = Math.min(1, Math.hypot(dx, dy) / 16); // stay ~36 units north of the south face (cy-256)
+      if (p.pos[2] < 50) { mode = 0; } // fell off
+      else if (cy < 330 && p.pos[1] < 60 && p.pos[2] > 100) { mode = 3; jt = j; } }
+    else { p.ang = [0, -90, 0]; const t = j - jt; inp = { fwd: 1, side: (2764 - p.pos[0]) / 20, jump: t < 3 && p.onGround, duck: t > 1 && t < 30 }; // duck-jump: mid-air duck raises the feet ~36 so a 21-unit jump clears the 24-unit lip (104→128)
+      if (p.onGround && p.pos[2] > 120 && p.pos[1] < 40) break; if (t > 90) break; }
+    game.step(T, inp); if (j % 33 === 0) ctr.push(mode + ':' + P() + (p.onGround ? '' : '*') + ':' + (cy | 0)); }
+  lg('exit-sign ledge', P(), ctr.join(' ')); }
 if (window.STAGE === 25) throw 'stage 25';
 // the dead end's grate looks into the exit shaft (x 3216..3343, y -111..15, floor z -191): blue on its far wall, orange
 // on the ledge floor, and in. From the shaft floor orange goes high on the west wall: with blue still on the east wall

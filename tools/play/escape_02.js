@@ -113,7 +113,23 @@ for (let k = 0; k < 5 * 66; k++) {
   if (game.pl.pos[2] < -1700) break;
 }
 settle();
-lg('turret room', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+lg('channel', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 4) throw 'stage 4';
+// the landing is a narrow drainage channel at z -1408. A west-wall portal at
+// z -1081, entered from the channel's north wall, drops onto the huge room's
+// z -1280 floor.
+lg('west high', placeAt(0, [4864, 1034, -1081]));
+lg('channel wall', placeAt(1, [5602, 1088, -1336]));
+for (let k = 0; k < 5 * 66; k++) {
+  game.pl.ang = [0, 90, 0];
+  const err = 5602 - game.pl.pos[0];
+  const side = Math.max(-0.6, Math.min(0.6, err / 8));
+  game.step(T, { fwd: 1, side, jump: false, duck: false });
+  if (game.pl.pos[2] > -1300 || game.pl.pos[0] < 5200) break;
+  if (game.pl.pos[2] < -1600) break;
+}
+settle();
+lg('huge room', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

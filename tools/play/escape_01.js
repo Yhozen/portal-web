@@ -212,6 +212,30 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
         if (game.pl.onGround && game.pl.pos[2] > -280 && game.pl.pos[2] < -200) {
           standAt(-900, 1600, 8);
           lg('office platform', P(), 'g ' + game.pl.onGround);
+          if (window.STAGE === 8) throw 'stage 8';
+          // the platform continues south at x -800. d1's doorway is a 52-unit
+          // gap at x -856..-804 (center -830); d2's is y 556..604 (center 580).
+          // The prop doors have no model/collision yet, but the frames are world
+          // brushes, so the hull has to go through those openings.
+          standAt(-800, 1180, 10);
+          standAt(-830, 1180, 4);
+          for (let k = 0; k < 8 * 66; k++) {
+            const dx = -830 - game.pl.pos[0];
+            game.pl.ang = [0, 270, 0];
+            game.step(T, { fwd: 1, side: Math.max(-0.5, Math.min(0.5, dx / 8)), jump: false, duck: false });
+            if (game.pl.pos[1] < 1000 && game.pl.onGround) break;
+          }
+          lg('through d1', P(), 'g ' + game.pl.onGround);
+          standAt(-700, 580, 10);
+          for (let k = 0; k < 8 * 66; k++) {
+            const dy = 580 - game.pl.pos[1];
+            game.pl.ang = [0, 0, 0];
+            game.step(T, { fwd: 1, side: Math.max(-0.6, Math.min(0.6, dy / 8)), jump: false, duck: false });
+            if (game.pl.pos[0] > -600 && game.pl.onGround) break;
+          }
+          lg('through d2', P(), 'g ' + game.pl.onGround);
+          standAt(-545, 640, 8);
+          lg('turret button', P(), 'g ' + game.pl.onGround);
         }
       }
     }

@@ -9,6 +9,9 @@ lg('to gun', AP.reach(E('portalgun_spawn_lvl4').origin, 40)); lg('gun', G.hasGun
 lg('into room', AP.reach([-200, -60, -120], 40)); AP.wait(2.5); lg('orange', E('portal_a_rm4').open);
 lg('blue on ceiling over catcher', shoot(0, [0, -127, 256]));
 const caught = AP.wait(30, () => E('lift_up_trigger_a').enabled); lg('ball caught', caught + ' balls ' + G.balls.map(b => b.pos.map(v => v|0)).join(' '));
+// lift_a.Open starts when the catcher fires, but the platform is still up; the trigger centre is at z 24 and the
+// planner cannot reach it from the floor (z -127). Wait until it has lowered (measured ~6 s) before walking on.
+AP.wait(10, () => { const L = E('lift_a'); return L && L.pos[2] < -50 && !L.speedNow; }); lg('lift down', E('lift_a').pos.map(v => v|0));
 if (window.PART1_ONLY) {} else {
 lg('onto lift', AP.reach(C(E('lift_up_trigger_a')), 30)); AP.wait(12, () => game.pl.pos[2] > 20); AP.wait(4); lg('lift top', P());
 lg('to mid elevator', AP.reach(F('a03-middle_trigger_elevator_move'), 30));
@@ -18,10 +21,23 @@ AP.wait(40, () => { const b = E('a03-middle_elevator_body'); return b.pos[2] > 1
 lg('into room 2', AP.reach([400, 0, 1344], 30)); AP.wait(1);
 const L = E('energy_ball_launcher_a03_2'); G.tr.ignore = null; const ht = G.tr.trace(L.origin, [L.origin[0], L.origin[1] + 3000, L.origin[2]], [0,0,0], [0,0,0], 0x1, null);
 lg('ball path hits', ht.end.map(v => v|0)); AP.wait(4);
-for (const sp of [[200, 100], [64, 100], [150, 0], [64, 200], [250, 200], [0, 150]]) { const r = AP.reach([sp[0], sp[1], 1344], 30); const res = shoot(0, [64, ht.end[1], 1402]);
-  lg('blue on ball wall from ' + sp, res); const Bp = G.gunPortals[0]; if (Bp.open && Math.abs(Bp.pos[1] - ht.end[1]) < 4 && Math.abs(Bp.pos[0] - 64) < 40) break; }
+// the catcher mouth sits at x -63, y 0. The ball flies at z 1403, so the wall portal must be centred
+// there. The z 1344 landing is only the entrance (x 352–448, y ±32); walking to [200,100] falls in the
+// pit. From this landing, lookAt([64,320,1402]) places a centred portal (tested 384,0 / 352,0 / 352,-32).
+const centred = () => { const Bp = G.gunPortals[0]; return Bp.open && Math.abs(Bp.pos[1] - ht.end[1]) < 4 && Math.abs(Bp.pos[0] - 64) < 8 && Math.abs(Bp.pos[2] - 1402) < 12; };
+for (const sp of [[384, 0], [352, 0], [352, -32], [384, 32], [320, 0]]) {
+  AP.approach(sp, 4, 2);
+  if (Math.abs(game.pl.pos[2] - 1344) > 40) { lg('left the landing at ' + sp, P()); AP.reach([400, 0, 1344], 20); continue; }
+  const res = shoot(0, [64, ht.end[1], 1402]);
+  lg('blue on ball wall from ' + sp, res + ' at ' + P());
+  if (centred()) break;
+}
+
+
+
+
 if (window.TRACE2) { const tr = []; for (let i = 0; i < 60; i++) { AP.wait(0.25); tr.push(G.balls.map(b => b.pos.map(v => v|0)).join('|')); } lg('ball track', tr.join(' ')); lg('c2 members', io.log.filter(l => /placed template/.test(l)).join(' / ')); const t2 = E('catcher2_ball_trap_10'); lg('trig', t2 && [t2.killed, t2.enabled, t2.bmins, t2.bmaxs]); }
-const c2 = AP.wait(30, () => { const t = E('func_tracktrain_b00'); return t.moving || t.speedNow || io.log.some(l => /catcher_2|catcher2.*trigger/.test(l)); });
+const c2 = AP.wait(30, () => { const t = E('func_tracktrain_b00'); return t.moving || t.speedNow || t.pos[1] > -200; });
 AP.wait(8); lg('catch 2', c2 + ' balls ' + G.balls.map(b => b.pos.map(v => v|0)).join(' ') + ' train ' + E('func_tracktrain_b00').pos.map(v => v|0));
 // the cart shuttles between track_b00_2 (y -236) and track_b00_1 (y 212, beside the exit ledge), resting 4 s at each end. Its home spot
 // sits under the only portalable ceiling patch: put blue there, wait by the fixed orange floor portal, and drop through onto the cart.

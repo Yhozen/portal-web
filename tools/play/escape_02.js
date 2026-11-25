@@ -8,6 +8,14 @@ const placeAt = (which, at) => {
   return Q.open && !lastFail ? Q.pos.map(v => v | 0) + ' f ' + Q.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail;
 };
 const T = 1 / 66, idle = { fwd: 0, side: 0, jump: false, duck: false };
+const quickPlace = (which, at) => {
+  const eye = game.pl.eye(); const d = at.map((v, i) => v - eye[i]), l = Math.hypot(...d) || 1, f = d.map(v => v / l);
+  lastFail = null; G.shootPortal(which, { eye, f });
+  for (let k = 0; k < 4; k++) game.step(T, idle);
+  const Q = G.gunPortals[which];
+  return Q.open && !lastFail ? Q.pos.map(v => v | 0) + ' f ' + Q.f.map(v => +v.toFixed(2)) : 'not placed ' + lastFail;
+};
+
 const fly = (min = 0.3, max = 8) => {
   let top = -1e9;
   for (let k = 0; k < max * 66; k++) {
@@ -231,6 +239,61 @@ settle();
 if (game.pl.ducked) { for (let k = 0; k < 30; k++) game.step(T, idle); }
 lg('fling top', top | 0);
 lg('east alcove', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 7) throw 'stage 7';
+// From the east alcove, jump west through the window back to the z -1280
+// floor, then repeat the drop fling but mid-peak retarget onto
+// flippy_turret_door_12's func_brush (normal -0.5, 0, 0.87). Moving the
+// drop portal to 6058, 640, -1280 (the official descent's floor-impact XY)
+// so you hit it still in the air at ~1000 u/s and fling up and west, landing
+// on a z -384 shelf around x 4415.
+for (let k = 0; k < 5 * 66; k++) {
+  if (game.pl.onGround && game.pl.pos[2] < -1200 && game.pl.pos[0] < 6100) break;
+  if (game.pl.pos[2] < -1350) break;
+  game.pl.ang = [0, 180, 0];
+  const jump = game.pl.onGround && game.pl.pos[0] > 6148;
+  game.step(T, { fwd: 1, side: 0, jump, duck: false });
+}
+lg('back on floor', P(), 'g ' + game.pl.onGround, 'hp ' + G.health);
+standAt(5000, 640, 8);
+lg('east high 2', placeAt(0, [6144, 640, -697]));
+lg('floor entry 2', placeAt(1, [5000, 640, -1280]));
+for (let k = 0; k < 5 * 66; k++) {
+  const dx = 5000 - game.pl.pos[0], dy = 640 - game.pl.pos[1];
+  if (game.pl.pos[0] > 5800 || game.pl.pos[2] > -1100) break;
+  game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[2] < -1350) break;
+}
+game.pl.ang = [0, 90, 0];
+lg('ramp 13', placeAt(0, [4930, 640, -920]));
+lg('drop floor 2', placeAt(1, [6111, 640, -1280]));
+for (let k = 0; k < 20; k++) {
+  game.pl.ang = [0, 180, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[0] <= 6120) break;
+}
+if (game.pl.pos[0] > 6130) game.pl.pos = [6120, game.pl.pos[1], game.pl.pos[2]];
+let placed12 = false, top2 = -1e9;
+for (let k = 0; k < 12 * 66; k++) {
+  if (game.pl.pos[2] > top2) top2 = game.pl.pos[2];
+  if (!placed12 && game.pl.pos[2] > -540 && game.pl.pos[0] > 5300 && game.pl.pos[0] < 5800) {
+    game.pl.ang = [0, 90, 0];
+    lg('flippy 12 mid-fling', quickPlace(0, [6102, 640, -529]), 'at', P());
+    lg('moved drop', quickPlace(1, [6058, 640, -1280]));
+    placed12 = true;
+  }
+  // the second fling comes out going west and lands on a z -384 shelf around x 4415.
+  // don't treat a weak landing on flippy_12 itself (x ~6100, z ~-530) as success.
+  if (k > 4 * 66 && game.pl.onGround && game.pl.pos[2] > -450 && game.pl.pos[0] < 5000 && Math.hypot(game.pl.vel[0], game.pl.vel[1], game.pl.vel[2]) < 20) break;
+  if (game.pl.pos[2] < -1350 && k > 50) break;
+  game.step(T, idle);
+}
+for (const p of G.gunPortals) p.open = false;
+if (G.relinkMapPortals) G.relinkMapPortals();
+settle();
+if (game.pl.ducked) { for (let k = 0; k < 30; k++) game.step(T, idle); }
+lg('fling 2 top', top2 | 0);
+lg('high shelf', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

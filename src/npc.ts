@@ -66,6 +66,11 @@ export const TURRET = { range: 1200, cone: 0.4, maxWait: 5, thinkActive: 0.1, th
  *  without damage (hurtme 50 → 75 on this skill, back to 100 in 0.4 s) */
 export const PLAYER_HP = { regenWait: 1.0, regenPerSec: 66, push: 110 };
 export type TurretState = 'idle' | 'deploy' | 'search' | 'active' | 'retire' | 'tipped' | 'dead';
+/** npc_rocket_turret, measured in the original on escape_01 (Tue Nov 24 10:10 PM EST). Standing on the
+ *  tiles in front of laser_1 at feet [-400, 576, -247.97], host_framerate 0.015:
+ *  first rocket 6.84–6.96 s after Enable (the model's open sequence is 4.333 s), later shots 5.96–6.11 s
+ *  apart; a rocket is lethal (health 100 → 1 with buddha, so at least 99); projectile about 550 u/s. */
+export const ROCKET_TURRET = { firstFire: 6.90, interval: 6.00, speed: 550, damage: 100, radius: 4, blast: 64, loadAhead: 0.967, turnPerSec: 180, range: 4096 };
 const DEG = 180 / Math.PI;
 /** Source VectorAngles for a direction: [pitch (down positive), yaw] in degrees */
 export const dirAngles = (d: V3): [number, number] => [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * DEG, Math.atan2(d[1], d[0]) * DEG];
@@ -77,5 +82,16 @@ export function turretFace(m: GLModel, eyes: number, poses: number[], goalDir: V
   const dp = angNorm(Math.max(-step, Math.min(step, angNorm(lp)))), dy = angNorm(Math.max(-step, Math.min(step, angNorm(ly))));
   const pp = m.skel.poseParams; const clamp = (i: number, v: number) => Math.max(pp[i].start, Math.min(pp[i].end, v));
   poses[pitchI] = clamp(pitchI, poses[pitchI] + dp / 1.5); poses[yawI] = clamp(yawI, poses[yawI] + dy / 1.5);
+  return Math.abs(dp) > 0.1 || Math.abs(dy) > 0.1;
+}
+/** turn an attachment's +x toward a model-space direction, at `degPerSec`, updating poses [aim_yaw, aim_pitch].
+ *  `yUp` is for attachments whose +y is up and +z is right (the rocket sentry barrel); Source VectorAngles is z-up. */
+export function aimAttachment(m: GLModel, att: number, poses: number[], goalDir: V3, dt: number, degPerSec: number, yUp = false): boolean {
+  const f = attachFrame(m, att, poses), d = goalDir;
+  const l: V3 = [d[0] * f.x[0] + d[1] * f.x[1] + d[2] * f.x[2], d[0] * f.y[0] + d[1] * f.y[1] + d[2] * f.y[2], d[0] * f.z[0] + d[1] * f.z[1] + d[2] * f.z[2]];
+  const [lp, ly] = dirAngles(yUp ? [l[0], l[2], l[1]] : l), step = degPerSec * dt;
+  const dp = angNorm(Math.max(-step, Math.min(step, angNorm(lp)))), dy = angNorm(Math.max(-step, Math.min(step, angNorm(ly))));
+  const pp = m.skel.poseParams; const clamp = (i: number, v: number) => Math.max(pp[i].start, Math.min(pp[i].end, v));
+  if (pp[1]) poses[1] = clamp(1, poses[1] + dp); if (pp[0]) poses[0] = clamp(0, poses[0] + dy);
   return Math.abs(dp) > 0.1 || Math.abs(dy) > 0.1;
 }

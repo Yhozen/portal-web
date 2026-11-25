@@ -3,7 +3,7 @@ import { Body, stepBody, halfExtent } from './rigid';
 import { phyPieces, massProps, hullPlanes } from './phy.ts';
 import { findSeq, skinModel, type GLModel } from './models.ts';
 import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
-import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, PLAYER_HP, type TurretState } from './npc.ts';
+import { aimTable, aimFor, approach, attachFrame, turretFace, aimAttachment, TURRET, ROCKET_TURRET, PLAYER_HP, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
 import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
@@ -37,7 +37,7 @@ export class Game {
   bsp: BSP; io = new IO(); tr: Tracer; r: Renderer; models: ModelCache; player: Player; playerEnt: Ent;
   portals: Portal[] = []; gunPortals: [Portal, Portal]; cubes: Cube[] = []; hasGun = true; canFire: [boolean, boolean] = [true, true]; guns: Ent[] = []; held: Cube | null = null;
   portalBrushes = new Map<Portal, Set<number>>(); hud = { hint: "", hintT: 0, fade: 0, fadeTarget: 0, fadeRate: 0, fadeHoldUntil: 0 }; changeLevel: ((map: string, lm: string) => void) | null = null;
-  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = []; portalDetectors: Ent[] = []; cameras: Ent[] = [];
+  sounds: ((path: string, pos?: V3) => void) | null = null; snd: Sound | null = null; captions: { text: string; until: number }[] = []; stats = { teleports: 0, portalsPlaced: 0, solidProps: 0 }; noportalVolumes: Ent[] = []; bumpers: Ent[] = []; portalDetectors: Ent[] = []; cameras: Ent[] = []; rocketTurrets: Ent[] = []; rockets: { ent: Ent; pos: V3; vel: V3; r: number; die: number; prop: PropInst; dead?: boolean }[] = [];
   constructor(bsp: BSP, r: Renderer, models: ModelCache) {
     this.bsp = bsp; this.r = r; this.models = models; this.tr = new Tracer(bsp); this.player = new Player(this.tr);
     this.playerEnt = new Ent({ classname: 'player', targetname: '!player' }); this.io.player = this.playerEnt; this.playerEnt.game = this;
@@ -158,6 +158,7 @@ export class Game {
     }
     if (c === 'npc_portal_turret_floor') this.spawnTurret(e);
     if (c === 'npc_security_camera') { kv.model ||= 'models/props/security_camera.mdl'; e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); this.playAnim(e, 'idle', true); e.prop.poses = [0, 0]; this.cameras.push(e); }
+    if (c === 'npc_rocket_turret') this.spawnRocketTurret(e);
     if (c === 'weapon_portalgun' && !/spawn/.test(e.name)) { e.prop = this.addProp('models/weapons/w_portalgun.mdl', e.origin, e.angles); e.onKill = () => { if (e.prop) e.prop.visible = false; }; }
     if (c === 'func_portal_bumper') this.bumpers.push(e);
     if (c === 'func_portal_detector') { e.inside = [false, false]; e.both = false; this.portalDetectors.push(e); }
@@ -275,8 +276,8 @@ export class Game {
     }
   }
   /** damage with the fraction carried over (health is whole numbers in the original), a push along `dir`, and death at 0 */
-  hurtPlayer(dmg: number, dir: V3) {
-    if (this.dead || this.god || !this.damage) return;
+  hurtPlayer(dmg: number, dir: V3, force = false) {
+    if (this.dead || this.god || (!this.damage && !force)) return;
     this.dmgAcc += dmg; const n = Math.floor(this.dmgAcc); this.dmgAcc -= n; this.health = Math.floor(this.health) - n; this.lastHurt = this.io.time;
     this.player.vel = ma(this.player.vel, PLAYER_HP.push, [dir[0], dir[1], 0]);
     if (this.health <= 0) { this.dead = true; this.io.log.push(`${this.io.time.toFixed(2)} player died`); if (this.held) this.use(); setTimeout(() => this.onDeath?.(), 0); }
@@ -612,6 +613,14 @@ export class Game {
       else if (i === 'setplaybackrate') { e.prop.rate = +param || 0; }
       else return false; return true; };
     H.set('npc_security_camera', (e, i) => { if (i === 'disable') e.camDisabled = true; else if (i === 'enable') e.camDisabled = false; else return false; return true; });
+    H.set('npc_rocket_turret', (e, i, p) => {
+      if (i === 'enable') this.enableRocketTurret(e);
+      else if (i === 'disable') this.disableRocketTurret(e);
+      else if (i === 'toggle') { if (e.rocketEnabled) this.disableRocketTurret(e); else this.enableRocketTurret(e); }
+      else if (i === 'settarget') { e.rocketTarget = (p || '').toLowerCase(); }
+      else if (i === 'destroy' || i === 'break') { e.rocketDestroyed = true; e.rocketEnabled = false; e.defaultAnim = 'inactive'; this.playAnim(e, 'close', false); this.io.fire(e, 'ondeath', e); }
+      else return false; return true;
+    });
     H.set('prop_dynamic', propVis); H.set('prop_dynamic_override', propVis); H.set('prop_physics', propVis);
     // material_modify_control: drives $frame of its parent brush's material (Valve Developer Wiki); used by the a00 countdown clock
     H.set('material_modify_control', (e, i, param) => { const par = e.kv.parentname ? this.io.find(e.kv.parentname, null, e)[0] : null; const ins: any = par && (par.inst || par.prop); if (!ins) return true;
@@ -792,6 +801,149 @@ export class Game {
       // directions show a sliver (checks/energy-ball.ctl)
       { const v = sub(this.player.eye(), b.pos); b.prop.matrix = entityMatrix(b.pos, [-Math.atan2(v[2], Math.hypot(v[0], v[1])) * 180 / Math.PI, Math.atan2(v[1], v[0]) * 180 / Math.PI, 0]); }
     }
+  }
+  // ---------- rocket turrets (npc_rocket_turret / rocket_turret_projectile) ----------
+  // Behaviour from the public FGD (Enable/Disable/Toggle/SetTarget/Destroy, OnFoundTarget/OnLostTarget) plus
+  // timings measured in the original on escape_01 (see ROCKET_TURRET). The barrel attachment's +x is the muzzle
+  // (at rest it points entity -Y; yaw 90 turns it west, which is how laser_1 faces the office window).
+  spawnRocketTurret(e: Ent) {
+    const kv = e.kv; kv.model ||= 'models/props_bts/rocket_sentry.mdl';
+    e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); e.prop.poses = [0, 0];
+    const off = !!(+(kv.spawnflags || 0) & 1);
+    e.rocketEnabled = !off; e.rocketDestroyed = false; e.rocketHadTarget = false; e.nextRocket = 0;
+    this.playAnim(e, off ? 'inactive' : 'idle', true); if (!off) e.defaultAnim = 'idle';
+    this.rocketTurrets.push(e);
+  }
+  enableRocketTurret(e: Ent) {
+    if (e.rocketEnabled && !e.rocketDestroyed) return;
+    e.rocketDestroyed = false; e.rocketEnabled = true;
+    e.nextRocket = this.io.time + ROCKET_TURRET.firstFire; e.defaultAnim = 'idle';
+    this.playAnim(e, 'open', false);
+  }
+  disableRocketTurret(e: Ent) {
+    if (!e.rocketEnabled && !e.rocketDestroyed) return;
+    e.rocketEnabled = false; if (e.rocketHadTarget) { e.rocketHadTarget = false; this.io.fire(e, 'onlosttarget', e); }
+    e.defaultAnim = 'inactive'; this.playAnim(e, 'close', false);
+  }
+  rocketTargetPos(e: Ent): V3 | null {
+    const n = (e.rocketTarget || '').toLowerCase();
+    if (n && n !== '!player') { const t = this.io.find(n, null, e)[0]; if (t && !t.killed) return t.pos || t.origin; return null; }
+    if (this.dead) return null;
+    const pl = this.player; return [pl.pos[0], pl.pos[1], pl.pos[2] + pl.maxs()[2] / 2];
+  }
+  updateRocketTurrets(dt: number) {
+    const now = this.io.time;
+    for (const e of this.rocketTurrets) {
+      if (e.killed || e.rocketDestroyed || !e.rocketEnabled) continue;
+      const pr = e.prop, m = pr?.model; if (!pr || !m) continue;
+      const P = pr.poses ??= [0, 0];
+      const att = m.data.attachments.findIndex(a => a.name.toLowerCase() === 'barrel'); if (att < 0) continue;
+      const seq = m.skel.seqs[pr.seq ?? 0]?.name || '';
+      if (seq === 'open' && (pr.cycle ?? 0) < 1) continue;
+      const W = this.entWorld(e), target = this.rocketTargetPos(e);
+      let vis = false;
+      if (target) {
+        const f = attachFrame(m, att, P), eye = xformPoint(W, f.pos);
+        const to = sub(target, eye), dist = len(to);
+        if (dist > 1 && dist < ROCKET_TURRET.range) {
+          this.tr.ignore = null;
+          const hit = this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
+          vis = hit.fraction > 0.98;
+          if (vis) aimAttachment(m, att, P, xformDir(invertRigid(W), scale(to, 1 / dist)), dt, ROCKET_TURRET.turnPerSec, true);
+        }
+      }
+      if (vis && !e.rocketHadTarget) { e.rocketHadTarget = true; this.io.fire(e, 'onfoundtarget', e); }
+      if (!vis && e.rocketHadTarget) { e.rocketHadTarget = false; this.io.fire(e, 'onlosttarget', e); }
+      if (e.nextRocket && now >= e.nextRocket - ROCKET_TURRET.loadAhead && now < e.nextRocket && seq !== 'load' && seq !== 'fire') {
+        this.playAnim(e, 'load', false); this.snd?.play('NPC_RocketTurret.LockingBeep', e.origin);
+      }
+      if (e.nextRocket && now >= e.nextRocket && vis) {
+        this.snd?.play('NPC_FloorTurret.LockedBeep', e.origin);
+        this.fireRocket(e); e.nextRocket = now + ROCKET_TURRET.interval;
+        this.playAnim(e, 'fire', false); this.snd?.play('NPC_FloorTurret.RocketFire', e.origin);
+      }
+    }
+  }
+  fireRocket(e: Ent) {
+    const pr = e.prop; if (!pr) return;
+    const M = this.attachWorld(pr, 'barrel');
+    const dir = M ? norm([M[0], M[1], M[2]]) : angleVectors(e.ang || e.angles).f;
+    const pos0 = M ? [M[12], M[13], M[14]] as V3 : (e.pos || e.origin);
+    const pos = ma(pos0, 8, dir), r = ROCKET_TURRET.radius, io = this.io;
+    const ent = new Ent({ classname: 'rocket_turret_projectile', origin: pos.join(' '), model: 'models/props_bts/rocket.mdl' });
+    ent.game = this; this.io.add(ent);
+    const prop = this.addProp(ent.kv.model, [...pos] as V3, vectorAngles(dir));
+    const rk = { ent, pos, vel: scale(dir, ROCKET_TURRET.speed), r, die: io.time + 20, prop, dead: false };
+    ent.prop = prop; ent.onKill = () => { prop.visible = false; this.rockets = this.rockets.filter(x => x !== rk); };
+    this.rockets.push(rk); this.snd?.play('NPC_FloorTurret.RocketFlyLoop', pos);
+    io.log.push(`${io.time.toFixed(2)} rocket from ${e.name || 'rocket turret'} at ${pos.map(v => v | 0)}`);
+  }
+  explodeRocket(rk: { ent: Ent; pos: V3; vel: V3; r: number; prop: PropInst; dead?: boolean }, at: V3, hit?: Ent | null) {
+    if (rk.dead) return; rk.dead = true;
+    const io = this.io; io.log.push(`${io.time.toFixed(2)} rocket exploded at ${at.map(v => v | 0)}`);
+    const dir = len(rk.vel) > 1 ? norm(rk.vel) : [0, 0, 1] as V3;
+    const pl = this.player, pc: V3 = [pl.pos[0], pl.pos[1], pl.pos[2] + pl.maxs()[2] / 2];
+    if (!this.dead && len(sub(pc, at)) < ROCKET_TURRET.blast) this.hurtPlayer(ROCKET_TURRET.damage, dir, true);
+    if (hit && hit.cls === 'func_breakable_surf' && !hit.killed) { hit.killed = true; if (hit.inst) hit.inst.visible = false; io.fire(hit, 'onbreak', rk.ent); }
+    const rad = ROCKET_TURRET.blast;
+    for (const ent of io.ents) {
+      if (ent.killed || ent === hit) continue;
+      const o = ent.pos || ent.origin;
+      const near = len(sub(o, at)) <= rad || !!(ent.bmins && at[0] >= ent.bmins[0] - rad && at[0] <= ent.bmaxs[0] + rad && at[1] >= ent.bmins[1] - rad && at[1] <= ent.bmaxs[1] + rad && at[2] >= ent.bmins[2] - rad && at[2] <= ent.bmaxs[2] + rad);
+      if (!near) continue;
+      if (ent.cls === 'func_breakable_surf') { ent.killed = true; if (ent.inst) ent.inst.visible = false; io.fire(ent, 'onbreak', rk.ent); continue; }
+      if (ent.kv.damagefilter && this.passDamageFilter(ent, 64)) io.fire(ent, 'ontakedamage', rk.ent);
+    }
+    rk.ent.killed = true; rk.ent.onKill?.();
+  }
+  passDamageFilter(e: Ent, dmgType: number) {
+    if (!e.kv.damagefilter) return true;
+    const f = this.io.find(e.kv.damagefilter, null, e)[0]; if (!f) return true;
+    let ok = true;
+    if (f.cls === 'filter_damage_type') ok = +f.kv.damagetype === dmgType;
+    if (f.kv.negated === '1') ok = !ok; return ok;
+  }
+  updateRockets(dt: number) {
+    const mask = 0x1 | 0x2 | 0x8 | 0x4000, io = this.io;
+    const pl = this.player, pmin = add(pl.pos, HULL.mins), pmax = add(pl.pos, pl.maxs());
+    for (const rk of [...this.rockets]) {
+      if (rk.dead || io.time >= rk.die) { if (!rk.dead) { rk.dead = true; rk.ent.killed = true; rk.ent.onKill?.(); } continue; }
+      const mins: V3 = [-rk.r, -rk.r, -rk.r], maxs: V3 = [rk.r, rk.r, rk.r]; let left = dt;
+      for (let it = 0; it < 4 && left > 1e-4 && !rk.dead; it++) {
+        const prev: V3 = [...rk.pos] as V3;
+        this.tr.ignore = this.tunnelFor(rk.pos, mins, maxs);
+        const want = ma(rk.pos, left, rk.vel); const t = this.tr.trace(rk.pos, want, mins, maxs, mask, this.playerEnt);
+        const lo: V3 = [pmin[0] - rk.r, pmin[1] - rk.r, pmin[2] - rk.r], hi: V3 = [pmax[0] + rk.r, pmax[1] + rk.r, pmax[2] + rk.r];
+        // noclipped players are not solid (the original's noclip ignores the hull); a portal in the same tick as a
+        // wall or the player is taken if the hole is closer than the first solid, so a rocket can leave through a
+        // portal the way an energy ball does
+        const plHit = !this.dead && !pl.noclip && segHitsBox(rk.pos, t.end, lo, hi);
+        let went: Portal | null = null, cf = 2;
+        for (const portal of this.portals) if (portal.open && portal.linked && portal.linked.open) {
+          const da = dot(sub(prev, portal.pos), portal.f), db = dot(sub(want, portal.pos), portal.f);
+          if (!(da >= 0 && db < 0)) continue;
+          const frac = da / (da - db), x = add(prev, scale(sub(want, prev), frac)), d = sub(x, portal.pos);
+          const lr = dot(d, portal.r) / PW, lu = dot(d, portal.u) / PH;
+          if (lr * lr + lu * lu <= 1.05 && frac < cf) { cf = frac; went = portal; }
+        }
+        let plF = 2;
+        if (plHit) { let t0 = 0, t1 = 1; for (let k = 0; k < 3; k++) { const d = t.end[k] - prev[k]; if (Math.abs(d) < 1e-9) continue; let u = (lo[k] - prev[k]) / d, v = (hi[k] - prev[k]) / d; if (u > v) [u, v] = [v, u]; t0 = Math.max(t0, u); t1 = Math.min(t1, v); } plF = t0; }
+        const hitF = t.startsolid ? 0 : t.fraction;
+        if (went && went.linked && cf <= hitF + 1e-4 && cf <= plF + 1e-4) {
+          const X = throughPortal(went, went.linked), past = add(prev, scale(sub(want, prev), Math.min(1, cf + 1e-3)));
+          rk.pos = xformPoint(X, past); rk.vel = xformDir(X, rk.vel);
+          io.log.push(`${io.time.toFixed(2)} rocket through ${went.name} at ${rk.pos.map(v => v | 0)}`);
+          left *= 1 - cf; continue;
+        }
+        if (plHit || t.fraction < 1 || t.startsolid) {
+          rk.pos = plHit ? ma(rk.pos, Math.max(0, Math.min(1, plF)), sub(t.end, rk.pos)) : t.end; rk.ent.pos = rk.pos; rk.ent.origin = rk.pos;
+          this.explodeRocket(rk, rk.pos, t.ent || null); break;
+        }
+        rk.pos = t.end; left = 0;
+      }
+      if (!rk.dead) { rk.ent.pos = rk.pos; rk.ent.origin = rk.pos; rk.prop.matrix = entityMatrix(rk.pos, vectorAngles(norm(rk.vel))); }
+    }
+    this.tr.ignore = null;
   }
   prevPath(p: Ent) { return this.io.ents.find(q => q.cls === 'path_track' && !q.killed && (q.kv.target || '').toLowerCase() === p.name) || null; }
   respawnTemplate(t: Ent, maker: Ent | null) {
@@ -1073,7 +1225,7 @@ export class Game {
     this.tr.ignore = null;
     // cubes
     for (const c of this.cubes) if (c.alive) this.updateCube(c, dt);
-    this.updateBalls(dt);
+    this.updateBalls(dt); this.updateRocketTurrets(dt); this.updateRockets(dt);
     // triggers
     this.updateGunPickup(); this.updateMMC();
     // a gun portal on a brush entity fizzles as soon as that entity moves
@@ -1233,6 +1385,7 @@ export class Game {
         if ((sf & 1 || sf & 64 || e.cls === 'trigger_changelevel') && overlap(pmin, pmax, e.bmins, e.bmaxs)) now.add(this.playerEnt);
         if (sf & 8 || sf & 64 || e.cls === 'trigger_portal_cleanser') for (const c of this.cubes) { if (!c.alive) continue; const h = halfExtent(c); /* the body's own bounds: a turret is 4 times taller than its narrowest half-width */ if (overlap(sub(c.pos, h), add(c.pos, h), e.bmins, e.bmaxs)) now.add(c.ent); }
         if (sf & 8 || sf & 64) for (const b of this.balls) if (overlap(sub(b.pos, [b.r, b.r, b.r]), add(b.pos, [b.r, b.r, b.r]), e.bmins, e.bmaxs)) now.add(b.ent);
+        if (sf & 8 || sf & 64) for (const r of this.rockets) if (!r.dead && overlap(sub(r.pos, [r.r, r.r, r.r]), add(r.pos, [r.r, r.r, r.r]), e.bmins, e.bmaxs)) now.add(r.ent);
         if (e.kv.filtername) { const f = io.find(e.kv.filtername, null, e)[0]; if (f) for (const a of [...now]) if (!this.passFilter(f, a)) now.delete(a); }
       }
       for (const a of now) if (!e.touching.has(a)) {

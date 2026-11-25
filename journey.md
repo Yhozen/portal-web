@@ -4,6 +4,8 @@ A running log of work on the port. Times are America/New_York.
 
 ## 2026-11-24 to 25, session 3 (from 8:35 PM EST)
 
+**10:30 PM EST, rocket turrets and portal-capable rockets.** The port now has `npc_rocket_turret` and `rocket_turret_projectile`. laser_1 starts retracted (spawnflags 1), Enable plays the model's open sequence and fires the first rocket at 6.95 s, then every 6.00 s. The sentry barrel is Y-up / Z-right, so aim uses that frame or the gun points straight up. A rocket is lethal (health 100 → 0 at 6.97 s standing in front, some knockback to about -414, 578). They also go through portals: one from -367, 572, -214 crossed a blue at -375 facing +X and came out the orange at 199, 576, -200, still at 550 u/s. The hole is taken if it's closer than the first solid in that tick, the way energy balls already do. Next is an escape_01 playthrough.
+
 **10:10 PM EST, rocket turret numbers from the original.** After the box refresh, `hl2_linux` would not start because the 32-bit linker was gone (`/lib/ld-linux.so.2`). i386 libc, SDL and Mesa are back, and the original is running again. The earlier checks are still 39/39.
 
 escape_01's `laser_1` sits in a floor mount at -320, 580, -250 and starts retracted (spawnflags 1). The enable button and the west glass both turn it on; it plays the model's `open` sequence (4.333 s) and then fires. Standing on the tiles in front of it at -400, 576 (eye at -184), with the original pinned to the 66-tick:

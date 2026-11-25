@@ -164,6 +164,73 @@ for (let k = 0; k < 3 * 66; k++) {
 }
 settle();
 lg('alcove floor', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+if (window.STAGE === 6) throw 'stage 6';
+// flippy_turret_door_13 has a parented func_brush that becomes a 60-degree
+// ramp at about 4921, 640, -921 (normal 0.5, 0, 0.87). The top face is only
+// visible from above; a 64x108 portal fits when yaw is 90 or 270 (the long
+// axis along the door's Y width). Hop out the east wall at z -697, shoot the
+// ramp, drop into a floor portal, and mid-fling (peak ~z -505) retarget the
+// exit onto the east alcove's z -640 floor.
+standAt(5000, 640, 6);
+lg('fling stand', P());
+lg('east high', placeAt(0, [6144, 640, -697]));
+lg('floor entry', placeAt(1, [5000, 640, -1280]));
+for (let k = 0; k < 5 * 66; k++) {
+  const dx = 5000 - game.pl.pos[0], dy = 640 - game.pl.pos[1];
+  if (game.pl.pos[0] > 5800 || game.pl.pos[2] > -1100) break;
+  game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[2] < -1350) break;
+}
+game.pl.ang = [0, 90, 0];
+lg('ramp', placeAt(0, [4930, 640, -920]));
+const ramp = G.gunPortals[0];
+if (!(ramp.open && ramp.onCol && ramp.onCol.ent && ramp.onCol.ent.cls === 'func_brush')) {
+  lg('done early, no ramp', P()); throw 'no ramp';
+}
+lg('drop floor', placeAt(1, [game.pl.pos[0] - 20, 640, -1280]));
+// exiting the east wall can leave you tucked into x 6143; a step west
+// clears the solid so the drop actually falls.
+for (let k = 0; k < 20; k++) {
+  game.pl.ang = [0, 180, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[0] <= 6120) break;
+}
+if (game.pl.pos[0] > 6130) game.pl.pos = [6120, game.pl.pos[1], game.pl.pos[2]];
+let placedAlcove = false, landed = false, top = -1e9;
+for (let k = 0; k < 10 * 66; k++) {
+  if (game.pl.pos[2] > top) top = game.pl.pos[2];
+  if (!placedAlcove && game.pl.pos[2] > -540 && game.pl.pos[0] > 5300) {
+    game.pl.ang = [0, 90, 0];
+    lg('alcove floor mid-fling', placeAt(0, [6178, 640, -640]), 'at', P());
+    placedAlcove = true;
+  }
+  if (placedAlcove && !landed && game.pl.pos[0] > 6148 && game.pl.pos[2] > -700) {
+    lg('entered east alcove', P());
+    // close the gun portals so the landing does not fall back through
+    for (const p of G.gunPortals) p.open = false;
+    if (G.relinkMapPortals) G.relinkMapPortals();
+    game.pl.vel = [0, 0, 0];
+    for (let j = 0; j < 2 * 66; j++) {
+      game.pl.ang = [0, 90, 0];
+      game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+      if (game.pl.pos[1] >= 720 && game.pl.onGround) break;
+      if (game.pl.pos[2] < -800) break;
+    }
+    landed = true;
+    break;
+  }
+  if (game.pl.pos[2] < -1350 && k > 40) break;
+  if (placedAlcove) game.step(T, idle);
+  else if (game.pl.pos[2] > -900 && game.pl.pos[0] < 5500) {
+    game.pl.ang = [0, 0, 0];
+    game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  } else game.step(T, idle);
+}
+settle();
+if (game.pl.ducked) { for (let k = 0; k < 30; k++) game.step(T, idle); }
+lg('fling top', top | 0);
+lg('east alcove', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

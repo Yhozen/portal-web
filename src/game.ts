@@ -1,6 +1,6 @@
 import type { Sound } from './audio';
 import { Body, stepBody, halfExtent } from './rigid';
-import { phyPieces, massProps } from './phy.ts';
+import { phyPieces, massProps, hullPlanes } from './phy.ts';
 import { findSeq, skinModel, type GLModel } from './models.ts';
 import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach, attachFrame, turretFace, TURRET, PLAYER_HP, type TurretState } from './npc.ts';
@@ -49,7 +49,7 @@ export class Game {
     this.setupHandlers();
     r.instances.push({ model: 0, matrix: m4(), visible: true });
     for (const kv of bsp.entities) this.spawn(kv);
-    for (const p of bsp.staticProps) { const pi = this.addProp(p.model, p.origin as V3, p.angles as V3, p.skin); if (p.solid) this.solidProp(pi, null); }
+    for (const p of bsp.staticProps) { const pi = this.addProp(p.model, p.origin as V3, p.angles as V3, p.skin); if (p.solid) this.solidProp(pi, null, p.model); }
     // func_tracktrain snaps to its first path_track at spawn
     for (const e of this.io.ents) if (e.cls === 'func_tracktrain') { const p0 = this.io.find(e.pathName, null, e)[0];
       if (p0) { const np = add(p0.origin, [0, 0, +(e.kv.height || 0)]); e.pos[0] = np[0]; e.pos[1] = np[1]; e.pos[2] = np[2]; e.curPath = p0; e.pathName = (p0.kv.target || '').toLowerCase(); if (e.inst) e.inst.matrix = entityMatrix(e.pos, e.angles); }
@@ -63,11 +63,49 @@ export class Game {
     const pi: PropInst = { model: null, matrix: entityMatrix(origin, angles), visible: true, skin, ambient: this.ambientAt(origin) };
     this.models.get(model).then(m => pi.model = m); this.r.props.push(pi); return pi;
   }
-  /** give a non-animated prop an AABB collider from its MDL hull (small props only: big ones are hollow vphysics shapes) */
-  solidProp(pi: PropInst, ent: any) {
+  /** cached .phy convexes for large static / physics props, planes in model space (shared across instances) */
+  phyCache = new Map<string, Promise<{ pieces: { verts: V3[]; planes: { n: V3; d: number }[] }[] } | null>>();
+  phyPiecesFor(model: string): Promise<{ pieces: { verts: V3[]; planes: { n: V3; d: number }[] }[] } | null> {
+    let p = this.phyCache.get(model);
+    if (!p) {
+      p = this.models.assets.read(model.replace(/\.mdl$/i, '.phy')).then(phy => {
+        if (!phy) return null;
+        const pc = phyPieces(new Uint8Array(phy)); if (!pc || !pc.convexes.length) return null;
+        const box = (c: V3[]) => [[0, 1, 2].map(k => Math.min(...c.map(v => v[k]))), [0, 1, 2].map(k => Math.max(...c.map(v => v[k])))] as [V3, V3];
+        let pieces = pc.convexes as V3[][];
+        const all = box(pieces.flat()), last = box(pieces[pieces.length - 1]);
+        // the last piece of a multi-piece solid spanning the whole model is the hull the ledge tree is built on, not a piece
+        if (pieces.length > 1 && [0, 1, 2].every(k => Math.abs(last[0][k] - all[0][k]) < 0.1 && Math.abs(last[1][k] - all[1][k]) < 0.1)) pieces = pieces.slice(0, -1);
+        return { pieces: pieces.map(verts => ({ verts, planes: hullPlanes(verts) })) };
+      }).catch(() => null);
+      this.phyCache.set(model, p);
+    }
+    return p;
+  }
+  /** give a non-animated prop a collider: an AABB from the MDL hull for small props, or the .phy's convex
+   *  pieces for large ones (the MDL hull is a solid box; tubes and similar are hollow vphysics shapes) */
+  solidProp(pi: PropInst, ent: any, model?: string) {
     const check = () => { const m = pi.model; if (!m) return false; const d = m.data; let lo = d.hullMins, hi = d.hullMaxs;
       if (!(hi[0] > lo[0])) { lo = d.mins; hi = d.maxs; }
-      if (Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) > 100 || Math.min(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) < 2) return true;
+      if (Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) > 100 || Math.min(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) < 2) {
+        // scoped to the hollow cube-tubes for now: other large props (fences, fuse sets) were previously
+        // skipped, and giving them collision mid-route would pin existing playthroughs
+        if (model && /clear_tube/i.test(model)) this.phyPiecesFor(model).then(pc => {
+          if (!pc) return;
+          const M = pi.matrix;
+          const xf = (v: number[]): V3 => [M[0] * v[0] + M[4] * v[1] + M[8] * v[2] + M[12], M[1] * v[0] + M[5] * v[1] + M[9] * v[2] + M[13], M[2] * v[0] + M[6] * v[1] + M[10] * v[2] + M[14]];
+          const rot = (n: number[]): V3 => { const v: V3 = [M[0] * n[0] + M[4] * n[1] + M[8] * n[2], M[1] * n[0] + M[5] * n[1] + M[9] * n[2], M[2] * n[0] + M[6] * n[1] + M[10] * n[2]]; const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+          for (const piece of pc.pieces) {
+            const vs = piece.verts.map(xf), mn: V3 = [1e9, 1e9, 1e9], mx: V3 = [-1e9, -1e9, -1e9];
+            for (const v of vs) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[k]); mx[k] = Math.max(mx[k], v[k]); }
+            const planes = piece.planes.map(q => { const n = rot(q.n), p0 = xf([q.n[0] * q.d, q.n[1] * q.d, q.n[2] * q.d]); return { n, d: n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2] }; });
+            for (let k = 0; k < 3; k++) { const a: V3 = [0, 0, 0], c: V3 = [0, 0, 0]; a[k] = 1; c[k] = -1; planes.push({ n: a, d: mx[k] }, { n: c, d: -mn[k] }); }
+            this.tr.hulls.push({ planes, mins: mn, maxs: mx, ent, on: true });
+          }
+          this.stats.solidProps = (this.stats.solidProps || 0) + 1;
+        });
+        return true;
+      }
       const M = pi.matrix, mn: V3 = [1e9, 1e9, 1e9], mx: V3 = [-1e9, -1e9, -1e9];
       for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) for (let k = 0; k < 3; k++) { const v = M[k] * x + M[4 + k] * y + M[8 + k] * z + M[12 + k]; mn[k] = Math.min(mn[k], v); mx[k] = Math.max(mx[k], v); }
       this.tr.extraBoxes.push({ mins: mn, maxs: mx, ent }); this.stats.solidProps = (this.stats.solidProps || 0) + 1; return true; };
@@ -126,7 +164,7 @@ export class Game {
     if (c === 'func_noportal_volume') { if (kv.startdisabled !== '1') e.enabled = true; this.noportalVolumes.push(e); }
     if (/^prop_(dynamic|physics|physics_override|physics_multiplayer|weighted_cube|dynamic_override)$/.test(c) && kv.model) {
       if (/metal_box\.mdl$/i.test(kv.model) || c === 'prop_weighted_cube') this.spawnCube(e);
-      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; e.prop.restPose = true; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e); if (/^prop_dynamic/.test(c) && kv.solid !== '0') this.followerProps.push(e); }
+      else { e.prop = this.addProp(kv.model, e.origin, e.angles, +(kv.skin || 0)); if (kv.startdisabled === '1' || kv.rendermode === '10') e.prop.visible = false; if (kv.defaultanim) this.playAnim(e, kv.defaultanim, true); else if (!/^prop_physics/.test(c)) { e.prop.seq = 0; e.prop.rate = 0; e.prop.restPose = true; } /* models are drawn in their sequence-0 pose, not the bind pose (the door halves' bind pose is rotated) */ if (/^prop_physics/.test(c) && kv.solid !== '0') this.solidProp(e.prop, e, kv.model); if (/^prop_dynamic/.test(c) && kv.solid !== '0') this.followerProps.push(e); }
     }
     if (c === 'logic_auto' && !kv.globalstate) { this.io.fire(e, 'onmapspawn', null); this.io.fire(e, 'onnewgame', null); }
     if (c === 'logic_timer') { e.next = +(kv.refiretime || 1); if (kv.startdisabled === '1') e.enabled = false; }

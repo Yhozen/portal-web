@@ -52,16 +52,68 @@ if (window.STAGE === 1) throw 'stage 1';
 runHold(270, 0, 6120, 1, v => v <= 1820, 6);
 lg('south lip', P(), 'g ' + game.pl.onGround, 'hp ' + G.health);
 if (window.STAGE === 2) throw 'stage 2';
-// the goo south of the walkway is non-lethal (StrategyWiki; the port landed
-// at z -1792 with 100 health). Walk off the lip into the sewer.
-runHold(270, 0, 6120, 2, v => v < -1700, 5);
-for (let k = 0; k < 4 * 66 && !game.pl.onGround; k++) game.step(T, idle);
-lg('in the sewer', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
+// The deep goo under the walkway is a trigger_hurt (damage 100); the original
+// paints the screen red and reports KilledNPC. The way out is a portal hop
+// from the south lip onto the west floor at z -1536, then through a ceiling
+// grate (arrow on the y 1136 wall) onto a wall of the turret room.
+const settle = () => {
+  for (let k = 0; k < 4 * 66; k++) {
+    if (game.pl.onGround && Math.hypot(game.pl.vel[0], game.pl.vel[1], game.pl.vel[2]) < 8 && k > 8) break;
+    const vx = game.pl.vel[0], vy = game.pl.vel[1];
+    if (Math.hypot(vx, vy) > 16) {
+      game.pl.ang = [0, Math.atan2(-vy, -vx) * 180 / Math.PI, 0];
+      game.step(T, { fwd: 1, side: 0, jump: false, duck: !!game.pl.ducked });
+    } else game.step(T, { fwd: 0, side: 0, jump: false, duck: false });
+  }
+  game.pl.vel = [0, 0, 0];
+};
+lg('west wall', placeAt(0, [5376, 1408, -1472]));
+lg('east wall', placeAt(1, [6144, 1808, -1480]));
+// back up along the walkway, then walk east into the wall portal
+for (let k = 0; k < 3 * 66; k++) {
+  game.pl.ang = [0, 180, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[0] <= 6104) break;
+}
+game.pl.vel = [0, 0, 0];
+for (let k = 0; k < 5 * 66; k++) {
+  game.pl.ang = [0, 0, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[0] < 5600) break;
+}
+settle();
+lg('west floor', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 if (window.STAGE === 3) throw 'stage 3';
-// the channel runs west under the offices; a wall at x 5632 stops this walk.
-runHold(180, 1, 1620, 0, v => v <= 5650, 12);
-lg('sewer west', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
-lg('west wall', placeAt(0, [5632, game.pl.pos[1], -1600]));
+// stand left of the grate and a little off the end wall, then try a few
+// aims until one threads the grate onto the y 1024 wall (z ~ -1336).
+let high = 'not placed';
+for (const stand of [[5472, 1230], [5468, 1232], [5456, 1188], [5480, 1240], [5460, 1220]]) {
+  standAt(stand[0], stand[1], 5);
+  for (const aim of [[5600, 1000, -1280], [5504, 1136, -1400], [5600, 800, -1100], [5580, 1000, -1280], [5543, 1024, -1200], [5400, 900, -1200]]) {
+    const r = placeAt(0, aim);
+    const Q = G.gunPortals[0];
+    if (Q.open && !String(r).startsWith('not') && Q.pos[2] > -1360 && Math.abs(Q.f[2]) < 0.4) { high = r; break; }
+  }
+  if (high !== 'not placed') break;
+}
+lg('grate stand', P());
+lg('high wall', high);
+if (high === 'not placed') { lg('done early, no grate shot', P()); throw 'no grate shot'; }
+lg('arrow wall', placeAt(1, [game.pl.pos[0], 1136, -1480]));
+for (let k = 0; k < 3 * 66; k++) {
+  game.pl.ang = [0, 90, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[1] >= 1260) break;
+}
+game.pl.vel = [0, 0, 0];
+for (let k = 0; k < 5 * 66; k++) {
+  game.pl.ang = [0, 270, 0];
+  game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
+  if (game.pl.pos[2] > -1400 || game.pl.pos[1] < 1100) break;
+  if (game.pl.pos[2] < -1700) break;
+}
+settle();
+lg('turret room', P(), 'g ' + game.pl.onGround, 'hp ' + G.health, 'dead ' + !!G.dead);
 lg('done early', P(), 'hp ' + G.health);
 } catch (e) { out.push('ERROR ' + e + ' at ' + P() + ' ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 return out.join('\n');

@@ -451,6 +451,513 @@
           "caption": "46.9 s at 1280×720. A side-by-side floor fling against the original, the +use reach sheet, the a13 box climb with the original's reach, and a11 played through to the lift (turret onto the box button, portals through the grating). The footage is from the morning's build at af8974f, just before the session wrap-up note at 795cd54."
         }
       ]
+    },
+    {
+      "id": "session-2026-11-21",
+      "title": "macOS canvas and known no-ops",
+      "date": "2026-11-21",
+      "dateLabel": "21 Nov 2026",
+      "started": "6:40 PM EST on 21 Nov",
+      "ended": "7:55 PM EST on 21 Nov",
+      "branch": "gabriel/noop-inputs",
+      "tip": "19d14956e5198e1cfae4c881c0532dcce29152a7",
+      "tipShort": "19d1495",
+      "reelCommit": "19d14956e5198e1cfae4c881c0532dcce29152a7",
+      "reelCommitShort": "19d1495",
+      "tag": null,
+      "commitsSincePrev": null,
+      "checks": null,
+      "lede": "On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except for their self-lit strips. The WebGL canvas is now opaque, which fixed it. env_tonemap_controller and logic_autosave inputs are registered as known no-ops.",
+      "landed": [
+        "The cause was the canvas: model materials keep their $selfillum mask in the base texture's alpha, the opaque passes wrote it into an alpha-channel drawing buffer, and the page composited that buffer as premultiplied, which macOS shows as black. 71% of the pixels over the button and cube had alpha under 250. The context is now alpha: false; renders are byte-identical here and every pixel reads 255.",
+        "Harness additions: assert, PCTL_GL=mesa, and FILES_DIR, used while trying to reproduce the black models.",
+        "Over the first 20 s of a08 to escape_02 the only unhandled inputs were env_tonemap_controller and logic_autosave. They are registered as no-ops (LDR renderer, no saves).",
+        "web/ was also bumped to Alchemy 2.0.0-beta.87 and Effect 4.1.4, matching Horizon."
+      ],
+      "regression": "These commits were merged to main as pull request #5 at 6:08 PM EST on 22 Nov (c26bacf), which was the tip of origin/main until the oracle work.",
+      "remains": [
+        "game.ts still calls io.cancel?.() on choreo Cancel/Stop, but IO has no cancel, so pending outputs of a cancelled scene still fire.",
+        "v_hands.vtf still 404s: the material points at a path the game does not ship."
+      ],
+      "playthroughNote": "No new playthrough was run this session; the work was a preview bug and a survey of unhandled inputs.",
+      "playthrough": [],
+      "videos": []
+    },
+    {
+      "id": "session-2026-11-19",
+      "title": "Animation session",
+      "date": "2026-11-19",
+      "dateLabel": "19 Nov 2026",
+      "started": "9:25 AM EST on 19 Nov",
+      "ended": "2:25 PM EST on 19 Nov",
+      "branch": "gabriel/linux-depot",
+      "tip": "1136585a6794eeb9c6936f3774eadb054aabbcf0",
+      "tipShort": "1136585",
+      "reelCommit": "1136585a6794eeb9c6936f3774eadb054aabbcf0",
+      "reelCommitShort": "1136585",
+      "tag": "animation-session-2026-11-19",
+      "commitsSincePrev": null,
+      "checks": "29/29",
+      "lede": "A five-hour session to stop judging animations from single screenshots. The harness can now record tick-by-tick mp4s, and the animation pipeline was brought in line with the public SDK 2013 rules. Floor turrets, the first-person gun, GLaDOS's cores, a10's lifts and a06's fling pillars all landed here. Merged to main as pull request #1 on 21 Nov.",
+      "landed": [
+        "The animation pipeline follows the SDK rules: blend grids over pose parameters, delta and autoplay layers, 0.2 s sequence cross-fades, long sequences read from .ani sections, and client animation events, so elevator doors and the box dropper play their sounds on the right frame.",
+        "The first-person portal gun is drawn with its draw, fire, fizzle, pickup and release sequences.",
+        "Floor turrets deploy, aim, fire, search and tip over, and security cameras track the player.",
+        "GLaDOS's cores and the energy-ball catcher's ball ride their parent's attachment instead of floating in place.",
+        "$selfillum no longer turns a10/a14's lift platforms and turrets white.",
+        "Energy balls keep their modelled side to the viewer instead of showing a sliver.",
+        "a10's telescoping lifts sink all the way instead of stopping 128 units over the pit, riding them no longer throws the player up, and a06's fling pillars start where Hammer put them.",
+        "Portal shots slide off no-portal faces as well as edges. Cubes ride moving trains. Named lights switch their light styles, env_shake shakes the view, and func_noportal_volume takes its inputs.",
+        "Falling onto a floor portal keeps the fall speed. Before that fix the floor behind the hole stopped the player and every fling came out slow.",
+        "portal-ctl gained record, sheet, frames, anim, poses, and a persistent serve mode. tools/run-checks.sh runs the whole checks/ folder in one session."
+      ],
+      "regression": null,
+      "remains": [
+        "a08: land the fling on the cube platform, then finish the chamber.",
+        "a09 through the escape maps as scripted playthroughs.",
+        "Rocket turrets and the GLaDOS fight.",
+        "Turning checks into assertions, rather than 'every command succeeded and the page logged no errors'."
+      ],
+      "playthroughNote": "The scripted autopilot plays a00 to a07 in order, including the 07a to 07b elevator, and a08 up to the cube platform reaching its east stop. The fling onto the platform still misses. 29 checks all pass.",
+      "playthrough": [
+        {
+          "map": "a00–a07",
+          "time": "in order, including the 07a–07b elevator",
+          "next": "a08 started"
+        },
+        {
+          "map": "a08",
+          "time": "as far as the cube platform's east stop",
+          "next": "fling onto the platform misses"
+        }
+      ],
+      "videos": [
+        {
+          "file": "highlights-2026-11-19.mp4",
+          "title": "Animation session reel",
+          "role": "reel",
+          "seconds": 44.6,
+          "size": 2810714,
+          "recorded": "1:49 PM EST on 19 Nov",
+          "commit": "1136585a6794eeb9c6936f3774eadb054aabbcf0",
+          "commitShort": "1136585",
+          "caption": "44.6 s at 1280×720, built from tick-by-tick harness recordings: GLaDOS's cores riding her body, a10's telescoping lifts sinking flush with the floor, the first-person gun's fizzle, floor turrets deploying and tipping over, and a08's cube riding its rail platform. The footage is from this session; the wrap-up tip is 1136585."
+        }
+      ]
+    },
+    {
+      "id": "session-2026-11-18",
+      "title": "Test harness",
+      "date": "2026-11-18",
+      "dateLabel": "18 Nov 2026",
+      "started": "8:20 PM EST on 18 Nov",
+      "ended": "9:20 PM EST on 18 Nov",
+      "branch": "gabriel/linux-depot",
+      "tip": "5a6134ecf120ed22d74349c52ddeae8f9906fa63",
+      "tipShort": "5a6134e",
+      "reelCommit": "5a6134ecf120ed22d74349c52ddeae8f9906fa63",
+      "reelCommitShort": "5a6134e",
+      "tag": null,
+      "commitsSincePrev": 6,
+      "checks": null,
+      "lede": "A new branch off main at 0d06ee2, and a proper test harness first, modelled on Horizon's horizon-ctl. The Linux depot on the box is byte-identical to the older install. escape_02's ending sky came in, and its game logic dropped from 2.0 to 0.3 ms per tick. Turrets were not implemented yet.",
+      "landed": [
+        "tools/portal-ctl.mjs, documented in docs/harness.md: one command per line in, one JSON line per command out, the same exit codes as horizon-ctl. Each run starts its own asset server and headless Chromium. Commands include map, pose, step, shoot, screenshot, bench, diff, state and eval.",
+        "Deterministic screenshots: the pause is set before any page code runs, Math.random is seeded, the game only advances on step (fixed 1/66 s ticks), and screenshots are taken from the canvas right after an explicit draw. All 30 later-chamber views were byte-identical between this branch and main at 0d06ee2.",
+        "The Linux depot matches the older install already on the box, byte for byte.",
+        "2D sky and the sky_camera 3D skybox for maps with sky faces, which is what the escape_02 ending was missing, plus distant scenery.",
+        "Animated props are skinned when drawn, not every tick. GLaDOS's body (21,575 vertices) had been CPU-skinned and re-uploaded every 1/66 s tick, on screen or not.",
+        "EntityIO.find indexes entities by classname instead of scanning all 1,565 of them. The parenting code looks up each parented prop's parent twice a tick, and escape_02 has 67 of them.",
+        "Together those two cuts took escape_02 simulation from 962 to 200 ms per 660 ticks, about 0.3 ms per tick instead of 2.0. A $selfillum-on-models attempt lit GLaDOS's lights but turned a14 and a10's lift platforms bright white, because their textures have no real alpha mask. It was reverted."
+      ],
+      "regression": "The autopilot playthroughs still finished with the same game times as on 2 Nov: a00 to a01 at 117.8 s, a01 to a02 at 82.0 s, and a03 to a04 at 119.3 s. a02 and a04 timed out when four runs were launched at once, and were not rerun one at a time.",
+      "remains": [
+        "A long-running harness mode (one browser, many commands over a socket) was still ahead; it landed the next morning.",
+        "Turrets, and proving animations from recordings rather than single screenshots."
+      ],
+      "playthroughNote": "Playthrough times were unchanged from 2 Nov, as a check that the harness and the tick-cost cuts did not alter the game.",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "117.8",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "82.0",
+          "next": "a02"
+        },
+        {
+          "map": "a03",
+          "time": "119.3",
+          "next": "a04"
+        }
+      ],
+      "videos": []
+    },
+    {
+      "id": "session-2026-11-03",
+      "title": "Portal occlusion and lighting",
+      "date": "2026-11-03",
+      "dateLabel": "3 Nov 2026",
+      "started": "7:05 AM EST on 3 Nov",
+      "ended": "8:03 AM EST on 3 Nov",
+      "branch": "main",
+      "tip": "0d06ee236039068b4a11e1b55559387fa644ef7a",
+      "tipShort": "0d06ee2",
+      "reelCommit": "0d06ee236039068b4a11e1b55559387fa644ef7a",
+      "reelCommitShort": "0d06ee2",
+      "tag": "portal-occlusion-2026-11-03",
+      "commitsSincePrev": null,
+      "checks": null,
+      "lede": "The portal shader had left depth undefined, so portals showed through every wall. Walls now hide portals at every recursion level, and a portal behind glass shows through with the glass tint. Props take the room's ambient light instead of a single placeholder brightness, and the white triangle decals around the button pedestals take their light from the floor under them. Frame rate did not change. These four commits, plus the uploader commit, were pushed from the Mac at 8:41 AM EST, which put main at 0d06ee2.",
+      "landed": [
+        "Portals are occluded by nearer geometry and drawn under glass (ab8be38, 7:47 AM EST).",
+        "Overlays with no world faces take their light from a coplanar lit face, which is what the white triangle decals around the pedestals needed (6cf43f6).",
+        "Models are lit from the BSP leaf ambient cubes, then per vertex (b6fa442, 0d06ee2).",
+        "Earlier that morning: an owner-only private R2 bucket for game files, and upload-game-files --s3 for bucket-scoped tokens (8627dd3, a9972e3)."
+      ],
+      "regression": null,
+      "remains": [
+        "a07 still stopped at the exit switch. a08 and the later chambers were not scripted playthroughs yet."
+      ],
+      "playthroughNote": "Playthrough reach was unchanged from the night before: chambers 00 through 06 complete, 07 as far as the dual portal gun.",
+      "playthrough": [],
+      "videos": [
+        {
+          "file": "1_repro_before.png",
+          "title": "Before: a portal showing through the wall",
+          "role": "still",
+          "seconds": null,
+          "recorded": "3 Nov, with the 8:04 AM EST update",
+          "commit": "0d06ee236039068b4a11e1b55559387fa644ef7a",
+          "commitShort": "0d06ee2",
+          "caption": "The bug: the portal shader left depth undefined, so a blue portal in the next room shows through the wall."
+        },
+        {
+          "file": "1_repro_after_portalfix.png",
+          "title": "After: the wall hides the portal",
+          "role": "still",
+          "seconds": null,
+          "recorded": "3 Nov, with the 8:04 AM EST update",
+          "commit": "0d06ee236039068b4a11e1b55559387fa644ef7a",
+          "commitShort": "0d06ee2",
+          "caption": "The same view after the fix. The wall hides the portal; the sliver that remains is the portal seen through glass, with the glass tint."
+        },
+        {
+          "file": "3_a00_pedestal_after.png",
+          "title": "a00 pedestal, after the lighting fixes",
+          "role": "still",
+          "seconds": null,
+          "recorded": "3 Nov, with the 8:04 AM EST update",
+          "commit": "0d06ee236039068b4a11e1b55559387fa644ef7a",
+          "commitShort": "0d06ee2",
+          "caption": "The room with the lighting fixes. The white triangle decals around the button pedestal take their light from the floor under them, and props use the room's ambient light."
+        }
+      ]
+    },
+    {
+      "id": "session-2026-11-02-hosted",
+      "title": "Hosted preview",
+      "date": "2026-11-02",
+      "dateLabel": "2 Nov 2026",
+      "started": "9:30 PM EST on 2 Nov",
+      "ended": "11:40 PM EST on 2 Nov",
+      "branch": "main",
+      "tip": "ad36170e69f8a9908ef6c084e45e0d4bcc5b42e4",
+      "tipShort": "ad36170",
+      "reelCommit": "ad36170e69f8a9908ef6c084e45e0d4bcc5b42e4",
+      "reelCommitShort": "ad36170",
+      "tag": null,
+      "commitsSincePrev": null,
+      "checks": null,
+      "lede": "A private Cloudflare preview of the engine only, at portal.rccpr.tech, and a bring-your-own-files mode that copies a player's own Portal folder into the browser's private storage (OPFS). No game data goes into git, the build, or the engine bucket. The GitHub repository was created around 9:58 PM EST, during this session.",
+      "landed": [
+        "web/ holds the Alchemy v2 stack, modelled on Horizon, behind Access with the same allowlist. A private R2 bucket holds only the engine bundle.",
+        "FileSource: server or local. The first-run screen imports a Portal folder into OPFS, and reloads skip the picker. Forget works.",
+        "Verified against the local workerd: 1,148 files (4.13 GB) copied in about 18 s, a00 rendered from OPFS, and the autopilot reached a01 at 117.8 s."
+      ],
+      "regression": null,
+      "remains": [
+        "The owner-only private game-files bucket, so the preview can skip the picker for the owner, landed the next morning."
+      ],
+      "playthroughNote": "Server mode and the OPFS path both ran the a00 autopilot through to a01 at 117.8 s.",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "117.8",
+          "next": "a01"
+        }
+      ],
+      "videos": []
+    },
+    {
+      "id": "session-2026-11-02-evening",
+      "title": "Chambers 00 through 07",
+      "date": "2026-11-02",
+      "dateLabel": "2 Nov 2026",
+      "started": "6:27 PM EST on 2 Nov",
+      "ended": "8:35 PM EST on 2 Nov",
+      "branch": "main",
+      "tip": "ec6295aec82e29393b885e6d49f308c4ec08f28f",
+      "tipShort": "ec6295a",
+      "reelCommit": "ec6295aec82e29393b885e6d49f308c4ec08f28f",
+      "reelCommitShort": "ec6295a",
+      "tag": "chambers-00-07-2026-11-02",
+      "commitsSincePrev": null,
+      "checks": null,
+      "lede": "Chambers 00 through 06 play all the way through in the browser, and 07 works up to picking up the dual portal gun, then stops at the exit switch. Times were 46.5 s for 05 and 59.2 s for 06 (reported as 47 s and 59 s). Xash3D projects were looked at for ideas only; no code was copied, and no leaked code was used.",
+      "landed": [
+        "a05 carries the cube around the cleanser field using the fixed orange portal on the platform (drop the box to fire, then re-pick).",
+        "a06 lets you put portals on the fling pillars and fling yourself, and grates stay solid inside portal tunnels.",
+        "a07's gun pedestal rotates and fires like the real game (yaw doors swing away from the player, so the pedestal cycles −x, +y, +x). Portals slide away from edges where they are not allowed, so the energy ball reaches its catcher. The moving platform shuttles, and you get the dual gun at about 122 s.",
+        "Use Opens rotating doors act as +use buttons, AddOutput is implemented, parented triggers follow props that ride trains, and the +use trace sees past non-usable brush entities."
+      ],
+      "regression": "The a07 exit switch, parented to prop switch2, is not where the +use ray looks once the scaffold has moved. Chamber 12 (the box/fryer and the exit elevator) was not started.",
+      "remains": [
+        "The a07 exit switch collider, and the rest of that chamber.",
+        "a08 and the later maps as scripted playthroughs."
+      ],
+      "playthroughNote": "Regression at 8:16 PM EST, all of these passing, on the way to ec6295a at 8:23 PM EST:",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "117.8",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "82.1",
+          "next": "a02"
+        },
+        {
+          "map": "a02",
+          "time": "149.3",
+          "next": "a03"
+        },
+        {
+          "map": "a03",
+          "time": "119.3",
+          "next": "a04"
+        },
+        {
+          "map": "a04",
+          "time": "71.5",
+          "next": "a05"
+        },
+        {
+          "map": "a05",
+          "time": "46.5",
+          "next": "a06"
+        },
+        {
+          "map": "a06",
+          "time": "59.2",
+          "next": "a07"
+        },
+        {
+          "map": "a07",
+          "time": "about 122, at the dual gun",
+          "next": "stops at the exit switch"
+        }
+      ],
+      "videos": [
+        {
+          "file": "40-a05-fryer-route-box-on-platform.png",
+          "title": "a05: the cube on the platform",
+          "role": "still",
+          "seconds": null,
+          "recorded": "2 Nov, with the 8:30 PM EST update",
+          "commit": "ec6295aec82e29393b885e6d49f308c4ec08f28f",
+          "commitShort": "ec6295a",
+          "caption": "Chamber 05. The cube is carried around the cleanser field using the fixed orange portal on the platform."
+        },
+        {
+          "file": "41-a06-fling-pillar.png",
+          "title": "a06: the fling room",
+          "role": "still",
+          "seconds": null,
+          "recorded": "2 Nov, with the 8:30 PM EST update",
+          "commit": "ec6295aec82e29393b885e6d49f308c4ec08f28f",
+          "commitShort": "ec6295a",
+          "caption": "Chamber 06. Portals can be placed on the fling pillars, and grates stay solid inside portal tunnels."
+        },
+        {
+          "file": "42-a07-dual-gun.png",
+          "title": "a07: the dual-gun pedestal",
+          "role": "still",
+          "seconds": null,
+          "recorded": "2 Nov, with the 8:30 PM EST update",
+          "commit": "ec6295aec82e29393b885e6d49f308c4ec08f28f",
+          "commitShort": "ec6295a",
+          "caption": "Chamber 07, at the 'press to place the orange portal' pedestal, after picking up the dual gun."
+        }
+      ]
+    },
+    {
+      "id": "session-2026-11-02-afternoon",
+      "title": "a02 through a04",
+      "date": "2026-11-02",
+      "dateLabel": "2 Nov 2026",
+      "started": "2:25 PM EST on 2 Nov",
+      "ended": "3:25 PM EST on 2 Nov",
+      "branch": "main",
+      "tip": "b57a6accbfd46b9e83a6286fb94152a07338a109",
+      "tipShort": "b57a6ac",
+      "reelCommit": "b57a6accbfd46b9e83a6286fb94152a07338a109",
+      "reelCommitShort": "b57a6ac",
+      "tag": "chambers-02-04-2026-11-02",
+      "commitsSincePrev": null,
+      "checks": null,
+      "lede": "a02 part 2, a03 and a04 play through end to end. Energy balls, template catchers, ride-along on moving brushes, and floor-portal centre crossing all landed in this hour.",
+      "landed": [
+        "a02 part 2 is solved: the pit box comes out through a portal on the pit wall into the fixed orange, both boxes go on the buttons, and the exit reaches a03 at 149.3 s.",
+        "Energy balls: constant speed, bounces, portal transit, and catchers placed as whole template groups.",
+        "Parented triggers follow their parent; moving brush entities carry the player. Floor portals also trigger on the hull centre crossing, not only the eye.",
+        "a03 reaches a04 at 119.3 s (ball into the floor catcher, the lift, the cart, the 60-unit gap). a04 reaches a05 at 71.5 s."
+      ],
+      "regression": null,
+      "remains": [
+        "a05 was still a WIP: the naive route carries the box through the fryer and it fizzles. The intended route goes around it with the fixed orange on the platform."
+      ],
+      "playthroughNote": "Regression on the final code of this hour:",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "117.8",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "81.8",
+          "next": "a02"
+        },
+        {
+          "map": "a02",
+          "time": "149.3",
+          "next": "a03"
+        },
+        {
+          "map": "a03",
+          "time": "119.3",
+          "next": "a04"
+        },
+        {
+          "map": "a04",
+          "time": "71.5",
+          "next": "a05"
+        }
+      ],
+      "videos": [
+        {
+          "file": "38-a02-part2-both-buttons.png",
+          "title": "a02: both boxes on the buttons",
+          "role": "still",
+          "seconds": null,
+          "recorded": "2 Nov, 2:25–3:25 PM EST",
+          "commit": "b57a6accbfd46b9e83a6286fb94152a07338a109",
+          "commitShort": "b57a6ac",
+          "caption": "Chamber 08's second room, both boxes on the buttons, on the way to a03 at 149.3 s."
+        },
+        {
+          "file": "37-a03-cart-ride.png",
+          "title": "a03: the cart ride",
+          "role": "still",
+          "seconds": null,
+          "recorded": "2 Nov, 2:25–3:25 PM EST",
+          "commit": "b57a6accbfd46b9e83a6286fb94152a07338a109",
+          "commitShort": "b57a6ac",
+          "caption": "Chamber 09, riding the cart after the second catcher."
+        },
+        {
+          "file": "39-a04-cart-ride.png",
+          "title": "a04: the cart ride",
+          "role": "still",
+          "seconds": null,
+          "recorded": "2 Nov, 2:25–3:25 PM EST",
+          "commit": "b57a6accbfd46b9e83a6286fb94152a07338a109",
+          "commitShort": "b57a6ac",
+          "caption": "Chamber 10, on the cart, on the way to a05 at 71.5 s."
+        }
+      ]
+    },
+    {
+      "id": "session-2026-11-02-first",
+      "title": "The port begins",
+      "date": "2026-11-02",
+      "dateLabel": "2 Nov 2026",
+      "started": "9:51 AM EST on 2 Nov",
+      "ended": "12:32 PM EST on 2 Nov",
+      "branch": "main",
+      "tip": "f6df7d1cc661fec2b6f10a2fa0efde589ec14c88",
+      "tipShort": "f6df7d1",
+      "reelCommit": "4091bc3923a59d372c3df04b6c68aef0b54ca5da",
+      "reelCommitShort": "4091bc3",
+      "tag": "first-session-2026-11-02",
+      "commitsSincePrev": null,
+      "checks": null,
+      "lede": "The Portal port starts. The install was in place at 9:51 AM EST (build 19017868). The first render of the relaxation vault, in headless Chromium with SwiftShader, was at 9:58 AM EST: lightmapped textured brushes, 41 fps at 1024×640, load 460 ms. The first commit, 4091bc3, is at 10:12 AM EST. By 12:32 PM, a00 and a01 play through under the autopilot, and a02 part 1 reaches the middle elevator. Clean-room throughout: Valve Developer Wiki specs and the public Source SDK 2013, no leaked code.",
+      "landed": [
+        "VPK v2 and BSP v20 loaders, a GameFS that follows gameinfo.txt, a lightmapped renderer, and Source-style movement with BSP brush traces.",
+        "The game layer: entity I/O, logic entities, triggers, doors, portal-gun placement, recursive stencil portal views, teleport with velocity and view transform, cube pickup, and floor buttons.",
+        "func_tracktrain elevators, trigger_changelevel with landmarks, the a01 pedestal gun, MDL skeletal animation, rotating doors, a tumbling cube, overlays, audio (soundscripts, GLaDOS lines and captions), and PVS culling.",
+        "tools/autopilot.js walks the maps through the normal controls only (A* over hull traces, aiming and firing the gun the same way the mouse does). a00 reaches a01 at 117.8 s, a01 reaches a02 at 81.8 s, and a02 part 1 reaches the middle elevator at 70.6 s."
+      ],
+      "regression": null,
+      "remains": [
+        "a02 part 2: the second box sits in a pit, and the pedestal box is out of reach from the floor.",
+        "a03 and everything after."
+      ],
+      "playthroughNote": "After a short a00 regression (wakeCubes was waking every cube whenever any door moved) was fixed, at 12:32 PM EST:",
+      "playthrough": [
+        {
+          "map": "a00",
+          "time": "117.8",
+          "next": "a01"
+        },
+        {
+          "map": "a01",
+          "time": "81.8",
+          "next": "a02"
+        },
+        {
+          "map": "a02 part 1",
+          "time": "70.6, to the middle elevator",
+          "next": "part 2 still open"
+        }
+      ],
+      "videos": [
+        {
+          "file": "01-first.png",
+          "title": "First render, the relaxation vault",
+          "role": "still",
+          "seconds": null,
+          "recorded": "9:58 AM EST on 2 Nov",
+          "commit": "4091bc3923a59d372c3df04b6c68aef0b54ca5da",
+          "commitShort": "4091bc3",
+          "caption": "The first render of testchmb_a_00 in headless Chromium with SwiftShader: lightmapped textured brushes, 41 fps at 1024×640."
+        },
+        {
+          "file": "04-gun.png",
+          "title": "Portal gun placement",
+          "role": "still",
+          "seconds": null,
+          "recorded": "about 10:10 AM EST on 2 Nov",
+          "commit": "4091bc3923a59d372c3df04b6c68aef0b54ca5da",
+          "commitShort": "4091bc3",
+          "caption": "Portal-gun placement and recursive stencil portal views, already working in the first hour."
+        },
+        {
+          "file": "06-button.png",
+          "title": "Cube on the floor button",
+          "role": "still",
+          "seconds": null,
+          "recorded": "about 10:10 AM EST on 2 Nov",
+          "commit": "4091bc3923a59d372c3df04b6c68aef0b54ca5da",
+          "commitShort": "4091bc3",
+          "caption": "A cube dropped on the a00 floor button opens the exit doors."
+        }
+      ]
     }
   ]
 }

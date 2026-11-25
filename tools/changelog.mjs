@@ -70,17 +70,29 @@ ${body}
 </table>`
 }
 
-function videoBlock(session, v) {
+function mediaSlug(v) {
+  if (v.role === 'reel') return 'reel'
+  return v.file.replace(/\.(mp4|png|jpe?g|webp)$/i, '')
+}
+
+function mediaBlock(session, v) {
   const src = releaseUrl(session.tag, v.file)
-  return `<figure class="clip" id="${esc(session.id)}-${esc(v.role === 'reel' ? 'reel' : v.file.replace(/\.mp4$/, ''))}">
-  <figcaption><strong>${esc(v.title)}</strong> · ${esc(v.seconds)} s · recorded ${esc(v.recorded)} · from <a href="${commitUrl(v.commit)}"><code>${esc(v.commitShort)}</code></a></figcaption>
-  <video src="${esc(src)}" controls playsinline preload="metadata"></video>
+  const image = /\.(png|jpe?g|webp)$/i.test(v.file)
+  const media = image
+    ? `<img src="${esc(src)}" alt="${esc(v.title)}">`
+    : `<video src="${esc(src)}" controls playsinline preload="metadata"></video>`
+  const meta = v.seconds
+    ? `${esc(v.seconds)} s · recorded ${esc(v.recorded)}`
+    : `recorded ${esc(v.recorded)}`
+  return `<figure class="clip" id="${esc(session.id)}-${esc(mediaSlug(v))}">
+  <figcaption><strong>${esc(v.title)}</strong> · ${meta} · from <a href="${commitUrl(v.commit)}"><code>${esc(v.commitShort)}</code></a></figcaption>
+  ${media}
   <p>${esc(v.caption)} <a href="${esc(src)}">Download</a>.</p>
 </figure>`
 }
 
 function sessionSection(s) {
-  const videos = s.videos.map((v) => videoBlock(s, v)).join('\n')
+  const videos = (s.videos || []).map((v) => mediaBlock(s, v)).join('\n')
   const landed = s.landed.map((x) => `<li>${esc(x)}</li>`).join('\n')
   const remains = s.remains.map((x) => `<li>${esc(x)}</li>`).join('\n')
   const commits = s.commitsSincePrev
@@ -89,9 +101,12 @@ function sessionSection(s) {
   const regression = s.regression
     ? `<p>${esc(s.regression)}</p>`
     : ''
-  const reel = s.videos.find((v) => v.role === 'reel')
+  const reel = (s.videos || []).find((v) => v.role === 'reel')
+  const hasMedia = (s.videos || []).length > 0
   const reelLine = reel
     ? `<p>Reel: <a href="#${esc(s.id)}-reel">${esc(reel.title)}</a> (${esc(reel.seconds)} s). The files live in the <a href="${releasePage(s.tag)}">${esc(s.tag)} release</a>, not in the tree.</p>`
+    : hasMedia && s.tag
+    ? `<p>Stills and clips live in the <a href="${releasePage(s.tag)}">${esc(s.tag)} release</a>, not in the tree.</p>`
     : ''
   return `<section id="${esc(s.id)}">
   <h2>${esc(s.title)} <span class="date">${esc(s.dateLabel)}</span></h2>
@@ -105,9 +120,9 @@ function sessionSection(s) {
 ${landed}
   </ul>
   ${regression}
-  <h3>Playthrough</h3>
+  ${s.playthrough && s.playthrough.length ? `<h3>Playthrough</h3>
   <p>${esc(s.playthroughNote)}</p>
-  ${playTable(s.playthrough)}
+  ${playTable(s.playthrough)}` : (s.playthroughNote ? `<p>${esc(s.playthroughNote)}</p>` : '')}
   <h3>Still ahead</h3>
   <ul>
 ${remains}
@@ -135,7 +150,7 @@ const html = `<!doctype html>
   .meta, .lead { color: #bbb; }
   header p { color: #bbb; }
   nav { margin: 1em 0 2em; }
-  video { width: 100%; background: #000; border-radius: 4px; margin: 0.4em 0; }
+  video, figure.clip img { width: 100%; background: #000; border-radius: 4px; margin: 0.4em 0; display: block; }
   figure.clip { margin: 1.4em 0; }
   figcaption { color: #ccc; margin-bottom: 0.3em; }
   table { border-collapse: collapse; width: 100%; margin: 0.6em 0 1.2em; font-variant-numeric: tabular-nums; }

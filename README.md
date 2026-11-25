@@ -249,6 +249,171 @@ written up at 8:50 AM EST on 24 Nov:
 At the end of the session, a13's ball catchers and lifts, a14 and the escape maps were still ahead,
 along with the wall-fling fix, held distance, the dropper cover, and turret tip-over and damage.
 
+
+## State (2026-11-21)
+
+From 6:40 PM EST through 7:55 PM EST on 21 Nov, on `gabriel/noop-inputs` at
+[`19d1495`](https://github.com/Yhozen/portal-web/commit/19d14956e5198e1cfae4c881c0532dcce29152a7).
+Merged to main as [pull request #5](https://github.com/Yhozen/portal-web/pull/5) at 6:08 PM EST on
+22 Nov (`c26bacf`), which was the tip of origin/main until the oracle work.
+
+On the hosted preview, Gabriel's Mac showed a00's floor button and the cube on it black except for
+their self-lit strips. The WebGL canvas is now opaque, which fixed it: model materials keep their
+`$selfillum` mask in the base texture's alpha, and an alpha-channel drawing buffer was being
+composited as premultiplied. `env_tonemap_controller` and `logic_autosave` inputs are registered as
+known no-ops. The harness gained `assert`, `PCTL_GL=mesa` and `FILES_DIR`.
+
+## State (2026-11-19), animation session
+
+From 9:25 AM EST through 2:25 PM EST on 19 Nov, on `gabriel/linux-depot` at
+[`1136585`](https://github.com/Yhozen/portal-web/commit/1136585a6794eeb9c6936f3774eadb054aabbcf0).
+A five-hour session to stop judging animations from single screenshots. 29 checks pass. Merged to
+main as [pull request #1](https://github.com/Yhozen/portal-web/pull/1) on 21 Nov.
+
+Video: [animation session reel](https://yhozen.github.io/portal-web/#session-2026-11-19-reel)
+(44.6 s, recorded 1:49 PM EST). GLaDOS's cores riding her body, a10's telescoping lifts, the
+first-person gun's fizzle, floor turrets deploying and tipping over, and a08's cube riding its rail
+platform. The file lives in the
+[animation session release](https://github.com/Yhozen/portal-web/releases/tag/animation-session-2026-11-19).
+
+The animation pipeline follows the public SDK 2013 rules. The first-person portal gun plays its
+sequences. Floor turrets deploy, aim, fire, search and tip over, and security cameras track the
+player. GLaDOS's cores ride her body. `$selfillum` no longer turns lift platforms white. a10's
+telescoping lifts sink all the way, a06's fling pillars start where Hammer put them, cubes ride
+moving trains, and falling onto a floor portal keeps the fall speed. `portal-ctl` gained `record`
+and a persistent `serve` mode.
+
+The scripted autopilot plays a00 to a07 in order, including the 07a to 07b elevator, and a08 up to
+the cube platform's east stop. The fling onto the platform still misses.
+
+## State (2026-11-18), test harness
+
+From 8:20 PM EST through 9:20 PM EST on 18 Nov, on `gabriel/linux-depot` at
+[`5a6134e`](https://github.com/Yhozen/portal-web/commit/5a6134ecf120ed22d74349c52ddeae8f9906fa63).
+Six commits, off main at `0d06ee2`. Turrets were not implemented yet.
+
+`tools/portal-ctl.mjs`, documented in [docs/harness.md](docs/harness.md), is modelled on Horizon's
+`horizon-ctl`: one command per line in, one JSON line per command out. Screenshots are
+deterministic — all 30 later-chamber views were byte-identical between this branch and main at
+`0d06ee2`. The Linux depot on the box is byte-identical to the older install. 2D sky and the
+`sky_camera` 3D skybox landed, which is what the escape_02 ending and its distant scenery were
+missing.
+
+Animated props are skinned when drawn, not every tick: GLaDOS had been re-posed every tick.
+`EntityIO.find` indexes by classname instead of scanning all 1,565 entities. Together those cuts
+took escape_02 simulation from 962 to 200 ms per 660 ticks, about 0.3 ms per tick instead of 2.0.
+A `$selfillum`-on-models attempt was reverted, because it turned a14 and a10's lift platforms
+bright white. Playthrough times were unchanged from 2 Nov (a00 117.8 s, a01 82.0 s, a03 119.3 s).
+
+## State (2026-11-03), portal occlusion and lighting
+
+From about 7:05 AM EST through 8:03 AM EST on 3 Nov, on main at
+[`0d06ee2`](https://github.com/Yhozen/portal-web/commit/0d06ee236039068b4a11e1b55559387fa644ef7a).
+The update went out at 8:04 AM EST. These four commits, plus the uploader commit, were pushed from
+the Mac at 8:41 AM EST, which put main at `0d06ee2`.
+
+Stills: [before](https://github.com/Yhozen/portal-web/releases/download/portal-occlusion-2026-11-03/1_repro_before.png)
+(a portal showing through the wall),
+[after](https://github.com/Yhozen/portal-web/releases/download/portal-occlusion-2026-11-03/1_repro_after_portalfix.png)
+(the wall hides it; a sliver remains through glass, with the glass tint), and
+[the a00 pedestal](https://github.com/Yhozen/portal-web/releases/download/portal-occlusion-2026-11-03/3_a00_pedestal_after.png)
+after the lighting fixes. They live in the
+[portal occlusion release](https://github.com/Yhozen/portal-web/releases/tag/portal-occlusion-2026-11-03).
+
+The portal shader had left depth undefined, so portals showed through every wall. Walls now hide
+portals at every recursion level, and a portal behind glass shows through with the glass tint.
+Props take the room's ambient light instead of a single placeholder brightness, and the white
+triangle decals around the button pedestals take their light from the floor under them. Frame rate
+did not change. Earlier that morning: an owner-only private R2 bucket for game files.
+
+## State (2026-11-02), hosted preview
+
+From 9:30 PM EST through 11:40 PM EST on 2 Nov, tip
+[`ad36170`](https://github.com/Yhozen/portal-web/commit/ad36170e69f8a9908ef6c084e45e0d4bcc5b42e4).
+A private Cloudflare preview of the engine only, at portal.rccpr.tech, and a bring-your-own-files
+mode that copies a player's own Portal folder into the browser's private storage (OPFS). No game
+data goes into git, the build, or the engine bucket. The GitHub repository itself was created
+around 9:58 PM EST, during this session. The a00 autopilot reached a01 at 117.8 s from OPFS.
+
+## State (2026-11-02), chambers 00 through 07
+
+From 6:27 PM EST through 8:35 PM EST on 2 Nov, tip
+[`ec6295a`](https://github.com/Yhozen/portal-web/commit/ec6295aec82e29393b885e6d49f308c4ec08f28f)
+at 8:23 PM EST. The update describing this milestone went out at 8:30 PM EST.
+
+Chambers 00 through 06 play all the way through in the browser, and 07 works up to picking up the
+dual portal gun, then stops at the exit switch. Times were 46.5 s for 05 and 59.2 s for 06
+(reported as 47 s and 59 s). Xash3D projects were looked at for ideas only; no code was copied.
+
+Stills: [a05, the cube](https://github.com/Yhozen/portal-web/releases/download/chambers-00-07-2026-11-02/40-a05-fryer-route-box-on-platform.png),
+[a06, the fling room](https://github.com/Yhozen/portal-web/releases/download/chambers-00-07-2026-11-02/41-a06-fling-pillar.png),
+[a07, the dual-gun pedestal](https://github.com/Yhozen/portal-web/releases/download/chambers-00-07-2026-11-02/42-a07-dual-gun.png).
+They live in the
+[chambers 00–07 release](https://github.com/Yhozen/portal-web/releases/tag/chambers-00-07-2026-11-02).
+
+a05 carries the cube around the cleanser field using the fixed orange portal. a06 lets you put
+portals on the fling pillars and fling yourself, and grates stay solid inside portal tunnels. a07's
+gun pedestal rotates and fires like the real game, portals slide away from edges where they are not
+allowed so the energy ball reaches its catcher, the moving platform shuttles, and you get the dual
+gun at about 122 s.
+
+Playthrough at 8:16 PM EST, on the way to `ec6295a`:
+
+| Map | Time | Next |
+|---|---|---|
+| a00 | 117.8 | a01 |
+| a01 | 82.1 | a02 |
+| a02 | 149.3 | a03 |
+| a03 | 119.3 | a04 |
+| a04 | 71.5 | a05 |
+| a05 | 46.5 | a06 |
+| a06 | 59.2 | a07 |
+| a07 | about 122, at the dual gun | stops at the exit switch |
+
+## State (2026-11-02), a02 through a04
+
+From 2:25 PM EST through 3:25 PM EST on 2 Nov, tip
+[`b57a6ac`](https://github.com/Yhozen/portal-web/commit/b57a6accbfd46b9e83a6286fb94152a07338a109).
+a02 part 2, a03 and a04 play through end to end. Energy balls, template catchers, ride-along on
+moving brushes, and floor-portal centre crossing all landed in this hour.
+
+Stills: [a02](https://github.com/Yhozen/portal-web/releases/download/chambers-02-04-2026-11-02/38-a02-part2-both-buttons.png),
+[a03](https://github.com/Yhozen/portal-web/releases/download/chambers-02-04-2026-11-02/37-a03-cart-ride.png),
+[a04](https://github.com/Yhozen/portal-web/releases/download/chambers-02-04-2026-11-02/39-a04-cart-ride.png),
+in the [a02–a04 release](https://github.com/Yhozen/portal-web/releases/tag/chambers-02-04-2026-11-02).
+
+| Map | Time | Next |
+|---|---|---|
+| a00 | 117.8 | a01 |
+| a01 | 81.8 | a02 |
+| a02 | 149.3 | a03 |
+| a03 | 119.3 | a04 |
+| a04 | 71.5 | a05 |
+
+## State (2026-11-02), the port begins
+
+From 9:51 AM EST through 12:32 PM EST on 2 Nov. The install was in place at 9:51 AM EST (build
+19017868). The first render of the relaxation vault, in headless Chromium with SwiftShader, was at
+9:58 AM EST: lightmapped textured brushes, 41 fps at 1024×640, load 460 ms. The first commit,
+[`4091bc3`](https://github.com/Yhozen/portal-web/commit/4091bc3923a59d372c3df04b6c68aef0b54ca5da),
+is at 10:12 AM EST. The morning's tip is
+[`f6df7d1`](https://github.com/Yhozen/portal-web/commit/f6df7d1cc661fec2b6f10a2fa0efde589ec14c88)
+at 12:31 PM EST. Clean-room throughout: Valve Developer Wiki specs and the public Source SDK 2013,
+no leaked code.
+
+Stills: [the first render](https://github.com/Yhozen/portal-web/releases/download/first-session-2026-11-02/01-first.png)
+(9:58 AM EST),
+[portal-gun placement](https://github.com/Yhozen/portal-web/releases/download/first-session-2026-11-02/04-gun.png),
+[a cube on the floor button](https://github.com/Yhozen/portal-web/releases/download/first-session-2026-11-02/06-button.png).
+They live in the
+[first session release](https://github.com/Yhozen/portal-web/releases/tag/first-session-2026-11-02).
+
+VPK v2 and BSP v20 loaders, a lightmapped renderer, Source-style movement, entity I/O, recursive
+stencil portals, cube pickup, elevators, changelevels, the a01 pedestal gun, MDL skeletal animation,
+rotating doors, a tumbling cube, overlays, audio, and PVS culling. `tools/autopilot.js` walks the
+maps through the normal controls only. By 12:32 PM EST: a00 reaches a01 at 117.8 s, a01 reaches a02
+at 81.8 s, and a02 part 1 reaches the middle elevator at 70.6 s.
+
 ## Known gaps
 The dated state sections above are the better picture of what plays through. Still ahead, as of
 25 Nov 2026: GLaDOS's last two cores and the ending; a route through a11 that survives turret

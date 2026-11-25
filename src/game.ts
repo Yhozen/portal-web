@@ -664,9 +664,16 @@ export class Game {
     H.set('func_tracktrain', (e, i) => { if (i === 'startforward' || i === 'resume') { e.speedNow = e.startspeed; if (!e.pathName && e.curPath && e.curPath.kv.target) e.pathName = e.curPath.kv.target.toLowerCase(); if (!e.pathName && e.curPath) { io.fire(e.curPath, 'onpass', null); e.speedNow = 0; } } else if (i === 'stop') e.speedNow = 0; else if (i === 'startbackward') { e.speedNow = -e.startspeed;
         // backward travel heads for the path_track that targets the one the train is at (Valve Developer Wiki: func_tracktrain / path_track)
         const cur = e.curPath && len(sub(e.curPath.origin, e.pos)) < 4 ? e.curPath : io.find(e.pathName, null, e)[0]; if (cur && len(sub(cur.origin, e.pos)) < 4) { const prev = this.prevPath(cur); if (prev) e.pathName = prev.name; else e.speedNow = 0; } } else if (i === 'setspeed') { } return true; });
+    H.set('path_track', (e, i) => { if (i === 'enablealternatepath') e.altOn = true; else if (i === 'disablealternatepath') e.altOn = false; else if (i === 'togglealternatepath') e.altOn = !e.altOn; else return false; return true; });
     H.set('trigger_changelevel', (e, i) => { if (i === 'changelevel') this.changeLevel?.(e.kv.map, (e.kv.landmark || '').toLowerCase()); return true; });
     H.set('point_template', (e, i) => { if (i === 'forcespawn') this.respawnTemplate(e, null); return true; });
-    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) { if (!this.spawnTrainTemplate(t, e)) { this.respawnTemplate(t, e); this.placeTemplateGroup(t, e); } } } return true; });
+    H.set('env_entity_maker', (e, i) => { if (i === 'forcespawn') { const t = io.find(e.kv.entitytemplate, null, e)[0]; if (t) {
+        const n0 = this.cubes.length;
+        if (!this.spawnTrainTemplate(t, e)) { this.respawnTemplate(t, e); this.placeTemplateGroup(t, e); }
+        const spd = +(e.kv.postspawnspeed || 0);
+        if (spd) { const dir = angleVectors(parseV3(e.kv.postspawndirection || '0 0 0')).f;
+          for (const c of this.cubes.slice(n0)) if (c.alive) { c.vel = scale(dir, spd); c.asleep = false; c.sleep = 0; } }
+      } } return true; });
     H.set('point_energy_ball_launcher', (e, i) => { if (i === 'enable') { e.enabled = true; e.nextBall = Math.min(e.nextBall ?? 0, io.time + 0.1); } else if (i === 'disable') e.enabled = false; else if (i === 'launchball') this.launchBall(e); else return false; return true; });
     H.set('filter_combineball_type', () => false);
     H.set('env_hudhint', (e, i) => { if (i === 'showhudhint') { this.hud.hint = e.kv.message || ''; this.hud.hintT = io.time + 4; } else if (i === 'hidehudhint') this.hud.hint = ''; return true; });
@@ -708,7 +715,8 @@ export class Game {
   spawnTrainTemplate(t: Ent, maker: Ent): boolean {
     const names = Object.entries(t.kv).filter(([k]) => /^template\d\d$/.test(k)).map(([, v]) => v.toLowerCase());
     const srcs = names.flatMap(n => (this.io.byName.get(n) || []).filter(e => !e.isCopy));
-    if (!srcs.some(e => e.cls === 'func_tracktrain' && +(e.kv.speed || 0) !== 0)) return false;
+    // speed is m_flSpeed (a10 carts); startspeed is what StartForward uses (escape_01 tube boxes have speed 0)
+    if (!srcs.some(e => e.cls === 'func_tracktrain' && (+(e.kv.speed || 0) !== 0 || +(e.kv.startspeed || 0) !== 0))) return false;
     const fix = +(t.kv.spawnflags || 0) & 2 ? '' : '&' + String(++this.trainSpawns).padStart(4, '0');
     const R = entityMatrix([0, 0, 0], maker.angles || [0, 0, 0]); const made: Ent[] = [];
     for (const src of srcs) { const kv: Record<string, string> = { ...src.kv };
@@ -1153,7 +1161,7 @@ export class Game {
           const mv = d <= step ? to : scale(to, step / d); e.pos[0] += mv[0]; e.pos[1] += mv[1]; e.pos[2] += mv[2];
           if (this.player.groundEnt === e || this.onTrain(e)) { this.player.pos = add(this.player.pos, mv); this.trainCarried = true; }
           this.carryCubes(e, mv);
-          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', e); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : (path.kv.target || '').toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
+          if (d <= step) { e.curPath = path; io.fire(path, 'onpass', e); const nxt = e.speedNow < 0 ? (this.prevPath(path)?.name || '') : ((path.altOn && path.kv.altpath) ? path.kv.altpath : (path.kv.target || '')).toLowerCase(); if (nxt) e.pathName = nxt; else { e.speedNow = 0; } }
         }
       }
       if (e.cls === 'func_rotating') { const target = e.spinning ? e.maxspeed : 0; const acc = Math.max(1, e.maxspeed) * dt / Math.max(0.1, +(e.kv.fanfriction || 20) / 20);

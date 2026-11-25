@@ -419,6 +419,53 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
                       AP.wait(0.4);
                     }
                     lg('held cube', !!G.held, spitBox() && spitBox().pos.map(v => v | 0), P(), 'hp ' + G.health);
+                    if (G.held) {
+                      // the vent is a hole in the south wall at x 1136-1168, lip at z -176.
+                      // a standing jump from the cube is short, but a crouch-jump steps up into it.
+                      runHold(0, 1, 576, 0, v => v >= 1152, 8);
+                      runHold(270, 0, 1152, 1, v => v <= 560, 6);
+                      lg('vent stand', P(), 'held ' + !!G.held);
+                      AP.lookAt([game.pl.pos[0], game.pl.pos[1] - 20, -256]);
+                      AP.wait(0.3);
+                      G.use();
+                      AP.wait(1);
+                      lg('dropped at vent', spitBox() && spitBox().pos.map(v => v | 0), P());
+                      // a standing jump can't mount a 40.5-tall cube (peak is 20, plus step 18 is still short
+                      // of the top, and the standing hull hits the side). A running duck-jump does: duck mid-air
+                      // and the hull clears the lip, landing on the cube at z -215.
+                      runHold(90, 0, 1152, 1, v => v >= 610, 3);
+                      const c = spitBox();
+                      if (c) {
+                        for (let k = 0; k < 90; k++) {
+                          const dx = c.pos[0] - game.pl.pos[0], dy = c.pos[1] - game.pl.pos[1];
+                          game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+                          game.step(T, { fwd: 1, side: 0, jump: k >= 10 && k < 26, duck: k >= 14 });
+                          if (game.pl.pos[2] > -240 && game.pl.onGround && k > 26) break;
+                        }
+                        AP.wait(0.6);
+                      }
+                      // the mount leaves us ducked against the wall, where the standing hull cannot unduck.
+                      // walk north on the cube first, stand up, then jump south and duck mid-air — a jump
+                      // that starts already ducked only peaks 21 units (short of the lip); standing then
+                      // ducking mid-air reaches z -159 and steps into the vent at -176.
+                      game.pl.ang = [0, 90, 0];
+                      for (let k = 0; k < 40; k++) {
+                        game.step(T, { fwd: 1, side: 0, jump: false, duck: true });
+                        if (game.pl.pos[1] >= 558) break;
+                      }
+                      for (let k = 0; k < 50; k++) game.step(T, { fwd: 0, side: 0, jump: false, duck: false });
+                      lg('on cube', P(), 'z ' + game.pl.pos[2].toFixed(1), 'ducked ' + !!game.pl.ducked, 'g ' + !!game.pl.onGround, 'cube ' + (spitBox() && spitBox().pos.map(v => v | 0)));
+                      if (game.pl.pos[2] > -240 && !game.pl.ducked) {
+                        game.pl.ang = [0, 270, 0];
+                        for (let k = 0; k < 4 * 66; k++) {
+                          game.step(T, { fwd: 1, side: 0, jump: k < 12, duck: k >= 6 });
+                          if (game.pl.pos[1] < 470 && game.pl.pos[2] > -200) break;
+                        }
+                        const inVent = game.pl.pos[1] < 500 && game.pl.pos[2] > -200;
+                        lg('in the vent', inVent, P(), 'hp ' + G.health, 'dead ' + !!G.dead);
+                      }
+                    }
+
 
                   }
                 }

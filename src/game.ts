@@ -6,7 +6,7 @@ import { F, boneMatrices, type Seq, type SeqEvent } from './anim.ts';
 import { aimTable, aimFor, approach, attachFrame, turretFace, aimAttachment, TURRET, ROCKET_TURRET, PLAYER_HP, type TurretState } from './npc.ts';
 import { BSP, SURF, CONTENTS } from './bsp.ts';
 import { Ent, IO } from './ents.ts';
-import { Tracer, MASK_SHOT_PORTAL, type Collider } from './trace.ts';
+import { Tracer, MASK_SHOT_PORTAL, MASK_BLOCKLOS, type Collider } from './trace.ts';
 import { Player, HULL } from './player.ts';
 import { Renderer, throughPortal, type Portal, type Instance, type PropInst } from './render.ts';
 import type { ModelCache } from './models.ts';
@@ -861,7 +861,8 @@ export class Game {
         const to = sub(target, eye), dist = len(to);
         if (dist > 1 && dist < ROCKET_TURRET.range) {
           this.tr.ignore = null;
-          const hit = this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_SHOT_PORTAL, this.playerEnt);
+          // WINDOW glass (escape_01 office panes are TRANSLUCENT|WINDOW) must not block LOS: the original fires through it
+          const hit = this.tr.trace(eye, target, [0, 0, 0], [0, 0, 0], MASK_BLOCKLOS, this.playerEnt);
           vis = hit.fraction > 0.98;
           if (vis) aimAttachment(m, att, P, xformDir(invertRigid(W), scale(to, 1 / dist)), dt, ROCKET_TURRET.turnPerSec, true);
         }

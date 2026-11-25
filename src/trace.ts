@@ -7,6 +7,7 @@ import type { V3 } from './math.ts';
 export interface Trace { fraction: number; end: V3; normal: V3; startsolid: boolean; allsolid: boolean; hit: number /* brush idx or -1 */; ent: any; col?: Collider /* brush-entity collider that was hit */; }
 export const MASK_PLAYERSOLID = CONTENTS.SOLID | CONTENTS.PLAYERCLIP | CONTENTS.WINDOW | CONTENTS.GRATE | CONTENTS.MOVEABLE | CONTENTS.MONSTER;
 export const MASK_SHOT_PORTAL = CONTENTS.SOLID | CONTENTS.MOVEABLE | CONTENTS.WINDOW; // portal gun passes grates (CONTENTS_GRATE)
+export const MASK_BLOCKLOS = CONTENTS.SOLID | CONTENTS.MOVEABLE; // Source MASK_BLOCKLOS has no WINDOW; NPCs see through glass
 const EPS = 0.03125;
 
 export interface Collider { bsp: BSP; headnode: number; offset: V3; ent?: any; enabled: () => boolean; rot?: Float32Array /* column-major 4x4, local->world rotation */; }

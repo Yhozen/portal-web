@@ -236,6 +236,16 @@ if (game.pl.pos[0] < -2100 && game.pl.pos[2] < -400) {
           lg('through d2', P(), 'g ' + game.pl.onGround);
           standAt(-545, 640, 8);
           lg('turret button', P(), 'g ' + game.pl.onGround);
+          if (window.STAGE === 9) throw 'stage 9';
+          // button_enable_turret is a Use-Opens func_door_rotating (spawnflags
+          // 4432 includes 256). OnFullyOpen Enables laser_1.
+          const btn = AP.ent('button_enable_turret');
+          if (btn) AP.lookAt(btn.pos || btn.origin);
+          AP.wait(0.25);
+          G.use();
+          AP.wait(1, () => (AP.ent('laser_1') || {}).rocketEnabled);
+          const las = AP.ent('laser_1') || {};
+          lg('turret enabled', P(), 'laser ' + !!las.rocketEnabled, 'btn ' + (btn && btn.state));
         }
       }
     }

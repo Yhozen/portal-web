@@ -146,28 +146,73 @@ if (window.STAGE === 9) throw 'stage 9';
 thruWall(window.CFF ?? [-192, 1100, 1144], window.CFFO ?? [-64, 256, 1143], 'far floor', { off: 0.3 });
 game.pl.vel = [0, 0, 0];
 if (window.STAGE === 10) throw 'stage 10';
-// drop off the north edge onto the z=832 corridor (fires trigger_once → crusher01_esc00 loops over the goo)
+// drop onto the upper cube tube (y=1216, top 948). A run overshoots the crest; stay off the
+// vertical tube at x=-96. Landing on the tube also fires trigger_once → crusher01_esc00 loops.
 {
-  const go = (x, y, max = 4) => {
+  const go = (x, y, max = 5, cap = 0.6) => {
     for (let k = 0; k < max * 66; k++) {
       const dx = x - game.pl.pos[0], dy = y - game.pl.pos[1], dist = Math.hypot(dx, dy);
-      if (dist < 8 && game.pl.onGround) break;
+      if (dist < 4 && game.pl.onGround && Math.hypot(game.pl.vel[0], game.pl.vel[1]) < 15) break;
       game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
-      game.step(T, { fwd: Math.min(1, dist / 20), side: 0, jump: false, duck: false });
+      game.step(T, { fwd: Math.min(cap, dist / 20), side: 0, jump: false, duck: false });
     }
     game.pl.vel = [0, 0, 0];
   };
-  go(-65, 1160, 4);
-  lg('north lip', P());
-  for (let k = 0; k < 8 * 66; k++) {
+  go(-30, 1140, 5, 0.6);
+  lg('tube drop point', P());
+  for (let k = 0; k < 6 * 66; k++) {
     game.pl.ang = [0, 90, 0];
-    game.step(T, { fwd: k < 20 ? 0.4 : 0, side: 0, jump: false, duck: false });
-    if (game.pl.onGround && k > 40 && game.pl.pos[2] < 900) break;
+    game.step(T, { fwd: 0.15, side: 0, jump: false, duck: false });
+    if (game.pl.onGround && k > 20 && game.pl.pos[2] < 1000 && game.pl.pos[1] > 1190) break;
   }
   game.pl.vel = [0, 0, 0];
-  lg('z832 corridor', P(), game.pl.onGround);
+  lg('on upper tube', P(), game.pl.onGround);
 }
 if (window.STAGE === 11) throw 'stage 11';
+// walk east along the crest (~y=1224) to the crossing at x=576, ducked
+{
+  for (let k = 0; k < 20 * 66; k++) {
+    const dx = 576 - game.pl.pos[0], dy = 1224 - game.pl.pos[1], dist = Math.hypot(dx, dy);
+    game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+    game.step(T, { fwd: Math.min(0.5, dist / 20), side: 0, jump: false, duck: true });
+    if (dist < 4 && game.pl.onGround && game.pl.pos[2] > 900) break;
+    if (game.pl.pos[2] < 800) break;
+  }
+  game.pl.vel = [0, 0, 0];
+  lg('at crossing', P(), game.pl.onGround, game.pl.ducked);
+}
+if (window.STAGE === 12) throw 'stage 12';
+// drop south onto the lower tube (x=576, top 628) and walk north under crusher01_esc00.
+// stayOnGround sticks to the upper tube's south slope; walk off the lip and then wait for the fall.
+{
+  for (let k = 0; k < 12 * 66; k++) {
+    const dx = 576 - game.pl.pos[0];
+    game.pl.ang = [0, Math.atan2(-1, dx / 80) * 180 / Math.PI, 0];
+    const off = game.pl.pos[1] < 1170 && game.pl.pos[2] < 942;
+    game.step(T, { fwd: off ? 0.4 : 0.25, side: 0, jump: off && k % 20 < 4, duck: true });
+    if (game.pl.onGround && k > 40 && game.pl.pos[2] < 800 && game.pl.pos[2] > 580 && game.pl.pos[1] < 1180) break;
+    if (game.pl.pos[2] < 500) break;
+  }
+  if (!game.pl.onGround || game.pl.pos[2] > 800) {
+    for (let k = 0; k < 8 * 66; k++) {
+      game.pl.ang = [0, 270, 0];
+      game.step(T, { fwd: 0, side: 0, jump: false, duck: true });
+      if (game.pl.onGround && k > 5) break;
+    }
+  }
+  game.pl.vel = [0, 0, 0];
+  lg('on lower tube', P(), game.pl.onGround);
+  for (let k = 0; k < 25 * 66; k++) {
+    const dx = 576 - game.pl.pos[0], dy = 1580 - game.pl.pos[1];
+    game.pl.ang = [0, Math.atan2(dy, dx) * 180 / Math.PI, 0];
+    game.step(T, { fwd: 0.55, side: 0, jump: false, duck: true });
+    if (game.pl.pos[1] > 1570 && game.pl.onGround && game.pl.pos[2] > 580 && game.pl.pos[2] < 700) break;
+    if (game.pl.pos[2] < 520) break;
+  }
+  game.pl.vel = [0, 0, 0];
+  lg('lower tube north', P(), game.pl.onGround);
+}
+if (window.STAGE === 13) throw 'stage 13';
 if (window.PAD) { // drop off the north edge of the walkway onto the portalable lower floor (z -319), then floor-into-the
 // east wall (x 895, y 478) with a short north hop into the floor portal so the exit keeps +y; without
 // that hop the exit is 34 units south of the z=320 pad (a jump longer than 34 units clears the portal)

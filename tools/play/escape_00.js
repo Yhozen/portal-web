@@ -88,7 +88,10 @@ if (window.STAGE === 3) throw 'stage 3';
   go(280, 80); go(276, -54); go(150, -46);
   lg('at the pistons', P());
   lg('blue past them', placeAt(0, window.PB ?? [-127, -150, 384]));
-  lg('orange walk-into', placeAt(1, window.PO ?? [150, 0, 384]));
+  // on the floor line (z 374: the bottom edge at the floor's 320). At 384 the edge stands 10 above the floor, and
+  // crusher_blocker_4 overhead leaves 8 units of headroom, too little to step up onto it (the old all-or-nothing hole
+  // let the feet hang under the edge, so 384 used to work)
+  lg('orange walk-into', placeAt(1, window.PO ?? [150, 0, 374]));
   lg('past the pistons', walkInto(1, 5), P());
   for (let k = 0; k < 2 * 66; k++) { game.step(T, { fwd: 0, side: 0, jump: false, duck: false }); if (game.pl.onGround && k > 8) break; }
   lg('landed past', P(), game.pl.onGround);

@@ -1,6 +1,7 @@
 (() => { const G = game.game, io = G.io, out = [], P = () => game.pl.pos.map(v => v|0), C = AP.centre, E = AP.ent, F = n => AP.floorUnder(E(n));
 const lg = (k, ...v) => out.push(io.time.toFixed(1) + ' ' + k + ' ' + v.map(x => JSON.stringify(x)).join(' '));
-const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.15); const n0 = io.log.length; G.shootPortal(which); AP.wait(0.15); const Pp = G.gunPortals[which]; return Pp.open && !io.log.slice(n0).some(l => /failed/.test(l)) ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed ' + io.log.filter(l => /failed/.test(l)).slice(-1); };
+// (the IO log keeps its last 400 lines, so a mark finds this shot's lines: an index into it goes stale once it is full)
+const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.15); io.log.push('# shot'); G.shootPortal(which); AP.wait(0.15); const Pp = G.gunPortals[which]; return Pp.open && !io.log.slice(io.log.lastIndexOf('# shot')).some(l => /failed/.test(l)) ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed ' + io.log.filter(l => /failed/.test(l)).slice(-1); };
 const T = 1 / 66, idle = { fwd: 0, side: 0, jump: false, duck: false };
 // fly: step until on the ground again (after at least `min` s), logging the highest and furthest points
 const fly = (min = 0.3, max = 8) => { let top = -1e9; for (let k = 0; k < max * 66; k++) { game.step(T, idle); top = Math.max(top, game.pl.pos[2]); if (k > min * 66 && game.pl.onGround) break; } return P() + ' top ' + (top | 0); };
@@ -24,15 +25,19 @@ lg('blue ceiling over 512', shoot(0, [-8, 300, 1279])); lg('orange pit wall', sh
 lg('jump in', runJump([-8, -140], [0, 1], 135), 'fall', fly(0.3));
 if (window.STAGE === 3) throw 'stage 3';
 // the same again up to the 768 platform in the north-east corner: blue on the ceiling over it (z 1535), orange under you
+// then step onto it: the hull has to fit the hole to drop in (the old all-or-nothing hole let it overhang the rim, and
+// the shot can land the portal 20 or 30 units off your feet)
+const onto = which => { const p = G.gunPortals[which], n0 = G.stats.teleports; for (let k = 0; k < 66 && G.stats.teleports === n0; k++) { const dx = p.pos[0] - game.pl.pos[0], dy = p.pos[1] - game.pl.pos[1], d = Math.hypot(dx, dy);
+  game.pl.ang = [game.pl.ang[0], Math.atan2(dy, dx) * 180 / Math.PI, 0]; game.step(T, { fwd: d > 4 ? Math.min(1, d / 60) : 0, side: 0, jump: false, duck: false }); } };
 const under = which => { for (const d of [[0, 0], [-30, 0], [0, -30], [30, 0], [0, 30]]) { const r = shoot(which, [game.pl.pos[0] + d[0] + 2, game.pl.pos[1] + d[1], game.pl.pos[2]]); if (!/not placed/.test(r)) return r; } return 'not placed'; };
 lg('blue ceiling over 768', shoot(0, [760, 280, 1535]));
-{ const n0 = G.stats.teleports; lg('orange under you 2', under(1)); for (let k = 0; k < 66 && G.stats.teleports === n0; k++) game.step(T, idle); lg('fall 2', fly(0.3)); }
+{ const n0 = G.stats.teleports; lg('orange under you 2', under(1)); onto(1); lg('fall 2', fly(0.3)); }
 if (window.STAGE === 4) throw 'stage 4';
 // across to the 1024 ledge in front of the exit door (x 48, z 1040..1110): blue on the west wall just above the door,
 // orange under you again (from the platform's north end, where the wall is in sight); you come out over the ledge and
 // drop onto it
 AP.approach([760, 450], 4, 3); lg('blue over the exit door', shoot(0, [64, 672, 1250]));
-{ const n0 = G.stats.teleports; lg('orange under you 3', under(1)); for (let k = 0; k < 66 && G.stats.teleports === n0; k++) game.step(T, idle); lg('fall 3', fly(0.3)); }
+{ const n0 = G.stats.teleports; lg('orange under you 3', under(1)); onto(1); lg('fall 3', fly(0.3)); }
 if (window.STAGE === 5) throw 'stage 5';
 // to the box button's ledge (z 1152, x 750..850): blue on the panel high above the door (x 128, z 1474, facing east),
 // orange on the 576 platform below the ledge's east edge; step off into it and you're thrown east out of the panel

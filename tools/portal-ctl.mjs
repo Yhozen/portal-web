@@ -43,6 +43,7 @@ commands:
   errors                      console errors, warnings and page errors since the last call
   eval JS                     evaluate JS in the page (window.game is the engine); replies the JSON result
   assert JS                   like eval, but fails (exit 1) unless the value is truthy
+  inject FILE                 run a JS file in the page (probes that define helpers, e.g. tools/transit.js)
   sleep S                     wait S seconds of wall time
   record PATH FRAMES [FPS] [KEYS]  step the fixed tick loop and encode every frame (mp4 or webm, default 33 fps, labelled
                               with frame, time and tick unless --no-label); window.__probe() is logged per frame if set
@@ -193,6 +194,10 @@ const handlers = {
     const m = window.game.bsp.entities.filter(e => R.test(e.classname)); return { count: m.length, ents: m.slice(0, n).map(e => ({ classname: e.classname, targetname: e.targetname, origin: e.origin })) }; }, [re, n]); },
   async errors() { const l = logs; logs = []; return { count: l.length, logs: l }; },
   async eval(w, raw) { need(); const js = raw.replace(/^eval\s+/, ''); /* the rest of the line as written, quotes included */ const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js); return { value: v }; },
+  // inject FILE: run a JS file in the page (a probe such as tools/transit.js that defines helpers on window). The file is
+  // read by the harness, relative to the repository, so it also works with a serve session; a new `map` starts clean
+  async inject(w) { need(); if (!w[1]) throw Object.assign(new Error('inject FILE'), { usage: true }); const f = resolve(ROOT, w[1]), src = readFileSync(f, 'utf8');
+    await page.evaluate(src => { (0, eval)(src); }, src); return { file: f, bytes: src.length }; },
   // assert JS: like eval, but the command fails unless the value is truthy. Write checks as expressions that compare against
   // the expected numbers (e.g. `assert window.game.game.stats.teleports === 1`), so a check fails on a wrong value, not only on errors
   async assert(w, raw) { need(); const js = raw.replace(/^assert\s+/, ''); const v = await page.evaluate(js => { const r = (0, eval)(js); return r === undefined ? null : JSON.parse(JSON.stringify(r)); }, js);

@@ -75,6 +75,7 @@ with Range requests. DIR is laid out like the hosted preview's private bucket (`
 | `errors` | console errors and warnings, page errors and failed requests (with paths) since the last call |
 | `eval JS` | evaluate JS in the page (`window.game` is the engine) and reply its JSON value |
 | `assert JS` | like `eval`, but the command fails (exit 1, or the script stops) unless the value is truthy. Write a check's expected numbers as expressions, e.g. `assert window.game.game.stats.teleports === 1` |
+| `inject FILE` | run a JS file in the page, read by the harness relative to the repository: probes that define helpers on `window`, such as `tools/transit.js`. A new `map` starts clean |
 | `sleep S` | wait S seconds of wall time |
 | `lookat X Y Z\|off` | keep the view aimed at a point on every tick of `step`, `record` and `poses` |
 | `record PATH FRAMES [FPS] [KEYS]` | step the game 66/FPS ticks per frame (holding KEYS) and pipe every frame to ffmpeg: `.mp4` (x264) or `.webm` (VP9). Each frame is labelled `frame / t / tick` (`--no-label` drops it). If `window.__probe` is a function, its value per frame goes to `PATH.probe.jsonl`. A frame that throws keeps the video so far and fails with the frame and tick |
@@ -92,7 +93,7 @@ Example output:
 ```
 
 Scripts used for checks live in `checks/`: `escape02-ending.ctl` (skybox), `later-chambers.ctl` (30 views in a08 to
-escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop), `glados-hit.ctl` and `glados-destruction.ctl` (sequence cross-fades and the 54 s `.ani`-streamed ending, recorded), `camera-track.ctl` (a security camera following the player, with a lens-error probe), `opaque-canvas.ctl` (asserts that every pixel of the drawing buffer is opaque, with a cube on a00's button). They hold only map names, coordinates and commands, never game data;
+escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop), `glados-hit.ctl` and `glados-destruction.ctl` (sequence cross-fades and the 54 s `.ani`-streamed ending, recorded), `camera-track.ctl` (a security camera following the player, with a lens-error probe), `opaque-canvas.ctl` (asserts that every pixel of the drawing buffer is opaque, with a cube on a00's button), `portal-transit.ctl` (walks the player through five portal layouts with `tools/transit.js`, 150 seeded random walks each, and asserts no view pop between wall portals and no tick stuck in solid), `portal-a00.ctl` (the same probe on a00's own portals while the blue one moves on its timer). They hold only map names, coordinates and commands, never game data;
 screenshots should be written outside the repository (the `.gitignore` also drops `*.png`).
 
 `node tools/mdl-info.ts models/props/glados.mdl` (paths inside the game, `--game DIR` as above) prints a model's animation data straight from the file: sequences with flags,

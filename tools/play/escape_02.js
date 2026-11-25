@@ -190,16 +190,23 @@ for (let k = 0; k < 5 * 66; k++) {
   game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
   if (game.pl.pos[2] < -1350) break;
 }
+// Sinking into the floor portal from a stand, the hull centre crosses at about 200 u/s, and that comes out of the east
+// wall as 200 u/s west (the old all-or-nothing hole teleported the player at once, with no speed, so this route only
+// had to drop straight down the wall). Air-brake by holding east, about 23 u/s a tick, so the drop is straight again.
+const airBrake = () => { for (let k = 0; k < 30 && game.pl.vel[0] < -5 && game.pl.pos[0] > 5800; k++) { game.pl.ang = [0, 0, 0]; game.step(T, { fwd: 1, side: 0, jump: false, duck: false }); } };
+airBrake();
+// where the fall meets the z -1280 floor, from the speed left after the brake (the wall caps a portal's centre at 6111)
+const landX = () => { const v = game.pl.vel, h = game.pl.pos[2] + 1280, tl = (v[2] + Math.sqrt(Math.max(0, v[2] * v[2] + 1200 * h))) / 600; return Math.min(6111, game.pl.pos[0] + v[0] * tl); };
 game.pl.ang = [0, 90, 0];
 lg('ramp', placeAt(0, [4930, 640, -920]));
 const ramp = G.gunPortals[0];
 if (!(ramp.open && ramp.onCol && ramp.onCol.ent && ramp.onCol.ent.cls === 'func_brush')) {
   lg('done early, no ramp', P()); throw 'no ramp';
 }
-lg('drop floor', placeAt(1, [game.pl.pos[0] - 20, 640, -1280]));
+lg('drop floor', placeAt(1, [landX(), 640, -1280]));
 // exiting the east wall can leave you tucked into x 6143; a step west
 // clears the solid so the drop actually falls.
-for (let k = 0; k < 20; k++) {
+for (let k = 0; k < 20 && game.pl.pos[0] > 6130; k++) {
   game.pl.ang = [0, 180, 0];
   game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
   if (game.pl.pos[0] <= 6120) break;
@@ -264,10 +271,11 @@ for (let k = 0; k < 5 * 66; k++) {
   game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
   if (game.pl.pos[2] < -1350) break;
 }
+airBrake();
 game.pl.ang = [0, 90, 0];
 lg('ramp 13', placeAt(0, [4930, 640, -920]));
-lg('drop floor 2', placeAt(1, [6111, 640, -1280]));
-for (let k = 0; k < 20; k++) {
+lg('drop floor 2', placeAt(1, [landX(), 640, -1280]));
+for (let k = 0; k < 20 && game.pl.pos[0] > 6130; k++) {
   game.pl.ang = [0, 180, 0];
   game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
   if (game.pl.pos[0] <= 6120) break;
@@ -279,7 +287,7 @@ for (let k = 0; k < 12 * 66; k++) {
   if (!placed12 && game.pl.pos[2] > -540 && game.pl.pos[0] > 5300 && game.pl.pos[0] < 5800) {
     game.pl.ang = [0, 90, 0];
     lg('flippy 12 mid-fling', quickPlace(0, [6102, 640, -529]), 'at', P());
-    lg('moved drop', quickPlace(1, [6058, 640, -1280]));
+    lg('moved drop', quickPlace(1, [landX(), 640, -1280])); // where this descent meets the floor (about 6030 to 6058)
     placed12 = true;
   }
   // the second fling comes out going west and lands on a z -384 shelf around x 4415.

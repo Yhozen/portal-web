@@ -8,16 +8,22 @@ window.AP = (() => {
   const hurt = () => G.io.ents.filter(e => (e.cls === 'trigger_hurt' || (G.held && e.cls === 'trigger_portal_cleanser')) && e.bmins && e.enabled !== false && !e.killed); // carrying a cube: a cleanser would fizzle it
   const inHurt = (p, hs) => hs.some(e => p[0] > e.bmins[0] - 16 && p[0] < e.bmaxs[0] + 16 && p[1] > e.bmins[1] - 16 && p[1] < e.bmaxs[1] + 16 && p[2] > e.bmins[2] - 72 && p[2] < e.bmaxs[2]);
   const key = p => `${Math.round(p[0] / 12)},${Math.round(p[1] / 12)},${Math.round(p[2] / 16)}`;
+  // turrets now shoot: steps a standing, active-capable turret can see (Game.turretSees, the check updateTurret makes) are left out (or cost window.TURRET_COST when that's set), so routes go round or behind them, or through portals
+  const danger = () => !G.damage ? [] : G.cubes.filter(c => c.alive && c.turret && !c.held && c.turret.state !== 'dead' && c.turret.state !== 'tipped' && c.R[10] > 0.5 && c.prop?.model);
+  const seenCache = new Map();
+  function seen(q, ts) { if (!ts.length) return false; const k = key(q) + ts.length; if (seenCache.has(k)) return seenCache.get(k); const t = [q[0], q[1], q[2] + 36]; let v = false;
+    for (const c of ts) if (G.turretSees(c, t)) { v = true; break; }
+    seenCache.set(k, v); return v; }
   const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.707, 0.707], [0.707, -0.707], [-0.707, 0.707], [-0.707, -0.707]];
   function floorAt(p) { const d = tr(p, [p[0], p[1], p[2] - 400]); return d.fraction < 1 && d.normal[2] > 0.7 ? d.end : null; }
-  function neighbors(p, hs) {
+  function neighbors(p, hs, ts = []) {
     const out = [];
     for (const [dx, dy] of DIRS) {
       const up = tr(p, [p[0], p[1], p[2] + 18]).end;
       const f = tr(up, [up[0] + dx * S, up[1] + dy * S, up[2]]); if (f.fraction < 0.99 || f.startsolid) continue;
       const d = tr(f.end, [f.end[0], f.end[1], f.end[2] - 18 - 300]); if (d.fraction >= 1 || d.normal[2] < 0.7) continue;
       const drop = f.end[2] - d.end[2]; const q = d.end; if (inHurt(q, hs)) continue;
-      out.push({ q, c: S + (drop > 60 ? 20 : 0) });
+      const sn = seen(q, ts); if (sn && !(window.TURRET_COST > 0)) continue; out.push({ q, c: S + (drop > 60 ? 20 : 0) + (sn ? window.TURRET_COST : 0) });
     }
     for (const a of G.portals) { const b = a.linked; if (!a.open || !b || !b.open || Math.abs(a.f[2]) > 0.3) continue;
       const r = [p[0] - a.pos[0], p[1] - a.pos[1], p[2] + 36 - a.pos[2]]; const dp = r[0] * a.f[0] + r[1] * a.f[1] + r[2] * a.f[2];
@@ -27,7 +33,7 @@ window.AP = (() => {
   }
   const ZT = { lo: -64, hi: 64 }; // arrival z window (node z minus target z)
   function plan(target, R = 28, maxN = 60000) {
-    const hs = hurt(); const start = [...pl.pos]; const open = [{ p: start, g: 0, f: 0, k: key(start) }]; const best = new Map([[open[0].k, 0]]); const prev = new Map(); const nodeAt = new Map([[open[0].k, start]]);
+    const hs = hurt(), ts = danger(); seenCache.clear(); const start = [...pl.pos]; const open = [{ p: start, g: 0, f: 0, k: key(start) }]; const best = new Map([[open[0].k, 0]]); const prev = new Map(); const nodeAt = new Map([[open[0].k, start]]);
     const h = p => Math.hypot(p[0] - target[0], p[1] - target[1], (p[2] - target[2]) * 0.5);
     let n = 0, near = open[0], nearH = h(start);
     while (open.length && n++ < maxN) {
@@ -36,7 +42,7 @@ window.AP = (() => {
       if (cur.g > best.get(cur.k)) continue; { const hc = h(cur.p); if (hc < nearH) { nearH = hc; near = cur; } }
       if (Math.hypot(cur.p[0] - target[0], cur.p[1] - target[1]) < R && cur.p[2] - target[2] > ZT.lo && cur.p[2] - target[2] < ZT.hi) {
         const path = []; let k = cur.k, node = cur; while (node) { path.push(node); node = prev.get(node.k); } return { ok: true, path: path.reverse(), expanded: n }; }
-      for (const nb of neighbors(cur.p, hs)) { const k = key(nb.q), g = cur.g + nb.c; if (g < (best.get(k) ?? 1e9)) { best.set(k, g); const node = { p: nb.q, g, f: g + h(nb.q) * 1.2, k, portal: nb.portal }; prev.set(k, cur); nodeAt.set(k, nb.q); open.push(node); } }
+      for (const nb of neighbors(cur.p, hs, ts)) { const k = key(nb.q), g = cur.g + nb.c; if (g < (best.get(k) ?? 1e9)) { best.set(k, g); const node = { p: nb.q, g, f: g + h(nb.q) * 1.2, k, portal: nb.portal }; prev.set(k, cur); nodeAt.set(k, nb.q); open.push(node); } }
     }
     const ks = [...best.keys()].map(k => k.split(',').map(Number)); const bb = [0, 1, 2].map(i => [Math.min(...ks.map(k => k[i])) * [12, 12, 16][i], Math.max(...ks.map(k => k[i])) * [12, 12, 16][i]]);
     let cl = null, cd = 1e9; for (const k of ks) { const q = [k[0] * 12, k[1] * 12, k[2] * 16]; const d = h(q); if (d < cd) { cd = d; cl = q; } }
@@ -44,7 +50,7 @@ window.AP = (() => {
     return { ok: false, expanded: n, bb, closest: cl, visited: [...new Set([...best.keys()])].map(k => nodeAt.get(k)).filter(Boolean), partial, partialGain: h(start) - nearH, portalEdges: [...prev.keys()].length };
   }
   function walk(path, budget = 120) {
-    let t = 0, stuck = 0, last = [...pl.pos], i = 1;
+    let t = 0, stuck = 0, last = [...pl.pos], i = 1, bestI = -1, best = 1e9, noGain = 0;
     while (i < path.length && t < budget) {
       const pa = path[i].portal; if (pa && !(pa.open && pa.linked && pa.linked.open)) return { ok: false, why: 'portal closed', at: pl.pos.map(v => v | 0), t };
       // next node is on the far side of portal pa: walk into its centre until we get teleported
@@ -55,7 +61,9 @@ window.AP = (() => {
       const mv = Math.hypot(pl.pos[0] - last[0], pl.pos[1] - last[1]); last = [...pl.pos];
       if (mv > 60) { // teleported: resync to nearest remaining waypoint past the portal we were heading for
         if (path[i].portal) i++; let bj = i, bd = 1e9; for (let j = i; j < path.length && !path[j].portal; j++) { const q = path[j].p; const dd = Math.hypot(q[0] - pl.pos[0], q[1] - pl.pos[1], q[2] - pl.pos[2]); if (dd < bd) { bd = dd; bj = j; } } i = bj; }
-      stuck = mv < 0.5 ? stuck + 1 : 0; if (stuck > 120) return { ok: false, why: 'stuck', at: pl.pos.map(v => v | 0), wp: i + '/' + path.length, t };
+      // stuck: no real movement, or (jittering against a wall with a held cube) no progress towards the waypoint for 4 s
+      if (i !== bestI) { bestI = i; best = 1e9; } const dw = Math.hypot(w[0] - pl.pos[0], w[1] - pl.pos[1]); if (dw < best - 2) { best = dw; noGain = 0; } else noGain++;
+      stuck = mv < 0.5 ? stuck + 1 : 0; if (stuck > 120 || noGain > 132) return { ok: false, why: 'stuck', at: pl.pos.map(v => v | 0), wp: i + '/' + path.length, t };
     }
     return { ok: i >= path.length, t, at: pl.pos.map(v => v | 0) };
   }
@@ -76,12 +84,14 @@ window.AP = (() => {
     for (const which of [0, 1]) { if (!G.canFire[which]) continue; r = portalSolve(target, R, which, { vantage: true, spacing: 200, pitches: [-30, -15, 0, 15, 30, 60, 89], ...opts }); if (r.ok) return r; }
     return r; }
   // pick up a cube, carry it onto a point (a floor button's trigger centre), drop it there
-  // a cube up to ~150 units above the floor (on a pedestal) can still be grabbed: the use() ray reaches 100 units from the eye
+  // use() is the SDK's FindUseEntity: 80 units from the eye, height counted from the player's body, so a cube on a pedestal or below a step still grabs
   function pickUp(cube) { let r = gotoRetry([cube.pos[0], cube.pos[1], cube.pos[2]], 56); if (!r.ok) { ZT.lo = -150; try { r = reach([cube.pos[0], cube.pos[1], cube.pos[2]], 72); } finally { ZT.lo = -64; } } if (!r.ok) return { ok: false, why: 'reach cube: ' + r.why };
+    if (pl.groundEnt === cube.ent) { const a = Math.atan2(pl.pos[1] - cube.pos[1], pl.pos[0] - cube.pos[0]); approach([cube.pos[0] + Math.cos(a) * 44, cube.pos[1] + Math.sin(a) * 44], 4, 2); wait(0.3); } // standing on it: step off first (it can't be picked up from on top)
     lookAt(cube.pos); wait(0.1); if (!G.held) G.use(); wait(0.3); return { ok: !!G.held, why: G.held ? '' : 'use() did not grab' }; }
   function placeCube(cube, b) { if (!G.held) { const p = pickUp(cube); if (!p.ok) return p; }
     let r = gotoRetry([b[0], b[1], b[2]], 72); if (!r.ok) r = reach([b[0], b[1], b[2]], 72); LOG.push('reach button ' + JSON.stringify(r) + ' held ' + !!G.held + ' cube ' + cube.pos.map(v => v | 0)); if (!r.ok) return { ok: false, why: 'reach button: ' + r.why };
-    for (let k = 0; k < 5; k++) { lookAt([b[0], b[1], b[2]]); wait(0.4); if (Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 8) break; approach([b[0] - (cube.pos[0] - pl.pos[0]), b[1] - (cube.pos[1] - pl.pos[1])], 3); }
+    for (let k = 0; k < 10; k++) { lookAt([b[0], b[1], b[2]]); wait(0.4); if (Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 3) break; approach([b[0] - (cube.pos[0] - pl.pos[0]), b[1] - (cube.pos[1] - pl.pos[1])], 3); }
+    lookAt([cube.pos[0], cube.pos[1], b[2] - 24]); wait(0.3); // lower it onto the pad before letting go
     G.use(); wait(1.5); return { ok: Math.hypot(b[0] - cube.pos[0], b[1] - cube.pos[1]) < 24, cube: cube.pos.map(v => v | 0) }; }
   // aim + fire the gun (the same shootPortal() the mouse buttons use) over a sweep of directions until the placed portal opens a path
   // aim + fire the gun (the same shootPortal() the mouse buttons use) over a sweep of directions until the placed portal opens a path.

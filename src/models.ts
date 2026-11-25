@@ -1,10 +1,11 @@
 import { parseMDL, type MdlData } from './mdl.ts';
+import { boneFollowers, mdlKeyValues, type Follower } from './phy.ts';
 import type { Assets } from './assets.ts';
 import type { MaterialCache, GLMat } from './materials.ts';
 import { STRIDE } from './world.ts';
 import { parseSkeleton, poseMatrices, type Skeleton, type PoseExtra } from './anim.ts';
 
-export interface GLModel { data: MdlData; vao: WebGLVertexArrayObject; draws: { start: number; count: number; mat: number }[]; skins: GLMat[][]; skel: Skeleton; base: Float32Array; ib: WebGLBuffer; }
+export interface GLModel { data: MdlData; vao: WebGLVertexArrayObject; draws: { start: number; count: number; mat: number }[]; skins: GLMat[][]; skel: Skeleton; base: Float32Array; ib: WebGLBuffer; /** bone followers with their .phy pieces (empty when the model lists none) */ followers: Follower[]; }
 export interface Skinned { vao: WebGLVertexArrayObject; buf: WebGLBuffer; data: Float32Array; }
 export function findSeq(m: GLModel, name: string) { name = name.toLowerCase(); return m.skel.seqs.findIndex(s => s.name === name || s.activity === name); }
 /** CPU-skin a model into its own vertex buffer for one pose (sequence + cycle). */
@@ -55,6 +56,7 @@ export class ModelCache {
     const skins = await Promise.all(d.materials.map(row => Promise.all(row.map(resolve))));
     const skel = parseSkeleton(a);
     if (skel.blocks.length > 1) { const ani = await this.assets.read(base + '.ani'); if (ani) skel.ani = new DataView(ani); else console.warn('missing animation blocks', base + '.ani'); }
-    return { data: d, vao, draws, skins, skel, base: vb, ib };
+    const kv = mdlKeyValues(a), followers = /bone_followers/i.test(kv) ? boneFollowers(kv, await this.assets.read(base + '.phy'), d.bones) : [];
+    return { data: d, vao, draws, skins, skel, base: vb, ib, followers };
   }
 }

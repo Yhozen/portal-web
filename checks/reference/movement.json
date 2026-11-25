@@ -1,0 +1,137 @@
+{
+ "about": "Measured in the original Portal by tools/parity.mjs orig checks/oracle/movement.json. Values are what the original did; tol is how far the port may be off. Notes say when a value is derived rather than read directly.",
+ "build": {
+  "appid": 400,
+  "buildid": "19017868",
+  "patch_version": "1745010",
+  "server_version": "9862575"
+ },
+ "settings": {
+  "host_framerate": 0.015,
+  "tick": 0.015,
+  "sampler": "getpos once per tick. It reports the client view of the eye position (cl_smooth 0 during runs), blended between ticks, so times are good to about a tick; rates, speeds and heights are medians or fits. One sample per tick checked by a free fall (0.135 units per tick squared = 600 u/s²).",
+  "cvars_after_run": {
+   "host_framerate": "0",
+   "sv_gravity": "600",
+   "cl_forwardspeed": "450",
+   "cl_sidespeed": "450",
+   "fps_max": "300"
+  },
+  "window": [
+   800,
+   500
+  ]
+ },
+ "metrics": {
+  "walk_speed": {
+   "value": 150.004,
+   "tol": 1.5,
+   "scenario": "walk-forward"
+  },
+  "walk_accel": {
+   "value": 1099.447,
+   "tol": 32.983,
+   "scenario": "walk-forward"
+  },
+  "fric_rel": {
+   "value": 3.931,
+   "tol": 0.25,
+   "scenario": "walk-forward"
+  },
+  "stop_decel": {
+   "value": 401.611,
+   "tol": 12.048,
+   "scenario": "walk-forward"
+  },
+  "back_speed": {
+   "value": 150,
+   "tol": 1.5,
+   "scenario": "walk-back"
+  },
+  "side_speed": {
+   "value": 150,
+   "tol": 1.5,
+   "scenario": "strafe"
+  },
+  "diag_speed": {
+   "value": 150.001,
+   "tol": 1.5,
+   "scenario": "diagonal"
+  },
+  "duck_speed": {
+   "value": 50,
+   "tol": 1,
+   "scenario": "duck-walk"
+  },
+  "duck_eye_drop": {
+   "value": -36.009,
+   "tol": 0.72,
+   "scenario": "duck-walk"
+  },
+  "duck_eye_t90": {
+   "value": 0.345,
+   "tol": 0.035,
+   "scenario": "duck-walk"
+  },
+  "stand_eye_t90": {
+   "value": 0.18,
+   "tol": 0.035,
+   "scenario": "duck-walk"
+  },
+  "jump_rise": {
+   "value": 20.156,
+   "tol": 0.5,
+   "scenario": "jump-standing"
+  },
+  "jump_air_t": {
+   "value": 0.518,
+   "tol": 0.035,
+   "scenario": "jump-standing"
+  },
+  "jump_g": {
+   "value": 600.011,
+   "tol": 6,
+   "scenario": "jump-standing"
+  },
+  "run_jump_rise": {
+   "value": 20.156,
+   "tol": 0.5,
+   "scenario": "jump-running"
+  },
+  "run_jump_air_t": {
+   "value": 0.518,
+   "tol": 0.035,
+   "scenario": "jump-running"
+  },
+  "run_jump_dist": {
+   "value": 116.643,
+   "tol": 2.333,
+   "scenario": "jump-running"
+  },
+  "run_jump_speed": {
+   "value": 225,
+   "tol": 2.25,
+   "scenario": "jump-running"
+  },
+  "duckjump_feet_rise": {
+   "value": 56.128,
+   "tol": 1.123,
+   "scenario": "duck-jump"
+  },
+  "duckjump_eye_peak": {
+   "value": 20.128,
+   "tol": 0.5,
+   "scenario": "duck-jump"
+  },
+  "air_side_speed": {
+   "value": 60.002,
+   "tol": 1,
+   "scenario": "air-strafe"
+  },
+  "gravity": {
+   "value": 599.636,
+   "tol": 6,
+   "scenario": "fall-200"
+  }
+ }
+}

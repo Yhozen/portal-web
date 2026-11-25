@@ -46,6 +46,8 @@ commands:
   sleep S                     wait S seconds of wall time
   record PATH FRAMES [FPS] [KEYS]  step the fixed tick loop and encode every frame (mp4 or webm, default 33 fps, labelled
                               with frame, time and tick unless --no-label); window.__probe() is logged per frame if set
+  record-demo PATH FPS DEMO.jsonl [START] [TICKS]  replay a per-tick input log (fwd,side,jump,duck,p,y) into a clip;
+                              optional START tick and TICKS slice the log. Ticks before START are simulated without drawing
   sheet VIDEO OUT [CxR] [W] [A-B]  contact sheet of C*R evenly spaced frames (default 6x4, 320 px wide tiles)
   frames VIDEO DIR [A-B]      extract frames as PNGs
   anim [REGEX]                animated props: entity, model, sequence, cycle, rate, loop, frames, fps, duration
@@ -217,6 +219,45 @@ const handlers = {
     // a page error mid-recording keeps the frames so far (that is often the evidence) and fails the command
     if (failed) throw new Error(`frame ${failed.frame} of ${frames} (tick ${ticks}): ${failed.error}; ${failed.frame} frames kept in ${resolve(f)}`);
     return { path: resolve(f), frames, fps, ticks, seconds: +(ticks / 66).toFixed(3), size: [cw, ch], sim_ms: +sim.toFixed(1), draw_ms: +draw.toFixed(1), bytes: statSync(f).size }; },
+  async 'record-demo'(w) {
+    need(); const f = w[1], fps = num(w[2] ?? 33, 'FPS'), demoPath = w[3];
+    if (!f || !demoPath) throw Object.assign(new Error('record-demo PATH FPS DEMO.jsonl [START] [TICKS]'), { usage: true });
+    const all = readFileSync(resolve(demoPath), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    const start = Math.max(0, Math.floor(num(w[4] ?? 0, 'START')));
+    const nTicks = Math.floor(num(w[5] ?? (all.length - start), 'TICKS'));
+    const demo = all.slice(start, start + nTicks);
+    if (!demo.length) throw new Error('record-demo: empty slice');
+    mkdirSync(dirname(resolve(f)), { recursive: true });
+    const stepDemo = (n, slice) => { const g = window.game, T = 1 / 66; const t0 = performance.now();
+      for (let k = 0; k < n; k++) { const d = slice[k]; window.__aim?.();
+        if (d) { game.pl.ang = [d.p, d.y, 0]; g.step(T, { fwd: d.fwd || 0, side: d.side || 0, jump: !!d.jump, duck: !!d.duck }); }
+        else g.step(T, { fwd: 0, side: 0, jump: false, duck: false }); }
+      window.__aim?.(); return performance.now() - t0; };
+    // simulate ticks before START without drawing so map state matches the slice
+    if (start > 0) {
+      const pre = all.slice(0, start);
+      const CHUNK = 132;
+      for (let i = 0; i < pre.length; i += CHUNK)
+        await page.evaluate(([fn, slice]) => { (0, eval)(fn)(slice.length, slice); }, [String(stepDemo), pre.slice(i, i + CHUNK)]);
+    }
+    const { w: cw, h: ch } = await page.evaluate(src => { (0, eval)(src)(); const gl = document.getElementById('c').getContext('webgl2'); return { w: gl.drawingBufferWidth, h: gl.drawingBufferHeight }; }, `(${RENDER})`);
+    const vf = ['vflip'];
+    if (!opt['no-label']) vf.push(`drawtext=fontfile=${FONT}:text='%{eif\\:n\\:d\\:4}  t=%{eif\\:t*1000\\:d}ms  tick %{eif\\:floor(n*66/${fps}+1e-6)\\:d}':x=8:y=8:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=4`);
+    const webm = /\.webm$/i.test(f);
+    const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb0', '-s', `${cw}x${ch}`, '-r', String(fps), '-i', '-', '-vf', vf.join(','),
+      ...(webm ? ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-row-mt', '1', '-deadline', 'realtime', '-cpu-used', '8'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']), f], { stdio: ['pipe', 'ignore', 'pipe'] });
+    let fferr = ''; ff.stderr.on('data', d => fferr += d); const done = new Promise(r => ff.on('exit', r));
+    const frames = Math.max(1, Math.ceil(demo.length * fps / 66));
+    let ticks = 0, sim = 0, draw = 0, failed = null;
+    for (let i = 0; i < frames; i++) { const want = Math.round(i * 66 / fps) - ticks;
+      let r; try { r = await page.evaluate(([fn, n, slice, src]) => { const sim = (0, eval)(fn)(n, slice);
+        const st = (0, eval)(src)(); const gl = document.getElementById('c').getContext('webgl2'), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        let s = ''; for (let o = 0; o < px.length; o += 0x8000) s += String.fromCharCode.apply(null, px.subarray(o, o + 0x8000)); return { sim, frame_ms: st.frame_ms, b64: btoa(s) }; }, [String(stepDemo), want, demo.slice(ticks, ticks + want), `(${RENDER})`]); } catch (e) { failed = { frame: i, error: String(e.message || e).split('\n')[0] }; break; }
+      ticks += want; sim += r.sim; draw += r.frame_ms;
+      if (!ff.stdin.write(Buffer.from(r.b64, 'base64'))) await new Promise(r => ff.stdin.once('drain', r)); }
+    ff.stdin.end(); const code = await done; if (code) throw new Error('ffmpeg failed: ' + fferr.slice(-300));
+    if (failed) throw new Error(`frame ${failed.frame} of ${frames} (tick ${ticks}): ${failed.error}; ${failed.frame} frames kept in ${resolve(f)}`);
+    return { path: resolve(f), frames, fps, ticks, start, seconds: +(ticks / 66).toFixed(3), size: [cw, ch], sim_ms: +sim.toFixed(1), draw_ms: +draw.toFixed(1), bytes: statSync(f).size }; },
   async sheet(w) { const v = w[1], o = w[2]; if (!v || !o) throw Object.assign(new Error('sheet VIDEO OUT.png [COLSxROWS] [WIDTH] [FIRST-LAST]'), { usage: true });
     const [cols, rows] = (w[3] || '6x4').split('x').map(Number), tw = +(w[4] || 320);
     const probe = JSON.parse(await run('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'json', v])).streams[0].nb_read_frames | 0;

@@ -67,6 +67,9 @@ async function main() {
     if (from) { u.set('landmark', lm); u.set('lp', sub(pl.pos, parseV3(from.origin)).map(v => v.toFixed(1)).join(',')); u.set('ang', pl.ang.map(v => v.toFixed(1)).join(',')); }
     log('changelevel', map); if (q.get('nochange') !== '1') location.search = u.toString(); else (window as any).changedTo = map;
   };
+  // death: the original fades and loads the last save a few seconds later; the port restarts the map (no saves yet)
+  game.damage = q.get('damage') === '1';
+  game.onDeath = () => { log('player died'); if (q.get('nochange') === '1') { (window as any).died = true; return; } setTimeout(() => { location.search = new URLSearchParams(q).toString(); }, 3000); };
   // sound: soundscripts, PCM/ADPCM wav, mp3, scene dialogue + captions (audio starts on the first click: browser autoplay rules)
   const snd = new Sound(assets); game.snd = snd;
   const capDiv = document.createElement('div'); capDiv.style.cssText = 'position:fixed;left:50%;bottom:70px;transform:translateX(-50%);max-width:60%;color:#f0c8d8;background:rgba(0,0,0,.55);font:16px sans-serif;padding:6px 12px;border-radius:4px;text-align:center;display:none;pointer-events:none';
@@ -121,6 +124,9 @@ async function main() {
     if ((window as any).customRender) (window as any).customRender(); else render(); fms += performance.now() - t1;
     requestAnimationFrame(frame);
   };
+  // soundscripts, captions and scenes.image have to be in before the first tick: a scene started while scenes.image is
+  // still loading gets no length, which made a11's 18.4 s opening scene (and everything timed off it) vary run to run
+  await snd.ready.catch(e => log('sound init', String(e)));
   requestAnimationFrame(frame);
   (window as any).ready = true;
 }

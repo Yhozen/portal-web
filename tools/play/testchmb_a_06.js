@@ -1,6 +1,11 @@
 (() => { const G = game.game, io = G.io, out = [], P = () => game.pl.pos.map(v => v|0), C = AP.centre, E = AP.ent, F = n => AP.floorUnder(E(n));
 const lg = (k, v) => out.push(io.time.toFixed(1) + ' ' + k + ' ' + JSON.stringify(v));
 const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.15); G.shootPortal(which); AP.wait(0.15); const Pp = G.gunPortals[which]; return Pp.open ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed'; };
+// trigger_look on the pit floor (LookTime 0.2, FOV 0.78/0.8) fires OnTrigger and Closes the fling-pillar doors if we
+// stare at a pillar face: those faces sit in the same cone as target_move_pillar1/2. Fire on the first tick and look
+// into the pit so look time never accumulates. (The original would close the doors the same way; the playthrough was
+// written before trigger_look was implemented.)
+const shootFace = (at) => { AP.lookAt(at); G.shootPortal(0); game.pl.ang = [40, 180, 0]; AP.wait(0.05); const Pp = G.gunPortals[0]; return Pp.open ? Pp.pos.map(v => v|0) + ' f ' + Pp.f.map(v => +v.toFixed(2)) : 'not placed'; };
 const tele = () => G.stats.teleports; const IN = (fwd, jump = false) => ({ fwd, side: 0, jump, duck: false });
 const idle = n => { for (let i = 0; i < n; i++) game.step(1/66, IN(0)); };
 try {
@@ -31,9 +36,9 @@ const loopFling = (pillar, k) => { lg('blue pillar ' + k, shoot(0, pillar)); lg(
   lg('back ' + k, fling(OR)); lg('out2 ' + k, P() + ' v ' + game.pl.vel.map(v=>v|0)); land(0); lg('landed ' + k, P()); };
 // The pillar faces are only visible from the east, so go down the side stairs (y~0) beside the pit first.
 lg('stairs', AP.reach([728, 0, 24], 12)); lg('at', P());
-let lo = 'none'; for (const z of [460, 450, 470, 445]) { lo = shoot(0, [520, 128, z]); if (G.gunPortals[0].pos[0] > 500 && G.gunPortals[0].pos[2] < 520) break; } lg('blue pillar low', lo);
+let lo = 'none'; for (const z of [460, 450, 470, 445]) { lo = shootFace([520, 128, z]); if (G.gunPortals[0].pos[0] > 500 && G.gunPortals[0].pos[2] < 520) break; } lg('blue pillar low', lo);
 lg('drop in', fling(OR)); lg('out', P() + ' v ' + game.pl.vel.map(v=>v|0)); land(0); lg('landed', P());
-lg('blue pillar high', shoot(0, [520, 128, 586]));
+lg('blue pillar high', shootFace([520, 128, 586]));
 lg('drop in', fling(OR)); lg('out', P() + ' v ' + game.pl.vel.map(v=>v|0)); land(0); lg('landed', P());
 // now on the 256 ledge: the long drop back into orange carries enough speed out of the high pillar face to reach the exit platform (z 384)
 if (game.pl.pos[2] > 200) { lg('drop from ledge', fling(OR)); lg('out', P() + ' v ' + game.pl.vel.map(v=>v|0)); land(0); lg('landed', P()); }

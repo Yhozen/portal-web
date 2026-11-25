@@ -7,6 +7,7 @@ import type { V3 } from './math.ts';
 export interface Trace { fraction: number; end: V3; normal: V3; startsolid: boolean; allsolid: boolean; hit: number /* brush idx or -1 */; ent: any; col?: Collider /* brush-entity collider that was hit */; }
 export const MASK_PLAYERSOLID = CONTENTS.SOLID | CONTENTS.PLAYERCLIP | CONTENTS.WINDOW | CONTENTS.GRATE | CONTENTS.MOVEABLE | CONTENTS.MONSTER;
 export const MASK_SHOT_PORTAL = CONTENTS.SOLID | CONTENTS.MOVEABLE | CONTENTS.WINDOW; // portal gun passes grates (CONTENTS_GRATE)
+export const MASK_BLOCKLOS = CONTENTS.SOLID | CONTENTS.MOVEABLE; // Source MASK_BLOCKLOS has no WINDOW; NPCs see through glass
 const EPS = 0.03125;
 
 export interface Collider { bsp: BSP; headnode: number; offset: V3; ent?: any; enabled: () => boolean; rot?: Float32Array /* column-major 4x4, local->world rotation */; }
@@ -14,6 +15,8 @@ export interface Collider { bsp: BSP; headnode: number; offset: V3; ent?: any; e
 export class Tracer {
   bsp: BSP; stamp: Uint32Array; cur = 1; colliders: Collider[] = [];
   ignore: Set<number> | null = null; extraBoxes: { mins: V3; maxs: V3; ent: any }[] = [];
+  /** convex pieces in world space (bone followers on animated props): their planes plus axial bevels, and their bounds */
+  hulls: { planes: { n: V3; d: number }[]; mins: V3; maxs: V3; ent: any; on: boolean }[] = [];
   constructor(bsp: BSP) { this.bsp = bsp; this.stamp = new Uint32Array(bsp.brushes.length); }
   trace(start: V3, end: V3, mins: V3, maxs: V3, mask: number, skipEnt: any = null): Trace {
     const ext: V3 = [(maxs[0] - mins[0]) / 2, (maxs[1] - mins[1]) / 2, (maxs[2] - mins[2]) / 2];
@@ -36,6 +39,12 @@ export class Tracer {
       if (b.ent === skipEnt || (skipEnt instanceof Set && skipEnt.has(b.ent))) continue; const before = tr.fraction, bs = tr.startsolid;
       this.clipBox(b.mins, b.maxs, w);
       if (tr.fraction < before || (tr.startsolid && !bs)) { tr.ent = b.ent; tr.col = undefined; }
+    }
+    for (const h of this.hulls) {
+      if (!h.on || h.ent === skipEnt || (skipEnt instanceof Set && skipEnt.has(h.ent))) continue;
+      let out = false; for (let k = 0; k < 3; k++) if (Math.min(s[k], e[k]) - ext[k] > h.maxs[k] + 1 || Math.max(s[k], e[k]) + ext[k] < h.mins[k] - 1) { out = true; break; } if (out) continue;
+      const before = tr.fraction, bs = tr.startsolid; this.clipPlanes(h.planes, w);
+      if (tr.fraction < before || (tr.startsolid && !bs)) { tr.ent = h.ent; tr.col = undefined; }
     }
     if (tr.fraction < 1) for (let i = 0; i < 3; i++) tr.end[i] = start[i] + (end[i] - start[i]) * tr.fraction;
     else tr.end = [end[0], end[1], end[2]];
@@ -101,6 +110,21 @@ export class Tracer {
     }
     if (!startout) { tr.startsolid = true; if (!getout) { tr.allsolid = true; tr.fraction = 0; } return; }
     if (enter < leave && enter > -1 && enter < tr.fraction) { tr.fraction = Math.max(0, enter); tr.normal = hitN!; tr.hit = -2; }
+  }
+  /** sweep against a convex set of planes (clipBrush without the BSP) */
+  clipPlanes(planes: { n: V3; d: number }[], w: any) {
+    const tr: Trace = w.tr, s = w.s, e = w.e, ext = w.ext;
+    let enter = -1, leave = 1, startout = false, getout = false, hitN: V3 | null = null;
+    for (const { n: N, d } of planes) {
+      const dist = d + Math.abs(N[0]) * ext[0] + Math.abs(N[1]) * ext[1] + Math.abs(N[2]) * ext[2];
+      const d1 = N[0] * s[0] + N[1] * s[1] + N[2] * s[2] - dist, d2 = N[0] * e[0] + N[1] * e[1] + N[2] * e[2] - dist;
+      if (d2 > 0) getout = true; if (d1 > 0) startout = true;
+      if (d1 > 0 && (d2 >= EPS || d2 >= d1)) return;
+      if (d1 <= 0 && d2 <= 0) continue;
+      if (d1 > d2) { const f = (d1 - EPS) / (d1 - d2); if (f > enter) { enter = f; hitN = N; } } else { const f = (d1 + EPS) / (d1 - d2); if (f < leave) leave = f; }
+    }
+    if (!startout) { tr.startsolid = true; if (!getout) { tr.allsolid = true; tr.fraction = 0; } return; }
+    if (enter < leave && enter > -1 && enter < tr.fraction) { tr.fraction = Math.max(0, enter); tr.normal = [hitN![0], hitN![1], hitN![2]]; tr.hit = -2; }
   }
   /** ray cast returning the face hit info for portal placement */
   ray(start: V3, end: V3, mask: number) { return this.trace(start, end, [0, 0, 0], [0, 0, 0], mask); }

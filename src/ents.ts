@@ -55,8 +55,11 @@ export class IO {
     if (input === 'setparent') { e.kv.parentname = param; e.attachRel = null; e.reparentNow = true; e.parentAttach = null; e.attachOff = null; return; }
     if (input === 'setparentattachment' || input === 'setparentattachmentmaintainoffset') { if (!e.kv.parentname) return; e.parentAttach = param.trim(); e.attachOff = null; e.attachKeep = input !== 'setparentattachment'; return; }
     if (input === 'clearparent') { e.parentAttach = null; e.attachOff = null; if (e.worldM) { e.pos = [e.worldM[12], e.worldM[13], e.worldM[14]]; } delete e.kv.parentname; e.attachRel = null; return; }
-    if (input === 'kill') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
-    if (input === 'killhierarchy') { e.killed = true; e.enabled = false; e.onKill?.(); return; }
+    // Kill removes the entity, so it stops being drawn too (a killed brush or prop used to stay on screen); KillHierarchy
+    // removes its children with it (SDK 2013 CBaseEntity::InputKillHierarchy: UTIL_Remove on each child, then itself)
+    if (input === 'kill' || input === 'killhierarchy') { const gone = (x: Ent, deep: boolean) => { x.killed = true; x.enabled = false; if (x.inst) x.inst.visible = false; if (x.prop) x.prop.visible = false; x.onKill?.();
+        if (deep && x.name) for (const c of this.ents) if (!c.killed && c.kv.parentname && c.kv.parentname.split(',')[0].toLowerCase() === x.name) gone(c, true); };
+      gone(e, input === 'killhierarchy'); return; }
     // AddOutput (Valve Developer Wiki): "OnFoo target:input:param:delay:times" adds an output; "key value" sets a keyvalue
     if (input === 'addoutput') { const m = /^(\S+)\s+(.*)$/.exec(param.trim()); if (!m) return; const parts = m[2].split(':');
       if (parts.length >= 2) { const k = m[1].toLowerCase(); const l = e.outputs.get(k) || []; l.push({ target: parts[0].toLowerCase(), input: (parts[1] || '').toLowerCase(), param: parts[2] || '', delay: +(parts[3] || 0) || 0, times: parts[4] === undefined ? -1 : +parts[4] } as any); e.outputs.set(k, l); }

@@ -15,14 +15,18 @@ if (window.PART1_ONLY) {} else {
 const near = (q) => G.cubes.filter(c => c.alive && Math.hypot(c.pos[0]-q[0], c.pos[1]-q[1]) < 60 && Math.abs(c.pos[2]-q[2]) < 60)[0];
 const shoot = (which, at) => { AP.lookAt(at); AP.wait(0.2); G.shootPortal(which); AP.wait(0.3); const P = G.gunPortals[which]; return P.open ? P.pos.map(v => v|0) + ' f ' + P.f.map(v => +v.toFixed(2)) : 'not placed'; };
 lg('activate orange', AP.reach(F('trigger_portal_spawn_a1_rm3a'), 30)); AP.wait(2); lg('orange open', E('portal_a1_rm3a').open);
-const boxA = near([970, 817, 452]), boxB = near([731, 579, 716]); lg('boxes', [boxA && boxA.pos.map(v=>v|0), boxB && boxB.pos.map(v=>v|0)]);
+const boxA = near([954, 778, 452]), boxB = near([715, 540, 716]); lg('boxes', [boxA && boxA.pos.map(v=>v|0), boxB && boxB.pos.map(v=>v|0)]);
 lg('pick pit box', AP.pickUp(boxA));
 lg('blue on pit wall', shoot(0, [1088, 817, 506]));
 const ra = AP.placeCube(boxA, C(E('floor_buttonb_trigger_box_a02_2'))); lg('box A on button b', ra);
 lg('back into pit', AP.reach([960, 830, 448], 40));
 lg('to left pedestal', AP.reach([704, 1080, 704], 40));
-lg('blue above right pedestal', shoot(0, [731, 512, 762]));
-const rb = AP.placeCube(boxB, C(E('floor_buttona_trigger_box_a02_2'))); lg('box B on button a', rb);
+lg('blue above right pedestal', shoot(0, [window.BX || 760, 512, 762]));
+{ // take box B and walk off the pedestal toward button a with the view pitched up, so the (40-unit) cube clears the edge
+  { let pk = AP.pickUp(boxB); if (!pk.ok) { AP.wait(0.5); pk = AP.pickUp(boxB); pk.retried = true; } lg('pick pedestal box', pk); } const ba = C(E('floor_buttona_trigger_box_a02_2'));
+  for (let i = 0; i < 240; i++) { game.pl.ang = [-40, Math.atan2(ba[1] - game.pl.pos[1], ba[0] - game.pl.pos[0]) * 180 / Math.PI, 0]; game.step(1/66, { fwd: 1, side: 0, jump: false, duck: false }); if (game.pl.onGround && game.pl.pos[2] < 650) break; }
+  AP.wait(0.3); lg('off pedestal', game.pl.pos.map(v => v|0) + ' held ' + !!G.held + ' ' + io.log.filter(l => /snag|stood/.test(l)).slice(-1)); }
+const rb = AP.placeCube(G.held || boxB, C(E('floor_buttona_trigger_box_a02_2'))); lg('box B on button a', rb);
 AP.wait(2); lg('exit doors', E('exit_door_left_a02_2').state + ' counter ' + (E('counter_buttons_rm3a').value ?? E('counter_buttons_rm3a').counter));
 if (window.STOP_EXIT) { AP.reach([700, 750, 584], 40); AP.lookAt([150, 832, 640]); AP.wait(0.3); throw 'stopped for screenshot'; }
 lg('through exit doors', AP.reach([150, 832, 576], 40)); AP.wait(3);

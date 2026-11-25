@@ -1,0 +1,404 @@
+{
+ "about": "Movement scenarios run the same way in the original (tools/oracle-ctl.mjs) and in the port (portal-ctl), then compared by tools/parity.mjs. pos is the player's origin (feet), ang is pitch yaw. Events are console-style button commands at a tick, sampled after that tick runs. Flat tiled floor of testchmb_a_09's big room (z 256). testchmb_a_00 was tried first, but there the intro keeps the player locked in the relaxation vault for a long time, so setpos and the move keys do nothing.",
+ "scenarios": [
+  {
+   "name": "walk-forward",
+   "map": "testchmb_a_09",
+   "pos": [
+    680,
+    -968,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 150,
+   "events": [
+    [
+     30,
+     "+forward"
+    ],
+    [
+     110,
+     "-forward"
+    ]
+   ],
+   "metrics": {
+    "walk_speed": [
+     "speed",
+     70,
+     108
+    ],
+    "walk_accel": [
+     "accel_band",
+     30,
+     30,
+     90
+    ],
+    "fric_rel": [
+     "decel_rel",
+     110,
+     105,
+     140
+    ],
+    "stop_decel": [
+     "decel_band",
+     110,
+     20,
+     90
+    ]
+   }
+  },
+  {
+   "name": "walk-back",
+   "map": "testchmb_a_09",
+   "pos": [
+    872,
+    -968,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 110,
+   "events": [
+    [
+     10,
+     "+back"
+    ],
+    [
+     90,
+     "-back"
+    ]
+   ],
+   "metrics": {
+    "back_speed": [
+     "speed",
+     50,
+     88
+    ]
+   }
+  },
+  {
+   "name": "strafe",
+   "map": "testchmb_a_09",
+   "pos": [
+    776,
+    -1060,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 110,
+   "events": [
+    [
+     10,
+     "+moveleft"
+    ],
+    [
+     90,
+     "-moveleft"
+    ]
+   ],
+   "metrics": {
+    "side_speed": [
+     "speed",
+     50,
+     88
+    ]
+   }
+  },
+  {
+   "name": "diagonal",
+   "map": "testchmb_a_09",
+   "pos": [
+    680,
+    -1060,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 110,
+   "events": [
+    [
+     10,
+     "+forward"
+    ],
+    [
+     10,
+     "+moveleft"
+    ],
+    [
+     90,
+     "-forward"
+    ],
+    [
+     90,
+     "-moveleft"
+    ]
+   ],
+   "metrics": {
+    "diag_speed": [
+     "speed",
+     50,
+     88
+    ]
+   }
+  },
+  {
+   "name": "duck-walk",
+   "map": "testchmb_a_09",
+   "pos": [
+    680,
+    -968,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 150,
+   "events": [
+    [
+     10,
+     "+duck"
+    ],
+    [
+     40,
+     "+forward"
+    ],
+    [
+     120,
+     "-forward"
+    ],
+    [
+     130,
+     "-duck"
+    ]
+   ],
+   "metrics": {
+    "duck_speed": [
+     "speed",
+     90,
+     118
+    ],
+    "duck_eye_drop": [
+     "z_change",
+     9,
+     39
+    ],
+    "duck_eye_t90": [
+     "z_t_reach",
+     10,
+     0.9,
+     39
+    ],
+    "stand_eye_t90": [
+     "z_t_reach",
+     130,
+     0.9,
+     150
+    ]
+   }
+  },
+  {
+   "name": "jump-standing",
+   "map": "testchmb_a_09",
+   "pos": [
+    776,
+    -968,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 90,
+   "events": [
+    [
+     10,
+     "+jump"
+    ],
+    [
+     24,
+     "-jump"
+    ]
+   ],
+   "metrics": {
+    "jump_rise": [
+     "peak",
+     9
+    ],
+    "jump_air_t": [
+     "air_fit_t",
+     9
+    ],
+    "jump_g": [
+     "air_fit_g",
+     9
+    ]
+   }
+  },
+  {
+   "name": "jump-running",
+   "map": "testchmb_a_09",
+   "pos": [
+    640,
+    -968,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 120,
+   "events": [
+    [
+     0,
+     "+forward"
+    ],
+    [
+     60,
+     "+jump"
+    ],
+    [
+     74,
+     "-jump"
+    ],
+    [
+     110,
+     "-forward"
+    ]
+   ],
+   "metrics": {
+    "run_jump_rise": [
+     "peak",
+     59
+    ],
+    "run_jump_air_t": [
+     "air_fit_t",
+     59
+    ],
+    "run_jump_dist": [
+     "air_fit_dist",
+     59
+    ],
+    "run_jump_speed": [
+     "speed",
+     70,
+     85
+    ]
+   }
+  },
+  {
+   "name": "duck-jump",
+   "map": "testchmb_a_09",
+   "pos": [
+    776,
+    -968,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 100,
+   "events": [
+    [
+     10,
+     "+jump"
+    ],
+    [
+     14,
+     "-jump"
+    ],
+    [
+     20,
+     "+duck"
+    ],
+    [
+     80,
+     "-duck"
+    ]
+   ],
+   "metrics": {
+    "duckjump_feet_rise": [
+     "feet_peak",
+     9
+    ],
+    "duckjump_eye_peak": [
+     "peak",
+     9
+    ]
+   }
+  },
+  {
+   "name": "air-strafe",
+   "map": "testchmb_a_09",
+   "pos": [
+    776,
+    -1060,
+    256
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 90,
+   "events": [
+    [
+     10,
+     "+jump"
+    ],
+    [
+     11,
+     "+moveleft"
+    ],
+    [
+     24,
+     "-jump"
+    ],
+    [
+     80,
+     "-moveleft"
+    ]
+   ],
+   "metrics": {
+    "air_side_speed": [
+     "speed",
+     25,
+     40
+    ]
+   }
+  },
+  {
+   "name": "fall-200",
+   "map": "testchmb_a_09",
+   "pos": [
+    776,
+    -968,
+    456
+   ],
+   "ang": [
+    0,
+    0
+   ],
+   "ticks": 60,
+   "settle": 0,
+   "events": [],
+   "metrics": {
+    "gravity": [
+     "gravity",
+     4,
+     30
+    ]
+   }
+  }
+ ]
+}

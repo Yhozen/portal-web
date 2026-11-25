@@ -55,8 +55,22 @@ export function attachFrame(m: GLModel, att: number, poses: number[]): { x: V3; 
 // applies a third less, diff / 1.5) and fire whenever the muzzle is within 10° of the target, one shot per 0.1 s
 // think; lose the player and search for 5 s sweeping ±60° yaw / ±15° pitch, then retire. Up · z < 0.5 is tipped:
 // thrash and fire for 2–2.5 s, then close and die.
-export const TURRET = { range: 1200, cone: 0.4, maxWait: 5, thinkActive: 0.1, think: 0.05, turnPerThink: 0.05 * 360, aimDot: 0.9848 };
+// Damage, measured in the original (a11, standing 200 units in front of training_turret, the only one that sees that
+// spot, ent_dump !player every tick, Nov 24 11:20 AM EST): health drops every 7 ticks (one volley per 0.1 s think), by
+// 4.5 per bullet (4 or 5, the fraction carries), one bullet or two each volley (1.33 on average, never none), first hit
+// to dead 1.79 s and 1.68 s in two runs. Each hit shoves the player back about 110 in/s (216 -> 193 in the 0.1 s after
+// a two-bullet volley, with ground friction). Two bullets a volley, the first straight at the player and the second
+// spread uniformly over a cone of tan 0.26 (a third of those hit at 200 units), is my fit to that, not Valve's numbers.
+export const TURRET = { range: 1200, cone: 0.4, maxWait: 5, thinkActive: 0.1, think: 0.05, turnPerThink: 0.05 * 360, aimDot: 0.9848, bullets: 2, spread: 0.26, damage: 4.5 };
+/** player health in the original: 100, regenerates 1 per tick (66/s) once 1 s (sv_regeneration_wait_time) has passed
+ *  without damage (hurtme 50 → 75 on this skill, back to 100 in 0.4 s) */
+export const PLAYER_HP = { regenWait: 1.0, regenPerSec: 66, push: 110 };
 export type TurretState = 'idle' | 'deploy' | 'search' | 'active' | 'retire' | 'tipped' | 'dead';
+/** npc_rocket_turret, measured in the original on escape_01 (Tue Nov 24 10:10 PM EST). Standing on the
+ *  tiles in front of laser_1 at feet [-400, 576, -247.97], host_framerate 0.015:
+ *  first rocket 6.84–6.96 s after Enable (the model's open sequence is 4.333 s), later shots 5.96–6.11 s
+ *  apart; a rocket is lethal (health 100 → 1 with buddha, so at least 99); projectile about 550 u/s. */
+export const ROCKET_TURRET = { firstFire: 6.90, interval: 6.00, speed: 550, damage: 100, radius: 4, blast: 64, loadAhead: 0.967, turnPerSec: 180, range: 4096 };
 const DEG = 180 / Math.PI;
 /** Source VectorAngles for a direction: [pitch (down positive), yaw] in degrees */
 export const dirAngles = (d: V3): [number, number] => [-Math.atan2(d[2], Math.hypot(d[0], d[1])) * DEG, Math.atan2(d[1], d[0]) * DEG];
@@ -68,5 +82,23 @@ export function turretFace(m: GLModel, eyes: number, poses: number[], goalDir: V
   const dp = angNorm(Math.max(-step, Math.min(step, angNorm(lp)))), dy = angNorm(Math.max(-step, Math.min(step, angNorm(ly))));
   const pp = m.skel.poseParams; const clamp = (i: number, v: number) => Math.max(pp[i].start, Math.min(pp[i].end, v));
   poses[pitchI] = clamp(pitchI, poses[pitchI] + dp / 1.5); poses[yawI] = clamp(yawI, poses[yawI] + dy / 1.5);
+  return Math.abs(dp) > 0.1 || Math.abs(dy) > 0.1;
+}
+/** turn an attachment's +x toward a model-space direction, at `degPerSec`, updating poses [aim_yaw, aim_pitch].
+ *  `yUp` is for attachments whose +y is up and +z is right (the rocket sentry barrel); Source VectorAngles is z-up. */
+export function aimAttachment(m: GLModel, att: number, poses: number[], goalDir: V3, dt: number, degPerSec: number, yUp = false): boolean {
+  const f = attachFrame(m, att, poses), d = goalDir;
+  const l: V3 = [d[0] * f.x[0] + d[1] * f.x[1] + d[2] * f.x[2], d[0] * f.y[0] + d[1] * f.y[1] + d[2] * f.y[2], d[0] * f.z[0] + d[1] * f.z[1] + d[2] * f.z[2]];
+  const [lp, ly] = dirAngles(yUp ? [l[0], l[2], l[1]] : l), step = degPerSec * dt;
+  const dp = angNorm(Math.max(-step, Math.min(step, angNorm(lp)))), dy = angNorm(Math.max(-step, Math.min(step, angNorm(ly))));
+  const pp = m.skel.poseParams;
+  // aim_yaw is a looping 360-degree param (start -180, end 180, loop 360). Clamping at 180 left the
+  // escape_01 rocket turret stuck facing north and unable to track the player around to the east glass.
+  const apply = (i: number, v: number) => {
+    const p = pp[i]; if (!p) return v;
+    if (p.loop) { let x = v; while (x > p.end) x -= p.loop; while (x < p.start) x += p.loop; return x; }
+    return Math.max(p.start, Math.min(p.end, v));
+  };
+  if (pp[1]) poses[1] = apply(1, poses[1] + dp); if (pp[0]) poses[0] = apply(0, poses[0] + dy);
   return Math.abs(dp) > 0.1 || Math.abs(dy) > 0.1;
 }

@@ -1,16 +1,34 @@
 // Source-style player movement: ground/air acceleration, friction, gravity, jump, duck, stair stepping and
 // clip-plane sliding. Written from the public Source SDK 2013 gamemovement.cpp behaviour (MIT-licensed SDK)
 // and its default cvars (sv_gravity 600, sv_accelerate 10, sv_airaccelerate 10, sv_friction 4, sv_stopspeed 100).
+// Numbers marked "measured" come from the original game through tools/oracle-ctl.mjs and tools/parity.mjs
+// (checks/reference/movement.json); the SDK alone doesn't have Portal's player code.
 import { Tracer, MASK_PLAYERSOLID, type Trace } from './trace.ts';
 import { type V3, dot, angleVectors } from './math.ts';
 
 export const HULL = { mins: [-16, -16, 0] as V3, maxs: [16, 16, 72] as V3, duckMaxs: [16, 16, 36] as V3, view: 64, duckView: 28 };
-const CV = { gravity: 600, accelerate: 10, airaccelerate: 10, friction: 4, stopspeed: 100, maxspeed: 175, stepsize: 18, jump: Math.sqrt(2 * 600 * 45), airCap: 30, duckSpeed: 0.333 };
+// maxspeed 150: measured (walk, back, strafe and diagonal all settle at 150.0 u/s; the port had 175).
+// jump 160: the SDK's g_bMovementOptimizations value for HL2 ("approx. 21 units"); with the SDK's gravity order it
+//   gives the measured 20.15 unit rise and 0.54 s airtime. jumpBoost: HL2's single-player forward boost on jump
+//   (+50% of forwardmove, capped at 1.5x maxspeed, 10% when ducked); measured 225 u/s after a running jump.
+// airCap 60: measured (air strafe settles at 60.0 u/s; the SDK's GetAirSpeedCap default is 30, Portal differs).
+// duckTime 0.4 / unduckTime 0.2: the SDK's TIME_TO_DUCK / TIME_TO_UNDUCK with SimpleSpline, measured 0.36 s and
+//   0.195 s to 90% of the eye drop and rise.
+const CV = { gravity: 600, accelerate: 10, airaccelerate: 10, friction: 4, stopspeed: 100, maxspeed: 150, stepsize: 18, jump: 160, airCap: 60, duckSpeed: 0.33333, duckTime: 0.4, unduckTime: 0.2 };
+const spline = (x: number) => x * x * (3 - 2 * x);
+const duckEye = (f: number) => HULL.duckView * f + HULL.view * (1 - f);
 
 export interface Input { fwd: number; side: number; jump: boolean; duck: boolean; }
 export class Player {
   pos: V3 = [0, 0, 0]; vel: V3 = [0, 0, 0]; ang: V3 = [0, 0, 0]; onGround = false; ducked = false; groundEnt: any = null; viewOffset = HULL.view;
-  noclip = false; jumpHeld = false; tr: Tracer; ignoreFn: (() => void) | null = null; landed = 0;
+  noclip = false; baseVel: V3 = [0, 0, 0]; pushed = false; jumpHeld = false; ducking = false; duckHeld = false; duckTime = 0; tr: Tracer; ignoreFn: (() => void) | null = null; landed = 0;
+  // duckRaised: finishDuck in the air lifted the feet so the eye stayed put. Portal teleports duck the other way
+  // (origin stays, eye drops to duckView) and must unduck that way too, or the feet would drop 36 on the way out.
+  duckRaised = false;
+  // portalDuck / portalUnduckIn: the original ducks the player through a portal (eye drops 36–41 units one to two
+  // ticks after a wall-fling exit; checks/oracle fling-wall runs). Wall exits stay ducked until landing (no un-duck
+  // in 0.75 s of flight). Floor/ceiling exits snap back up ~0.35 s later if there is room (eye_pop at 0.345–0.36 s).
+  portalDuck = false; portalUnduckIn = 0;
   constructor(tr: Tracer) { this.tr = tr; }
   maxs(): V3 { return this.ducked ? HULL.duckMaxs : HULL.maxs; }
   trace(a: V3, b: V3, maxs = this.maxs()): Trace { this.ignoreFn?.(); return this.tr.trace(a, b, HULL.mins, maxs, MASK_PLAYERSOLID, this); }
@@ -22,35 +40,91 @@ export class Player {
   move(inp: Input, dt: number) {
     if (this.noclip) { const { f, r } = angleVectors(this.ang); const s = 600 * dt; for (let i = 0; i < 3; i++) this.pos[i] += (f[i] * inp.fwd + r[i] * inp.side) * s; this.vel = [0, 0, 0]; return; }
     this.unstick();
+    if (this.duckTime > 0) this.duckTime = Math.max(0, this.duckTime - dt * 1000);
+    if (this.portalDuck && this.portalUnduckIn > 0) this.portalUnduckIn = Math.max(0, this.portalUnduckIn - dt);
     this.duck(inp.duck);
     this.categorize();
     const yaw = [0, this.ang[1], 0]; const { f, r } = angleVectors(yaw);
-    const wish: V3 = [f[0] * inp.fwd + r[0] * inp.side, f[1] * inp.fwd + r[1] * inp.side, 0];
+    // forwardmove/sidemove as the SDK has them after CheckParameters (clamped to maxspeed) and the duck speed crop
+    // (only when ducked on the ground, HandleDuckingSpeedCrop)
+    let fm = inp.fwd * 450, sm = inp.side * 450; const mag = Math.hypot(fm, sm);
+    if (mag > CV.maxspeed) { fm *= CV.maxspeed / mag; sm *= CV.maxspeed / mag; }
+    if (this.ducked && this.onGround) { fm *= CV.duckSpeed; sm *= CV.duckSpeed; }
+    const wish: V3 = [f[0] * fm + r[0] * sm, f[1] * fm + r[1] * sm, 0];
     let ws = Math.hypot(wish[0], wish[1]); const wdir: V3 = ws > 0 ? [wish[0] / ws, wish[1] / ws, 0] : [0, 0, 0];
-    ws = Math.min(ws * CV.maxspeed, CV.maxspeed) * (this.ducked ? CV.duckSpeed : 1);
+    ws = Math.min(ws, CV.maxspeed);
+    // base velocity (trigger_push): when nothing pushed last tick, what's left of it becomes the player's own velocity
+    // (CBasePlayer's "apply momentum", 1 + half a frame of it), else the vertical part is added as acceleration
+    // (StartGravity) and the horizontal part rides along with the move and is taken back off after it (WalkMove/AirMove)
+    if (!this.pushed && (this.baseVel[0] || this.baseVel[1] || this.baseVel[2])) { const k = 1 + dt * 0.5; for (let i = 0; i < 3; i++) this.vel[i] += this.baseVel[i] * k; this.baseVel = [0, 0, 0]; }
+    const bv: V3 = [this.baseVel[0], this.baseVel[1], 0]; this.pushed = false;
     // half gravity before, half after (as in the SDK)
     if (!this.onGround) this.vel[2] -= CV.gravity * dt * 0.5;
-    if (inp.jump && !this.jumpHeld && this.onGround) { this.vel[2] = CV.jump * (this.ducked ? 1 : 1) * Math.sqrt(21 / 45); this.onGround = false; this.groundEnt = null; }
+    this.vel[2] += this.baseVel[2] * dt; this.baseVel = [bv[0], bv[1], 0];
+    if (inp.jump && !this.jumpHeld && this.onGround && !(this.ducking && this.ducked)) {
+      // CheckJumpButton: StartGravity has already taken half a tick of gravity (on the ground too), the jump adds
+      // 160 (sets it when ducking), HL2's forward boost, then FinishGravity, and the air move below.
+      const startz = this.vel[2] - CV.gravity * dt * 0.5;
+      this.vel[2] = this.ducking || this.ducked ? CV.jump : startz + CV.jump;
+      const perc = this.ducked ? 0.1 : 0.5, fl = Math.hypot(f[0], f[1]) || 1;
+      let add = Math.abs(fm * perc); const max = CV.maxspeed * (1 + perc), ns = add + Math.hypot(this.vel[0], this.vel[1]);
+      if (ns > max) add -= ns - max; if (fm < 0) add = -add;
+      this.vel[0] += f[0] / fl * add; this.vel[1] += f[1] / fl * add;
+      this.vel[2] -= CV.gravity * dt * 0.5;
+      this.onGround = false; this.groundEnt = null;
+    }
     this.jumpHeld = inp.jump;
     if (this.onGround) {
       this.vel[2] = 0; this.friction(dt); this.accel(wdir, ws, CV.accelerate, dt);
-      const spd = Math.hypot(this.vel[0], this.vel[1]); if (spd > CV.maxspeed * 1.0001 * (this.ducked ? CV.duckSpeed : 1) && ws > 0) { /* allow momentum to bleed by friction only */ }
       if (Math.hypot(this.vel[0], this.vel[1]) < 1) { this.vel[0] = this.vel[1] = 0; }
-      this.walkMove(dt);
+      this.vel[0] += bv[0]; this.vel[1] += bv[1]; this.walkMove(dt); this.vel[0] -= bv[0]; this.vel[1] -= bv[1];
     } else {
       this.accel(wdir, Math.min(ws, CV.airCap), CV.airaccelerate, dt, ws);
-      this.tryMove(dt);
+      this.vel[0] += bv[0]; this.vel[1] += bv[1]; this.tryMove(dt); this.vel[0] -= bv[0]; this.vel[1] -= bv[1];
     }
     this.categorize();
     if (!this.onGround) this.vel[2] -= CV.gravity * dt * 0.5; else if (this.vel[2] < 0) this.vel[2] = 0;
-    const target = this.ducked ? HULL.duckView : HULL.view; this.viewOffset += (target - this.viewOffset) * Math.min(1, dt * 12);
+  }
+  // The SDK's Duck(): on the ground the eye eases down over TIME_TO_DUCK and the hull only shrinks (and the speed
+  // crop only starts) when that is over; in the air it is instant and the feet come up instead, so the eye stays put.
+  // Letting go eases back over TIME_TO_UNDUCK if there is room; releasing half way inverts the remaining time.
+  /** After a portal teleport: shrink the hull from the top, even in the air, and remember when to try unduck.
+   *  untilGround: wall exit (stay ducked until we land). Otherwise a floor/ceiling exit, unduck after 0.35 s. */
+  forcePortalDuck(untilGround: boolean) {
+    if (!this.ducked) { this.ducked = true; this.ducking = false; this.viewOffset = HULL.duckView; this.duckTime = 1000; this.duckRaised = false; }
+    this.portalDuck = true; this.portalUnduckIn = untilGround ? -1 : 0.35;
   }
   private duck(want: boolean) {
-    if (want && !this.ducked) { this.ducked = true; if (!this.onGround) { this.pos[2] += 36; const t = this.trace(this.pos, this.pos); if (t.startsolid) this.pos[2] -= 36; } }
-    else if (!want && this.ducked) {
-      const p: V3 = [this.pos[0], this.pos[1], this.pos[2] - (this.onGround ? 0 : 36)];
-      const t = this.trace(p, p, HULL.maxs); if (!t.startsolid) { this.ducked = false; this.pos = p; }
+    const inAir = !this.onGround, pressed = want && !this.duckHeld, released = !want && this.duckHeld; this.duckHeld = want;
+    if (this.portalDuck) {
+      const hold = (this.portalUnduckIn < 0 && inAir) || this.portalUnduckIn > 0;
+      if (hold) { this.viewOffset = HULL.duckView; this.ducked = true; this.ducking = false; return; }
+      // timer elapsed, or we just landed from a wall exit: try a normal unduck (origin unmoved if we didn't raise the feet)
+      this.portalDuck = false;
     }
+    if (!want && !this.ducking && !this.ducked) return;
+    if (want) {
+      if (pressed && !this.ducked) { this.duckTime = 1000; this.ducking = true; }
+      if (this.ducking) { const s = (1000 - this.duckTime) / 1000;
+        if (s > CV.duckTime || this.ducked || inAir) this.finishDuck(inAir); else this.viewOffset = duckEye(spline(s / CV.duckTime)); }
+      return;
+    }
+    if (released) { if (this.ducked) this.duckTime = 1000; else if (this.ducking) this.duckTime = 1000 - CV.unduckTime * 1000 + ((1000 - this.duckTime) / (CV.duckTime * 1000)) * CV.unduckTime * 1000; }
+    // after a mid-air duck the feet stay raised only while still airborne; once we've landed the origin is just a
+    // ducked player on the floor, and standing up must grow the hull upward (the SDK keys this off ground entity)
+    const p: V3 = [this.pos[0], this.pos[1], this.pos[2] - (this.duckRaised && inAir ? 36 : 0)];
+    if (!this.trace(p, p, HULL.maxs).startsolid) {
+      const s = (1000 - this.duckTime) / 1000;
+      if (s > CV.unduckTime || inAir) this.finishUnduck(inAir); else { this.viewOffset = duckEye(spline(1 - s / CV.unduckTime)); this.ducking = true; }
+    } else if (this.duckTime !== 1000) { this.viewOffset = HULL.duckView; this.duckTime = 1000; this.ducked = true; this.ducking = false; }
+  }
+  private finishDuck(inAir: boolean) {
+    const was = this.ducked; this.ducked = true; this.ducking = false; this.viewOffset = HULL.duckView;
+    if (inAir && !was) { this.pos[2] += 36; if (this.trace(this.pos, this.pos).startsolid) this.pos[2] -= 36; else this.duckRaised = true; }
+  }
+  private finishUnduck(inAir: boolean) {
+    if (this.duckRaised && this.ducked && inAir) this.pos[2] -= 36;
+    this.ducked = false; this.ducking = false; this.duckRaised = false; this.portalDuck = false; this.viewOffset = HULL.view;
   }
   private categorize() {
     if (this.vel[2] > 140) { this.onGround = false; this.groundEnt = null; return; }
@@ -58,7 +132,7 @@ export class Player {
     const t = this.trace(this.pos, down);
     const was = this.onGround;
     this.onGround = t.fraction < 1 && t.normal[2] >= 0.7 && !t.allsolid; this.groundEnt = this.onGround ? t.ent : null;
-    if (this.onGround && !t.startsolid) { this.pos = t.end; if (!was) this.landed = performance.now(); }
+    if (this.onGround && !t.startsolid) { this.pos = t.end; if (!was) { this.landed = performance.now(); this.duckRaised = false; } }
   }
   private friction(dt: number) {
     const spd = Math.hypot(this.vel[0], this.vel[1], this.vel[2]); if (spd < 0.1) return;

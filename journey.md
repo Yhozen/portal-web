@@ -4,6 +4,35 @@ A running log of work on the port. Times are America/New_York.
 
 ## 2026-11-24 to 25, session 3 (from 8:35 PM EST)
 
+**10:10 PM EST, rocket turret numbers from the original.** After the box refresh, `hl2_linux` would not start because the 32-bit linker was gone (`/lib/ld-linux.so.2`). i386 libc, SDL and Mesa are back, and the original is running again. The earlier checks are still 39/39.
+
+escape_01's `laser_1` sits in a floor mount at -320, 580, -250 and starts retracted (spawnflags 1). The enable button and the west glass both turn it on; it plays the model's `open` sequence (4.333 s) and then fires. Standing on the tiles in front of it at -400, 576 (eye at -184), with the original pinned to the 66-tick:
+
+- the first rocket shows up between 6.84 and 6.96 s after Enable
+- the next ones come about 6.0 s apart (5.96 s and 6.11 s on two watches)
+- a rocket is lethal: with buddha on, health 100 drops to 1, so at least 99 damage. Regen then waits a second and climbs 1 per tick, the way the rest of the game already does
+- projectile speed was already about 550 u/s; the class is `rocket_turret_projectile`, which is what the tube's `filter_only_missiles` looks for, and the tube props also take blast damage (type 64) through `filter_explode_damage`
+
+The sounds are `NPC_RocketTurret.LockingBeep`, `NPC_FloorTurret.LockedBeep`, `RocketFire` and `RocketFlyLoop`. Next is putting the turret and a portal-capable rocket into the port, then an escape_01 playthrough.
+
+**9:36 PM EST, first commit, and I'm measuring the rocket turret.** ca42ec1 has the portal duck, the
+a15 retunes, and escape_00's crusher12 brake (zero leftover exit speed so we stay on the piston at z 1088).
+a14 reaches a15 at 126.3 s, a15 reaches escape_00 at 261.7 s, escape_00 reaches escape_01 at 196.9 s.
+Asserted fling and fling-wall checks still pass. eye5 is 560.3 on all three wall-fling drops; the 100-unit
+drop would sit in a 11-unit tolerance (original 551.9), but 200 and 300 are still ~18 units low (original
+578.4 / 578.7) because the first-exit placement differs, so I'm not asserting them yet. Floor-fling un-duck
+timing is 0.364 s (original 0.345–0.375) and the eye pops 35.9 units, short of the original's 47 because
+that's a 36-unit view snap.
+
+escape_01 has one `npc_rocket_turret` (laser_1 at -320, 580, -250, spawnflags 1, starts disabled). The
+switch button_enable_turret enables it, and so does breaking the west glass (`func_breakable_surf` *50).
+The original's cheat `fire_rocket_projectile` from the player's eyes, at a wall 239 units away, spawned
+`rocket_turret_projectile` plus `env_rockettrail` at tick 1 and they were gone at tick 29 — about 550 u/s
+once you subtract the rocket model's 4.9-unit nose. Models are props_bts/rocket_sentry.mdl and
+props_bts/rocket.mdl. The turret has Enable/Disable/Toggle and barrel/eye attachments; the puzzle is
+redirecting those rockets through portals into a tube (triggers at x 832–1216, filter_only_missiles).
+Full checks are still running (the 54 s GLaDOS destruction recording is a long one).
+
 **9:25 PM EST, forced duck is in, and a14 and a15 still close.** Wall exits stay ducked until
 you land; floor and ceiling exits snap the eye back up at 0.35 s if there's room. The mid-air duck also raises
 the feet so the eye stays put, and landing clears that raise so standing up grows the hull upward — the way the
@@ -13,8 +42,7 @@ to crusher01_tc15 goes south around the floor portal then hops onto the cylinder
 west shelf at z 80), and a duck-jump off the south end reaches the z 128 ledge. The broken-tube jump also had
 to become a standing walk-off into the hole (y 964–996), then a duck so the hull fits under the tube ceiling;
 holding 1616,1591 on the way up the far shaft lets the southbound push at z 1344 catch you. a15 reaches
-escape_00 at 261.7 s, a14 reaches a15 at 126.3 s. escape_00 is next; the crusher12 landing is walking off the
-piston with leftover exit speed.
+escape_00 at 261.7 s, a14 reaches a15 at 126.3 s. escape_00 was walking off crusher12 with leftover exit speed; braking that landing let it close.
 
 **8:45 PM EST, starting.** Tip was 57d7eb7, tree clean, on gabriel/oracle. The first pass is the wall-exit forced
 duck and the floor-fling un-duck, measured against the original traces already in portal-web-shots/oracle/runs/orig.

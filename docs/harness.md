@@ -96,6 +96,14 @@ Scripts used for checks live in `checks/`: `escape02-ending.ctl` (skybox), `late
 escape_02), `later-smoke.ctl` (20 s of real simulation from each later spawn), `glados-anim.ctl` (an animated, skinned prop), `glados-hit.ctl` and `glados-destruction.ctl` (sequence cross-fades and the 54 s `.ani`-streamed ending, recorded), `camera-track.ctl` (a security camera following the player, with a lens-error probe), `opaque-canvas.ctl` (asserts that every pixel of the drawing buffer is opaque, with a cube on a00's button), `portal-transit.ctl` (walks the player through five portal layouts with `tools/transit.js`, 150 seeded random walks each, and asserts no view pop between wall portals and no tick stuck in solid), `portal-a00.ctl` (the same probe on a00's own portals while the blue one moves on its timer). They hold only map names, coordinates and commands, never game data;
 screenshots should be written outside the repository (the `.gitignore` also drops `*.png`).
 
+Before a deploy, run `tools/gate.sh` (needs `PORTAL_DIR`; about an hour, with nothing else loading the machine). It
+builds the engine, starts its own harness session, and runs `tools/run-checks.sh` and `tools/play/check.sh`. That
+script plays every chamber in `checks/reference/playthrough.json` and fails when one stops reaching its next map or
+its game time moves past the tolerance. When everything passes, the gate appends the hash of `src/`
+(`node tools/engine-hash.mjs`) to `.gate/passed`, which is per machine and not committed. `pnpm deploy` in `web/` runs
+`scripts/gate.mjs` first and refuses an engine whose hash has no full pass recorded. `GATE=skip pnpm deploy` overrides
+that, and should only be used on purpose. GitHub CI can't run the gate, because the checks need the game files.
+
 `node tools/mdl-info.ts models/props/glados.mdl` (paths inside the game, `--game DIR` as above) prints a model's animation data straight from the file: sequences with flags,
 frames@fps, duration, blend grid, fades, events and autolayers, pose parameters, bone controllers, attachments and
 `.ani` blocks (`--json`, `--bones`, `--survey [REGEX]` over every model in the game). `--continuity` decodes every

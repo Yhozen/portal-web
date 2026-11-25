@@ -16,7 +16,7 @@
     "e2e": "node scripts/e2e.mjs",
     "serve": "node scripts/serve.mjs",
     "dev": "node scripts/dev.mjs",
-    "deploy": "pnpm build && pnpm alchemy deploy --stage preview --profile default",
+    "deploy": "node scripts/gate.mjs && pnpm build && pnpm alchemy deploy --stage preview --profile default",
     "plan": "pnpm build && pnpm alchemy plan --stage preview --profile default",
     "upload-game-files": "node scripts/upload-game-files.mjs",
     "guard:repo": "node scripts/guard.mjs --repo"

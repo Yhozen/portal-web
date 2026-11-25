@@ -1,0 +1,25 @@
+{
+  "about": "Autopilot playthroughs (tools/play/seq.sh): the map each chamber must change to ('unset' where it ends on a chamber with no next map), and its game seconds. tools/play/check.sh fails when a chamber stops reaching its next map or its time moves by more than the tolerance (the larger of tolSeconds and tolFraction of the time). escape_02 has no next map: it ends when the second GLaDOS core burns, so its time is what catches a regression. Measured 2026-11-25 on gabriel/portal-transit.",
+  "tolSeconds": 6,
+  "tolFraction": 0.05,
+  "maps": {
+    "testchmb_a_00": { "next": "testchmb_a_01", "t": 178.5 },
+    "testchmb_a_01": { "next": "testchmb_a_02", "t": 112.7 },
+    "testchmb_a_02": { "next": "testchmb_a_03", "t": 152.6 },
+    "testchmb_a_03": { "next": "testchmb_a_04", "t": 119.9 },
+    "testchmb_a_04": { "next": "testchmb_a_05", "t": 72.1 },
+    "testchmb_a_05": { "next": "testchmb_a_06", "t": 51.7 },
+    "testchmb_a_06": { "next": "testchmb_a_07", "t": 62.1 },
+    "testchmb_a_07": { "next": "unset", "t": 131.4 },
+    "testchmb_a_08": { "next": "testchmb_a_09", "t": 76.6 },
+    "testchmb_a_09": { "next": "testchmb_a_10", "t": 119.1 },
+    "testchmb_a_10": { "next": "testchmb_a_11", "t": 204.7 },
+    "testchmb_a_11": { "next": "testchmb_a_13", "t": 86.6 },
+    "testchmb_a_13": { "next": "testchmb_a_14", "t": 290.9 },
+    "testchmb_a_14": { "next": "testchmb_a_15", "t": 127.3 },
+    "testchmb_a_15": { "next": "escape_00", "t": 265.8 },
+    "escape_00": { "next": "escape_01", "t": 198.0 },
+    "escape_01": { "next": "escape_02", "t": 216.2 },
+    "escape_02": { "next": "unset", "t": 199.7 }
+  }
+}

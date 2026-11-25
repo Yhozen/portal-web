@@ -1246,7 +1246,7 @@ export class Game {
     for (const gp of this.gunPortals) { const c = (gp as any).onCol, o = (gp as any).onOff, r0 = (gp as any).onRot; const turned = !!c && (!!r0 !== !!c.rot || (!!r0 && [0, 1, 2, 4, 5, 6, 8, 9, 10].some(k => Math.abs(c.rot[k] - r0[k]) > 1e-3)));
       if (gp.open && c && (Math.abs(c.offset[0] - o[0]) + Math.abs(c.offset[1] - o[1]) + Math.abs(c.offset[2] - o[2]) > 0.5 || turned || !c.enabled())) { gp.open = false; (gp as any).onCol = null; this.relinkMapPortals(); io.log.push(`${io.time.toFixed(2)} ${gp.name} fizzled: its surface moved`); } }
     this.updatePortalDetectors();
-    this.updateTriggers();
+    this.updateTriggers(dt);
     if (this.hud.hint && io.time > this.hud.hintT) this.hud.hint = '';
     if (this.hud.fadeHoldUntil && io.time < this.hud.fadeHoldUntil) {} else if (this.hud.fade !== this.hud.fadeTarget) { const s = this.hud.fadeRate * dt; this.hud.fade = this.hud.fade < this.hud.fadeTarget ? Math.min(this.hud.fadeTarget, this.hud.fade + s) : Math.max(this.hud.fadeTarget, this.hud.fade - s); }
     // held-cube prop matrix
@@ -1360,18 +1360,19 @@ export class Game {
   use() {
     if (this.held) { const c = this.held; c.held = false; c.vel = scale(c.vel, 0.25); c.asleep = false; this.held = null; return; }
     const eye = this.player.eye(); const { f, u } = angleVectors(this.player.ang);
-    const best = this.findUseCube(eye, f, u);
-    if (best) { best.Rrel = mul(invertRigid(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0])), best.R); best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); }
-    else {
-      // +use on func_button etc.
-      this.tr.ignore = null; let t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);
+    // prefer the first solid along the look: a turret or cube off to the side (escape_01's south-pod turret
+    // next to door_raise_sparky) shouldn't steal +use from a Use-Opens door you're pointing at
+    this.tr.ignore = null; let t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, this.playerEnt);
+    const skip = new Set<any>([this.playerEnt]); const usable = (x: any) => x && (x.cls === 'func_button' || (/^func_door(_rotating)?$/.test(x.cls) && (+x.kv.spawnflags & 256)));
+    if (!usable(t.ent)) {
+      const best = this.findUseCube(eye, f, u);
+      if (best) { best.Rrel = mul(invertRigid(entityMatrix([0, 0, 0], [0, this.player.ang[1], 0])), best.R); best.held = true; this.held = best; this.io.fire(best.ent, 'onplayerpickup', this.playerEnt); return; }
       // see past non-usable brush entities (a07: the scaffold the player rides sits between eye and the exit switch)
-      const skip = new Set<any>([this.playerEnt]); const usable = (x: any) => x && (x.cls === 'func_button' || (/^func_door(_rotating)?$/.test(x.cls) && (+x.kv.spawnflags & 256)));
       for (let k = 0; k < 3 && t.ent && !usable(t.ent); k++) { skip.add(t.ent); t = this.tr.trace(eye, ma(eye, 96, f), [0, 0, 0], [0, 0, 0], 0xffffffff, skip); }
-      if (t.ent && t.ent.cls === 'func_button') this.io.fire(t.ent, 'onpressed', this.playerEnt);
-      // doors with the "Use Opens" spawnflag (256) act as use buttons (a07's pedestal switches are func_door_rotating)
-      else if (t.ent && /^func_door(_rotating)?$/.test(t.ent.cls) && (+t.ent.kv.spawnflags & 256)) this.io.deliver(t.ent, 'open', '', this.playerEnt, this.playerEnt);
     }
+    if (t.ent && t.ent.cls === 'func_button') this.io.fire(t.ent, 'onpressed', this.playerEnt);
+    // doors with the "Use Opens" spawnflag (256) act as use buttons (a07's pedestal switches are func_door_rotating)
+    else if (t.ent && /^func_door(_rotating)?$/.test(t.ent.cls) && (+t.ent.kv.spawnflags & 256)) this.io.deliver(t.ent, 'open', '', this.playerEnt, this.playerEnt);
   }
   // weapon_portalgun: picked up by walking near it; its canfireportal1/2 keyvalues decide which colours work
   updateGunPickup() {
@@ -1389,7 +1390,7 @@ export class Game {
   updateMMC() { for (const e of this.mmcs) { const L = e.lerp; if (!L) { this.mmcs.delete(e); continue; } let u = (this.io.time - L.t0) / L.d;
       if (u >= 1) { if (L.loop) u = u % 1; else { u = 1; e.lerp = null; } } L.ins.texFrame = Math.floor(L.a + (L.b - L.a) * u); } }
   hasGunBefore = false;
-  updateTriggers() {
+  updateTriggers(dt: number) {
     const io = this.io; const pl = this.player; const pmin = add(pl.pos, HULL.mins), pmax = add(pl.pos, pl.maxs());
     const overlap = (a0: V3, a1: V3, b0: V3, b1: V3) => a0[0] < b1[0] && a1[0] > b0[0] && a0[1] < b1[1] && a1[1] > b0[1] && a0[2] < b1[2] && a1[2] > b0[2];
     for (const e of io.ents) {
@@ -1421,6 +1422,29 @@ export class Game {
       // runs every frame and ActivateMultiTrigger only waits out the reset time). Firing only on a new touch lost a box
       // that left and came back inside the wait: a00's button stayed up under a box that settled on it 0.2 s later.
       if (e.cls === 'trigger_multiple' && now.size && +(e.kv.wait ?? 0.2) > 0 && e.waitUntil && io.time >= e.waitUntil) { io.fire(e, 'ontrigger', [...now][0]); e.waitUntil = io.time + Math.max(0.1, +(e.kv.wait ?? 0.2)); }
+      // trigger_look (Valve Developer Wiki / public FGD): while the player is inside, they must look at `target`
+      // for LookTime seconds (FieldOfView is the cosine of the allowed angle, 0.9 by default). Looking away or
+      // leaving resets the timer. Timeout fires OnTimeout if they stay that long without success (0 = off).
+      // spawnflag 128 is Fire Once (escape_01's look_target_mini_ambush_escape, FOV 0.8, LookTime 0.75).
+      if (e.cls === 'trigger_look') {
+        if (now.has(this.playerEnt) && !e.lookFired) {
+          const tgt = io.find((e.kv.target || '').toLowerCase(), null, e)[0];
+          const fov = +(e.kv.fieldofview ?? 0.9), need = +(e.kv.looktime ?? 0.5), timeout = +(e.kv.timeout ?? 0);
+          let looking = false;
+          if (tgt) {
+            const eye = pl.eye(), dir = sub(tgt.origin, eye), L = len(dir);
+            if (L > 1e-4) looking = dot(angleVectors(pl.ang).f, scale(dir, 1 / L)) >= fov;
+          }
+          if (looking) {
+            e.lookAcc = (e.lookAcc || 0) + dt;
+            if (e.lookAcc >= need) { io.fire(e, 'ontrigger', this.playerEnt); e.lookFired = true; if (sf & 128) e.killed = true; }
+          } else e.lookAcc = 0;
+          if (!e.lookFired && timeout > 0) {
+            e.lookIn = (e.lookIn || 0) + dt;
+            if (e.lookIn >= timeout) { io.fire(e, 'ontimeout', this.playerEnt); e.lookFired = true; if (sf & 128) e.killed = true; }
+          }
+        } else { e.lookAcc = 0; e.lookIn = 0; }
+      }
     }
   }
   passFilter(f: Ent, a: Ent) {

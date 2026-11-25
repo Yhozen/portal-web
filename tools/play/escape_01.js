@@ -61,10 +61,29 @@ if (game.pl.pos[2] < -500) {
     game.step(T, { fwd: 1, side: 0, jump: false, duck: false });
   }
   lg('through the pod', P(), 'g ' + game.pl.onGround);
+  // trigger_look at the alcove doorway: look at the broken claw for 0.75 s to Enable
+  // relay_move_up_broke_pincher, then Use the sparking door (spawnflag 256) to Open it,
+  // which Triggers the relay, raises the broken pole, and Kills the door.
+  standAt(-1792, 2188, 4);
+  const lookT = AP.ent('look_target_mini_ambush_escape');
+  if (lookT) {
+    AP.lookAt(lookT.origin);
+    AP.wait(1.2);
+    lg('looked at claw', P(), 'relay ' + !!(AP.ent('relay_move_up_broke_pincher') || {}).enabled);
+    // Use range is 80 from the eye; look at the sparking door (its underside is at z -562) so the trace hits it
+    const sparkyPos = (AP.ent('door_raise_sparky') || {}).origin || [-1789, 2144, -562];
+    AP.lookAt([sparkyPos[0], sparkyPos[1], -562]);
+    AP.wait(0.15);
+    G.use();
+    AP.wait(2.2);
+    const sparky = AP.ent('door_raise_sparky');
+    const pole = AP.ent('turret_deliver_pole_20');
+    lg('after use', 'sparky ' + (sparky && sparky.killed ? 'killed' : 'alive'), 'pole z ' + ((pole && (pole.pos || pole.origin) || [0,0,0])[2] | 0), P());
+  }
 }
 if (window.STAGE === 3) throw 'stage 3';
 lg('done early', P());
 } catch (e) { lg('ERROR', String(e && e.message || e), P(), 'ap ' + JSON.stringify((AP.LOG || []).slice(-6))); }
 out.push(AP.LOG.slice(-20).join('\n'));
-out.push(io.log.filter(l => /picked|portalgun|laser_1|rocket|teleport|fizz|changed|pod|crusher|trap_1|block_crazy/.test(l)).slice(-25).join('\n'));
+out.push(io.log.filter(l => /picked|portalgun|laser_1|rocket|teleport|fizz|changed|pod|crusher|trap_1|block_crazy|pincher|sparky|look_target|pole_20/.test(l)).slice(-25).join('\n'));
 return out.join('\n'); })()
